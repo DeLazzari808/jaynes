@@ -545,17 +545,12 @@ footer .wrap { display: flex; gap: 20px; justify-content: space-between; flex-wr
 <section class="chapter" id="ch3">
   <div class="col">
     <h2 class="ch">Start.</h2>
-    <p class="lead">One paste into Claude Code. <span class="w amber">You</span> come back when it calls.</p>
+    <p class="lead">One line in Claude Code. <span class="w amber">You</span> come back when it calls.</p>
   </div>
 
   <div class="paste2">
-    <pre id="paste-text">Set up Jaynes and run this task with it:
-<em>make the team page dark and calm</em>
-
-Run uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-(install uv first if it is missing), then jaynes skill,
-and do what it prints for the task.</pre>
-    <div class="row"><p class="note">Change the <span class="w amber">task</span>, then paste it into Claude Code, in your project. Next time, type <span class="w amber">/jaynes</span> and the task.</p><button type="button" class="copy-b" id="copy">Copy</button></div>
+    <pre id="paste-text">/plugin install jaynes --marketplace alk0x1/jaynes</pre>
+    <div class="row"><p class="note">Type it in Claude Code, answer <span class="w amber">y</span>, then Enter. Then ask for your task with Jaynes, in your project.</p><button type="button" class="copy-b" id="copy">Copy</button></div>
   </div>
 
   <div class="controls"><div class="act"><button type="button" class="primary hint" id="c4-play">See it happen</button></div></div>
@@ -1128,14 +1123,14 @@ and do what it prints for the task.</pre>
   };
   a30.onclick = () => { runsBox.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }); run30(); };
 
-  // chapter 3: what one paste would do
+  // chapter 3: what the install line and a task would do
   const term4 = $('term4'), tl4 = $('tl4'), win4 = $('win4');
   const bot4 = char(term4, 'agent', 'bot4'), bot4Say = bubble(term4, 'bot4Say');
   const LINES = [
-    ['<span class="me">› Set up Jaynes and run this task with it: make the team page dark and calm</span>', 600],
+    ['<span class="me">› /plugin install jaynes --marketplace alk0x1/jaynes</span>', 600],
+    ['  <span class="ok">✓</span> Installed jaynes. Plugin is now active.', 800],
+    ['<span class="me">› make the team page dark and calm, with Jaynes</span>', 600],
     ['<span class="p">$</span> uv tool install --reinstall git+https://github.com/alk0x1/jaynes', 1100],
-    ['<span class="p">$</span> jaynes skill', 700],
-    ['  Installed: in Claude Code, /jaynes &lt;task&gt; runs the task with Jaynes', 800],
     ['<span class="p">$</span> jaynes run --role visual-identity --task "Make the team page dark and calm" --project .', 1200],
     ['  <span class="ok">✓</span> current   <span class="ok">✓</span> direction checked', 1400],
     ['  <span class="wt">●</span> waiting for you: direction', 900]

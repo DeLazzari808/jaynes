@@ -341,10 +341,13 @@ def answered(stdin: Any = None, stdout: Any = None) -> int:
 
 
 def cmd_skill(args: argparse.Namespace) -> None:
-    where = skill.install()
     body = skill.SOURCE.read_text().split("---\n", 2)[2].strip()
-    print(f"Installed {where}: in Claude Code, /jaynes <task> runs the task with Jaynes.\n\n"
-          f"To run a task now, do this, with the task in place of $ARGUMENTS:\n\n{body}")
+    if skill.plugin():  # the plugin brings the skill and its hook
+        skill.refresh()
+        said = "The Jaynes plugin is installed: in Claude Code, /jaynes <task> runs the task with Jaynes."
+    else:
+        said = f"Installed {skill.install()}: in Claude Code, /jaynes <task> runs the task with Jaynes."
+    print(f"{said}\n\nTo run a task now, do this, with the task in place of $ARGUMENTS:\n\n{body}")
 
 
 def cmd_update(args: argparse.Namespace) -> None:

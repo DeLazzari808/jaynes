@@ -116,31 +116,29 @@ Missing, roughly in order:
 
 Python 3.12 or later.
 
-The shortest way: paste this into Claude Code, in your project, with
-your own task on the second line.
+The shortest way: type this in Claude Code, answer `y` to add the
+marketplace, and press Enter to install it for your user.
 
 ```text
-Set up Jaynes and run this task with it:
-make the team page dark and calm
-
-Run uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-(install uv first if it is missing), then jaynes skill,
-and do what it prints for the task.
+/plugin install jaynes --marketplace alk0x1/jaynes
 ```
 
-`jaynes skill` adds `/jaynes` to Claude Code, so next time you type
-`/jaynes` and the task. The agent picks the role and starts the run. At each
-stop the agent shows you the question and its evidence in Claude Code's
-question dialog, and you answer there: Accept, or Return with a note. The
-review page, opened by `jaynes`, shows a stop in full and offers Change and
-Context too. When a newer Jaynes is out, the page offers to update and
-restarts itself.
+Then ask for a task with Jaynes, such as "make the team page dark and calm,
+with Jaynes". The first time, the agent installs the `jaynes` command with uv.
+It picks the role and starts the run. At each stop the agent shows you the
+question and its evidence in Claude Code's question dialog, and you answer
+there: Accept, or Return with a note. The review page, opened by `jaynes`,
+shows a stop in full and offers Change and Context too. When a newer Jaynes
+is out, the page offers to update and restarts itself.
+
+The plugin is the skill and the hook that records your answers in the dialog,
+installed by you: no agent writes your Claude Code settings.
 
 Or by hand:
 
 ```sh
 uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-jaynes skill                   # optional: /jaynes in Claude Code, stops in its dialog
+jaynes skill                   # without the plugin: /jaynes in Claude Code, stops in its dialog
 jaynes                         # opens the page on http://127.0.0.1:8740
 ```
 
@@ -207,7 +205,7 @@ as a cookie; anything else, like an agent with `curl`, can read the page but
 not answer. An answer from `jaynes answer` releases the stop but is recorded
 as an agent's: it never counts as a label, so an agent cannot make a stop
 sampled by accepting its own work, and a floor stop refuses it. An answer in
-Claude Code's dialog is yours: `jaynes skill` adds a hook that Claude Code
+Claude Code's dialog is yours: the plugin, or `jaynes skill`, adds a hook that Claude Code
 runs after the dialog with what you chose, and it records the answer only
 when the dialog showed the stop exactly as `jaynes ask` rendered it. Every answer
 carries the hash of what was shown, so a page left open cannot accept a newer

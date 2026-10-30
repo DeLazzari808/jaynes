@@ -3,10 +3,15 @@
 With it goes a hook on Claude Code's question dialog (``jaynes answered``): a stop asked in the terminal is
 answered there, and Claude Code hands the hook what the person chose, so the answer is the person's and not
 something an agent reports.
+
+The Jaynes plugin (``/plugin install jaynes --marketplace alk0x1/jaynes``) brings the same skill and hook, installed
+by the person instead of written by a command an agent runs. Where it is installed, Jaynes writes neither, and
+takes away the ones an earlier ``jaynes skill`` wrote, so nothing runs twice.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +29,22 @@ def settings() -> Path:
     return gate.settings_path()
 
 
+def plugins() -> Path:
+    return Path.home() / ".claude" / "plugins" / "installed_plugins.json"
+
+
 def installed() -> bool:
     return path().is_file()
+
+
+def plugin() -> bool:
+    """Whether the Jaynes plugin is installed and not turned off."""
+    try:
+        names = [str(k) for k in json.loads(plugins().read_text()).get("plugins", {})]
+    except (OSError, ValueError, AttributeError):
+        return False
+    enabled: dict[str, Any] = gate.read_settings(settings()).get("enabledPlugins", {})
+    return any(n.split("@")[0] == "jaynes" and enabled.get(n) is not False for n in names)
 
 
 def install() -> Path:
@@ -43,8 +62,12 @@ def remove() -> None:
 
 
 def refresh() -> None:
-    """Bring an installed skill to this version's text, and its hook with it; one never installed stays absent."""
-    if installed():
+    """Bring an installed skill to this version's text, and its hook with it; one never installed stays absent.
+    Where the plugin brings both, an earlier install goes away."""
+    if plugin():
+        if installed() or _settings_hook():
+            remove()
+    elif installed():
         install()
 
 
@@ -58,6 +81,11 @@ def _ours(command: str) -> bool:
 
 
 def hooked() -> bool:
+    """Whether Claude Code runs ``jaynes answered`` after its question dialog."""
+    return plugin() or _settings_hook()
+
+
+def _settings_hook() -> bool:
     hooks: dict[str, Any] = gate.read_settings(settings()).get("hooks", {})
     return any(_ours(str(h.get("command", ""))) for g in hooks.get("PostToolUse", []) for h in g.get("hooks", []))
 

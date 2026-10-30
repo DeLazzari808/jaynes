@@ -1,0 +1,6 @@
+{
+  "name": "jaynes",
+  "description": "Conducts Claude Code through a method one step at a time, checks each step, and asks you only where it matters",
+  "author": { "name": "alk0x1" },
+  "homepage": "https://github.com/alk0x1/jaynes"
+}

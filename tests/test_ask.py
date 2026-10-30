@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -146,3 +147,37 @@ def test_the_hook_goes_with_the_skill_and_other_hooks_stay() -> None:
     skill.remove()
     assert json.loads(skill.settings().read_text()) == {"hooks": {"PostToolUse": [mine]}, "model": "opus"}
     assert not skill.installed() and not skill.hooked()
+
+
+ROOT = Path(__file__).parents[1]
+
+
+def test_the_plugin_brings_the_same_skill_and_runs_jaynes_answered_after_the_dialog(tmp_path: Path) -> None:
+    assert (ROOT / "skills" / "jaynes" / "SKILL.md").read_text() == skill.SOURCE.read_text()
+    [group] = json.loads((ROOT / "hooks" / "hooks.json").read_text())["hooks"]["PostToolUse"]
+    assert group["matcher"] == "AskUserQuestion" and "hooks/answered.sh" in group["hooks"][0]["command"]
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "jaynes").write_text(f'#!/bin/sh\necho "$@" > {tmp_path}/args; cat > {tmp_path}/stdin\n')
+    (bin_ / "jaynes").chmod(0o755)
+    env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path)}
+    subprocess.run(["sh", str(ROOT / "hooks" / "answered.sh")], input=b'{"tool_name":"AskUserQuestion"}', env=env,
+                   check=True)
+    assert (tmp_path / "args").read_text() == "answered\n"
+    assert (tmp_path / "stdin").read_text() == '{"tool_name":"AskUserQuestion"}'
+    done = subprocess.run(["sh", str(ROOT / "hooks" / "answered.sh")], input=b"{}", capture_output=True,
+                          env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path / "nobody")})
+    assert (done.returncode, done.stdout) == (0, b"")  # no jaynes: nothing to record, and nothing breaks
+
+
+def test_with_the_plugin_jaynes_writes_no_skill_or_hook_and_takes_away_earlier_ones(
+        capsys: pytest.CaptureFixture[str]) -> None:
+    skill.install()  # an earlier jaynes skill
+    skill.plugins().write_text(json.dumps({"version": 2, "plugins": {"jaynes@jaynes": [{"scope": "user"}]}}))
+    assert skill.plugin() and skill.hooked()
+    cli.main(["skill"])
+    assert "plugin is installed" in capsys.readouterr().out
+    assert not skill.installed() and "answered" not in skill.settings().read_text()
+    assert skill.hooked()  # the plugin's hook
+    skill.settings().write_text(json.dumps({"enabledPlugins": {"jaynes@jaynes": False}}))
+    assert not skill.plugin() and not skill.hooked()

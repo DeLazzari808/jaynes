@@ -1,0 +1,13 @@
+{
+  "name": "jaynes",
+  "description": "Jaynes for Claude Code: a method per task, checked step by step, with your answers only where they matter",
+  "owner": {
+    "name": "alk0x1"
+  },
+  "plugins": [
+    {
+      "name": "jaynes",
+      "source": "./"
+    }
+  ]
+}

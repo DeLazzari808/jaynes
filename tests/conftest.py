@@ -11,3 +11,4 @@ def no_page(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("JAYNES_NO_PAGE", "1")
     monkeypatch.setattr("jaynes.skill.path", lambda: tmp_path / "claude-skills" / "jaynes" / "SKILL.md")
     monkeypatch.setattr("jaynes.skill.settings", lambda: tmp_path / "claude-settings.json")
+    monkeypatch.setattr("jaynes.skill.plugins", lambda: tmp_path / "claude-plugins.json")
