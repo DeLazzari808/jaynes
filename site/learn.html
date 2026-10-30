@@ -552,16 +552,10 @@ footer .wrap { display: flex; gap: 20px; justify-content: space-between; flex-wr
     <pre id="paste-text">Set up Jaynes and run this task with it:
 <em>make the team page dark and calm</em>
 
-Install it, even if jaynes is already there, since it may be old:
-uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-(install uv first if it is missing). In the background, run jaynes:
-it opens the review page in my browser. Then, also in the background:
-jaynes run --role visual-identity --task "&lt;the task&gt;" --project .
-Use --role redesign if the task names links or pictures of interfaces
-I like, and --role fix-bug if it describes a bug. If the project has a dev server, add --preview "&lt;its command,
-with {port} as the port&gt;". Tell me when it stops for my answer, or
-why it blocked. Never answer a stop yourself.</pre>
-    <div class="row"><p class="note">Change the <span class="w amber">task</span>, then paste it into Claude Code, in your project.</p><button type="button" class="copy-b" id="copy">Copy</button></div>
+Run uv tool install --reinstall git+https://github.com/alk0x1/jaynes
+(install uv first if it is missing), then jaynes skill,
+and do what it prints for the task.</pre>
+    <div class="row"><p class="note">Change the <span class="w amber">task</span>, then paste it into Claude Code, in your project. Next time, type <span class="w amber">/jaynes</span> and the task.</p><button type="button" class="copy-b" id="copy">Copy</button></div>
   </div>
 
   <div class="controls"><div class="act"><button type="button" class="primary hint" id="c4-play">See it happen</button></div></div>
@@ -1140,8 +1134,8 @@ why it blocked. Never answer a stop yourself.</pre>
   const LINES = [
     ['<span class="me">› Set up Jaynes and run this task with it: make the team page dark and calm</span>', 600],
     ['<span class="p">$</span> uv tool install --reinstall git+https://github.com/alk0x1/jaynes', 1100],
-    ['<span class="p">$</span> jaynes', 700],
-    ['  Jaynes review on http://127.0.0.1:8740', 800],
+    ['<span class="p">$</span> jaynes skill', 700],
+    ['  Installed: in Claude Code, /jaynes &lt;task&gt; runs the task with Jaynes', 800],
     ['<span class="p">$</span> jaynes run --role visual-identity --task "Make the team page dark and calm" --project .', 1200],
     ['  <span class="ok">✓</span> current   <span class="ok">✓</span> direction checked', 1400],
     ['  <span class="wt">●</span> waiting for you: direction', 900]

@@ -122,21 +122,22 @@ your own task on the second line.
 Set up Jaynes and run this task with it:
 make the team page dark and calm
 
-Install it, even if jaynes is already there, since it may be old:
-uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-(install uv first if it is missing). In the background, run jaynes:
-it opens the review page in my browser. Then, also in the background:
-jaynes run --role visual-identity --task "<the task>" --project .
-Use --role redesign if the task names links or pictures of interfaces
-I like, and --role fix-bug if it describes a bug. If the project has a dev server, add --preview "<its command,
-with {port} as the port>". Tell me when it stops for my answer, or
-why it blocked. Never answer a stop yourself.
+Run uv tool install --reinstall git+https://github.com/alk0x1/jaynes
+(install uv first if it is missing), then jaynes skill,
+and do what it prints for the task.
 ```
+
+`jaynes skill` adds `/jaynes` to Claude Code, so next time you type
+`/jaynes` and the task. The agent picks the role, starts the run, and the
+run opens the review page. At each stop the page calls you: a notification
+when its tab is open, or the page itself when it is not. When a newer Jaynes
+is out, the page offers to update and restarts itself.
 
 Or by hand:
 
 ```sh
 uv tool install --reinstall git+https://github.com/alk0x1/jaynes
+jaynes skill                   # optional: /jaynes in Claude Code
 jaynes                         # opens the page on http://127.0.0.1:8740
 ```
 
@@ -190,11 +191,12 @@ Everything else happens in the page:
   with the policy in `~/.jaynes/jaynes.toml`. Your other hooks stay, and
   `settings.json` is copied to `settings.json.jaynes-backup` first. On an
   internal error the hook prints nothing and Claude Code decides as if Jaynes
-  were not installed.
+  were not installed. It also adds or removes `/jaynes`, and shows which
+  commit of Jaynes runs.
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
-`jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`
-and `jaynes answer`. `jaynes --help` lists them all.
+`jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
+`jaynes answer`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps
