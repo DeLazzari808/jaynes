@@ -28,7 +28,8 @@ were still sent back.
    when the check passes. Evidence the agent could fake, like the references
    captured from the web, is produced by Jaynes.
 3. **Where the method needs you, the run stops.** The question and its
-   evidence wait for you in the review page.
+   evidence come to you in Claude Code's question dialog, or wait for you in
+   the review page.
 4. **Every answer is a label.** A stop you keep accepting without changes
    becomes sampled: it asks one time in ten. Each change lowers its
    evidence, and if the evidence falls below the threshold it asks every
@@ -128,16 +129,18 @@ and do what it prints for the task.
 ```
 
 `jaynes skill` adds `/jaynes` to Claude Code, so next time you type
-`/jaynes` and the task. The agent picks the role, starts the run, and the
-run opens the review page. At each stop the page calls you: a notification
-when its tab is open, or the page itself when it is not. When a newer Jaynes
-is out, the page offers to update and restarts itself.
+`/jaynes` and the task. The agent picks the role and starts the run. At each
+stop the agent shows you the question and its evidence in Claude Code's
+question dialog, and you answer there: Accept, or Return with a note. The
+review page, opened by `jaynes`, shows a stop in full and offers Change and
+Context too. When a newer Jaynes is out, the page offers to update and
+restarts itself.
 
 Or by hand:
 
 ```sh
 uv tool install --reinstall git+https://github.com/alk0x1/jaynes
-jaynes skill                   # optional: /jaynes in Claude Code
+jaynes skill                   # optional: /jaynes in Claude Code, stops in its dialog
 jaynes                         # opens the page on http://127.0.0.1:8740
 ```
 
@@ -196,14 +199,17 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes ask`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps
 as a cookie; anything else, like an agent with `curl`, can read the page but
 not answer. An answer from `jaynes answer` releases the stop but is recorded
 as an agent's: it never counts as a label, so an agent cannot make a stop
-sampled by accepting its own work, and a floor stop refuses it. Every answer
+sampled by accepting its own work, and a floor stop refuses it. An answer in
+Claude Code's dialog is yours: `jaynes skill` adds a hook that Claude Code
+runs after the dialog with what you chose, and it records the answer only
+when the dialog showed the stop exactly as `jaynes ask` rendered it. Every answer
 carries the hash of what was shown, so a page left open cannot accept a newer
 round it never showed.
 

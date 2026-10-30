@@ -78,6 +78,7 @@ class Waiting:
     reasons: tuple[str, ...] = ()
     evidence: str | None = None  # the hash of what a stop shows; an answer that carries it is bound to it
     until: float | None = None  # when a paused run's quota resets
+    here: bool = False  # started from an agent's terminal, which asks its stops there instead of the page
 
     @property
     def needs_person(self) -> bool:
@@ -312,7 +313,7 @@ class Conductor:
 
     def answer(self, role: Role, run_id: str, step: str, answer: Answer, *, note: str | None = None,
                output: BaseModel | Mapping[str, Any] | None = None, seconds_spent: float | None = None,
-               to: str | None = None, by: By, evidence: str | None = None) -> None:
+               to: str | None = None, by: By, evidence: str | None = None, via: str | None = None) -> None:
         """Record the answer at an open stop. ``change`` needs the edited output, which must pass the checks.
 
         ``to`` returns an earlier step instead of this one: it runs again with the note, and so does every step
@@ -322,6 +323,7 @@ class Conductor:
         ``by`` says who answered, with no default, so nothing passes for a person by omission. An answer by an
         agent releases the stop but is never counted as a label, and a floor stop refuses it.
         ``evidence``, the hash of what was shown, refuses the answer if the stop has shown something else since.
+        ``via`` names where a person answered when it was not the page, such as ``terminal``.
         """
         if answer not in LABELS:
             raise ValueError(f"unknown answer {answer!r}")
@@ -377,7 +379,7 @@ class Conductor:
             rows: list[tuple[str, dict[str, Any]]] = [("StopAnswered", {
                 "step": step, "answer": answer, "label": "none" if to else LABELS[answer], "note": note,
                 "fingerprint": opened["fingerprint"], "seconds_waited": round(self.clock() - opened_at, 3),
-                "seconds_spent": seconds_spent, "by": by, **back})]
+                "seconds_spent": seconds_spent, "by": by, **({"via": via} if via else {}), **back})]
             if value is not None:  # the edit and its witness are one write, so a crash cannot drop the edit
                 assert s.checked is not None
                 rows.append(self._witness(target, s, value, source=by, model=str(s.checked["model"]),
@@ -415,15 +417,15 @@ class Conductor:
             st = project(events)
             if st.started is None or st.finished:
                 continue
-            role, task = str(st.started["role"]), str(st.started["task"])
+            role, task, here = str(st.started["role"]), str(st.started["task"]), bool(st.started.get("here"))
             if st.blocked is not None:
                 since = max(e.ts for e in events if e.type == "RunBlocked")
                 items.append(Waiting(run_id, "blocked", str(st.blocked["step"]), since, role, task,
-                                     reasons=tuple(st.blocked["reasons"])))
+                                     reasons=tuple(st.blocked["reasons"]), here=here))
             opened = [(name, s.open_stop) for name, s in st.steps.items() if s.open_stop is not None]
             for name, (opened_at, payload) in opened:
                 items.append(Waiting(run_id, "stop", name, opened_at, role, task, payload.get("question"),
-                                     evidence=payload.get("evidence")))
+                                     evidence=payload.get("evidence"), here=here))
             if st.blocked is not None or opened:
                 continue
             step = next((str(ev.payload["step"]) for ev in reversed(events) if "step" in ev.payload), "")
@@ -433,7 +435,7 @@ class Conductor:
             elif self._held(run_id):
                 items.append(Waiting(run_id, "running", step, events[-1].ts, role, task))
             elif self.clock() - events[-1].ts >= idle_after:
-                items.append(Waiting(run_id, "idle", step, events[-1].ts, role, task))
+                items.append(Waiting(run_id, "idle", step, events[-1].ts, role, task, here=here))
         order = ("stop", "blocked", "idle", "running", "paused")
         return sorted(items, key=lambda w: (order.index(w.kind), w.since))
 

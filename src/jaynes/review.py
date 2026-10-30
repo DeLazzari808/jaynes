@@ -974,7 +974,7 @@ class Review:
         if action == "skill":
             skill.install()
         elif action == "skill-remove":
-            skill.path().unlink(missing_ok=True)
+            skill.remove()
         elif action in ("install", "remove"):
             (install.install if action == "install" else install.remove)(self.c.home)
         else:
@@ -1556,7 +1556,7 @@ def _call(home: Path, shared: Shared, link: str, stopping: threading.Event, ever
     while not stopping.wait(every):
         try:
             now = {(w.run_id, w.step, w.since) for w in Conductor(home).queue(idle_after=shared.idle_after)
-                   if w.needs_person}
+                   if w.needs_person and not w.here}  # a run from a terminal asks its stops there
         except Exception:  # a locked or half-written log is read again on the next tick
             continue
         if seen is not None and now - seen and time.time() - shared.polled > alive:

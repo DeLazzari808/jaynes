@@ -9,15 +9,19 @@
   jaynes run [ID] --role R --task T [--project DIR] [--preview CMD] [--suite CMD]
                                     start a run of a built-in role (visual-identity, redesign, fix-bug), a role
                                     file (.toml) or module:attribute, on the git repository at DIR
+                                    --here: started from an agent's terminal, which asks the stops there
   jaynes run ID                     continue a run from its log (after a crash, a pause or a stop)
   jaynes check ROLE                 find what a role gets wrong before any agent runs
   jaynes queue                      stops waiting for an answer, blocked and idle runs, then running and paused
   jaynes answer RUN STEP ANSWER     accept, change (--output JSON), return or context (--note); the run continues
                                     recorded as an agent's: it releases the stop but is not a label
+  jaynes ask RUN                    the run's open stop as input for Claude Code's question dialog; the person's
+                                    answer there is recorded as theirs by jaynes answered, the dialog's hook
   jaynes review [--port 8740]       the review page on 127.0.0.1: queue, stops, runs, roles, log
   jaynes policy                     print the built-in policy, a starting point for ~/.jaynes/jaynes.toml
   jaynes demo [--port 8740]         a scripted run that stops for you, then the review page
-  jaynes skill                      add /jaynes to Claude Code: /jaynes <task> runs the task with Jaynes
+  jaynes skill                      add /jaynes to Claude Code: /jaynes <task> runs the task with Jaynes, and
+                                    the hook that records answers given in its question dialog
   jaynes update                     install the newest Jaynes from where this one came from, if there is one
   jaynes version                    the commit this Jaynes was installed from
 """
@@ -34,7 +38,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from jaynes import bounds, gate, hook, skill, update, verify
 from jaynes.history import past_calls, report
@@ -224,6 +228,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     c.runtimes = {name: (lambda t=target: load_ref(t)()) for name, target in {**DEFAULT_RUNTIMES, **extra}.items()}
     started: dict[str, Any] = {"ref": ref, "runtimes": extra}
     if not args.id or args.role:
+        if args.here:
+            started["here"] = True
         if args.preview:
             started["preview"] = {"command": args.preview, "path": args.preview_path or "/",
                                   "ports": _ports(args.preview_ports or "")}
@@ -232,13 +238,16 @@ def cmd_run(args: argparse.Namespace) -> None:
     from jaynes.project import ProjectError
     from jaynes.review import ensure_page
     skill.refresh()
-    ensure_page(c.home)  # the person sees the run, and is called at its stops
+    first = next(iter(c.store.events("RunStarted", run_id=run_id)), None)
+    here = args.here or bool(first and first.payload.get("here"))
+    if not here:
+        ensure_page(c.home)  # the person sees the run, and is called at its stops
     try:
         result = c.run(r, task, run_id, started=started,
                        project=Path(args.project) if args.project and args.role else None)
     except ProjectError as err:
         sys.exit(str(err))
-    if result.status in ("waiting", "blocked"):
+    if result.status in ("waiting", "blocked") and not here:
         ensure_page(c.home)  # in case it was closed while the run worked
     print(json.dumps({"run": run_id, "status": result.status, "step": result.step, "until": result.until,
                       "reasons": list(result.reasons)}))
@@ -299,6 +308,36 @@ def cmd_answer(args: argparse.Namespace) -> None:
         sys.exit(f"run {args.run} is busy in another process; try again in a moment")
     continue_in_background(c.home, args.run)
     print(json.dumps({"run": args.run, "step": args.step, "answer": answer, "continuing": True}))
+
+
+def cmd_ask(args: argparse.Namespace) -> None:
+    from jaynes import ask
+    from jaynes.conductor import Conductor
+    if not skill.hooked():  # without it an answer in the dialog is recorded nowhere, and the stop asks again
+        sys.exit("the hook that records answers given in Claude Code's dialog is not installed: run jaynes skill, "
+                 "or answer in the review page, opened by jaynes")
+    c = Conductor(_home(args))
+    r, _, _, _ = _started(c, args.run)
+    shown = ask.dialog(c, r, args.run)
+    if shown is None:
+        sys.exit(f"no stop is waiting in run {args.run}")
+    print(json.dumps(shown, ensure_ascii=False))
+
+
+def answered(stdin: Any = None, stdout: Any = None) -> int:
+    """Claude Code's hook after its question dialog: record a Jaynes stop's answer, and tell the agent. Never
+    fails the dialog: anything wrong is said to the agent, or nothing at all."""
+    from jaynes import ask
+    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    try:
+        event = json.load(stdin)
+        said = ask.answered(cast(dict[str, Any], event), jaynes_home(), lambda c, run_id: _started(c, run_id)[0]) \
+            if isinstance(event, dict) else None
+    except Exception as err:  # a broken hook must not break the person's session
+        said = f"Jaynes could not read this answer: {err}"
+    if said:
+        stdout.write(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": said}}))
+    return 0
 
 
 def cmd_skill(args: argparse.Namespace) -> None:
@@ -393,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--preview-ports", help="local ports the preview may connect to, such as a backend: 8789,5432")
     r.add_argument("--suite", help="the command that runs the project's whole test suite, when Jaynes does not "
                                    "find it (fix-bug)")
+    r.add_argument("--here", action="store_true",
+                   help="started from an agent's terminal: its stops are asked there, and the page opens only when asked")
     r.add_argument("--home")
     k = sub.add_parser("check", help="find what a role gets wrong before any agent runs")
     k.add_argument("role", help="a built-in role (visual-identity, redesign, fix-bug), a role file (.toml) or module:attribute")
@@ -420,12 +461,18 @@ def main(argv: list[str] | None = None) -> int:
     u = sub.add_parser("update", help="install the newest Jaynes, if there is one")
     u.add_argument("--home")
     sub.add_parser("version")
+    ak = sub.add_parser("ask", help="the open stop of a run, as input for Claude Code's question dialog")
+    ak.add_argument("run")
+    ak.add_argument("--home")
+    sub.add_parser("answered", help="Claude Code's hook after its question dialog")
     args = ap.parse_args(argv)
     if args.cmd is None:
         _open_page(jaynes_home(), 8740)
         return 0
     if args.cmd == "hook":
         return hook.main()
+    if args.cmd == "answered":
+        return answered()
     if args.cmd == "policy":
         print(BUILT_IN_POLICY.read_text(), end="")
         return 0
@@ -435,7 +482,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
-     "skill": cmd_skill, "update": cmd_update, "version": cmd_version}[args.cmd](args)
+     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask}[args.cmd](args)
     return 0
 
 

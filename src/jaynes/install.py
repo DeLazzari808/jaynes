@@ -52,12 +52,12 @@ def hook_command(home: Path) -> str:
     return f"{'' if default else f'JAYNES_HOME={shlex.quote(str(home))} '}{base} hook"
 
 
-def _read(path: Path) -> dict[str, Any]:
+def read_settings(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text()) if path.is_file() and path.read_text().strip() else {}
 
 
-def _write(path: Path, data: dict[str, Any]) -> None:
-    if data == _read(path):
+def write_settings(path: Path, data: dict[str, Any]) -> None:
+    if data == read_settings(path):
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.is_file():
@@ -66,7 +66,7 @@ def _write(path: Path, data: dict[str, Any]) -> None:
 
 
 def status(home: Path) -> Gate:
-    hooks: dict[str, Any] = _read(settings_path()).get("hooks", {})
+    hooks: dict[str, Any] = read_settings(settings_path()).get("hooks", {})
     hooked = tuple(e for e in EVENTS if any(is_jaynes(str(h.get("command", "")))
                                             for g in hooks.get(e, []) for h in g.get("hooks", [])))
     return Gate(settings_path(), home / "jaynes.toml", hooked)
@@ -77,18 +77,18 @@ def install(home: Path) -> Gate:
     if not policy.is_file():
         policy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(BUILT_IN_POLICY, policy)
-    data = _read(settings_path())
+    data = read_settings(settings_path())
     hooks: dict[str, Any] = data.setdefault("hooks", {})
     command = {"type": "command", "command": hook_command(home)}
     for event in set(EVENTS) - set(status(home).hooked):
         group: dict[str, Any] = {"matcher": "*", "hooks": [command]} if event in TOOL_EVENTS else {"hooks": [command]}
         hooks.setdefault(event, []).append(group)
-    _write(settings_path(), data)
+    write_settings(settings_path(), data)
     return status(home)
 
 
 def remove(home: Path) -> Gate:
-    data = _read(settings_path())
+    data = read_settings(settings_path())
     hooks: dict[str, Any] = data.get("hooks", {})
     for event in list(hooks):
         groups = [{**g, "hooks": [h for h in g.get("hooks", []) if not is_jaynes(str(h.get("command", "")))]}
@@ -96,5 +96,5 @@ def remove(home: Path) -> Gate:
         hooks[event] = [g for g in groups if g["hooks"]]
         if not hooks[event]:
             del hooks[event]
-    _write(settings_path(), data)
+    write_settings(settings_path(), data)
     return status(home)

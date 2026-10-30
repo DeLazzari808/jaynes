@@ -106,7 +106,7 @@ def test_jaynes_skill_installs_the_command_and_prints_what_to_do(capsys: pytest.
     text = skill.path().read_text()
     assert text.startswith("---\nname: jaynes\n") and "$ARGUMENTS" in text
     out = capsys.readouterr().out
-    assert "/jaynes <task>" in out and "jaynes run --role" in out
+    assert "/jaynes <task>" in out and "jaynes run --here --role" in out and "jaynes ask" in out
 
 
 def test_an_installed_skill_is_kept_current_and_an_absent_one_stays_absent() -> None:
