@@ -454,7 +454,7 @@ def test_a_paused_run_shows_in_the_queue_and_continues_by_itself_when_its_quota_
     try:
         page = get(base + "/")
         assert '<span class="chip amber">paused</span>' in page and f'href="/run/{run}"' in page
-        assert '<div class="qhead"><span>Waiting</span><span>0</span></div>' in page
+        assert '<div class="qhead" data-waiting="0"><span>Waiting</span>' in page
         assert 'id="answer"' not in page and "Nothing is waiting" in page
         store = Store(tmp_path / "jaynes.sqlite3")
         deadline = time.monotonic() + 30
@@ -463,3 +463,76 @@ def test_a_paused_run_shows_in_the_queue_and_continues_by_itself_when_its_quota_
             time.sleep(0.05)
     finally:
         server.shutdown()
+
+
+def test_a_stop_while_no_tab_is_open_opens_the_page_and_an_open_tab_is_left_to_notify(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    server = make_server(tmp_path, port=0, idle_after=0, call=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        get(f"{base}/?key={server.key}")
+        get(base + "/seq")  # a tab is open
+        cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "one",
+                  "--runtime", "quick=tests.stopped:Agent"])
+        time.sleep(5)
+        assert opened == []
+        post(base + "/bye", {})  # the tab closed
+        cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "two",
+                  "--runtime", "quick=tests.stopped:Agent"])
+        deadline = time.monotonic() + 10
+        while not opened:
+            assert time.monotonic() < deadline
+            time.sleep(0.1)
+        assert opened == [server.link]
+    finally:
+        server.shutdown()
+
+
+def test_a_tab_sees_the_count_in_its_title_and_which_start_of_the_server_it_belongs_to(
+        served: tuple[str, Path, str]) -> None:
+    base, _, _ = served
+    page = get(base + "/")
+    boot = re.search(r'<body data-boot="([^"]+)">', page)
+    assert boot and get(base + "/seq").split(" ")[1] == boot.group(1)
+    assert '<div class="qhead" data-waiting="1">' in page and 'id="notify"' in page
+
+
+def test_the_page_offers_a_newer_jaynes_and_a_restart_after_an_update(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from jaynes import update
+    from jaynes.update import Installed
+    base, server = serving(tmp_path)
+    old = Installed("https://github.com/alk0x1/jaynes", "1" * 40)
+    monkeypatch.setattr(update, "RUNNING", old)
+    monkeypatch.setattr(update, "installed", lambda: old)
+    assert "A newer Jaynes" not in get(base + "/")
+    assert server.shared
+    server.shared.latest = "2" * 40
+    assert "A newer Jaynes is out." in get(base + "/") and 'action="/update"' in get(base + "/")
+    monkeypatch.setattr(update, "installed", lambda: Installed(old.url, "2" * 40))
+    page = get(base + "/")
+    assert "Jaynes was updated to 2222222." in page and 'action="/restart"' in page
+    server.shutdown()
+
+
+def test_runs_open_the_page_unless_it_already_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from jaynes import review
+    started: list[list[str]] = []
+
+    def popen(args: list[str], **kwargs: object) -> None:
+        started.append(args)
+
+    def running(home: Path, port: int) -> int:
+        return 1
+
+    monkeypatch.delenv("JAYNES_NO_PAGE")
+    monkeypatch.setattr(review.subprocess, "Popen", popen)
+    review.ensure_page(tmp_path)
+    assert started and started[0][-6:] == ["review", "--home", str(tmp_path), "--port", "8740", "--open"]
+    started.clear()
+    monkeypatch.setattr(review, "_running", running)
+    review.ensure_page(tmp_path)
+    assert started == []

@@ -25,6 +25,7 @@ import re
 import secrets
 import shutil
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -44,7 +45,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import bounds, install, role_file, roles, sandbox, verify
+from jaynes import bounds, install, role_file, roles, sandbox, skill, update, verify
 from jaynes import project as repo
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
                               continue_in_background, new_run_id, project, return_to, start_in_background)
@@ -205,6 +206,10 @@ def tokens(n: int) -> str:
 
 CSS = """
 .notice { background: var(--amber-soft); color: var(--amber); padding: 10px 16px; font-size: 13px; }
+.notice.new { background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; gap: 12px; }
+.notice.new form { margin-left: auto; }
+.notice.new .btn { padding: 6px 12px; }
+.qhead button { font: inherit; color: var(--blue); background: none; border: 0; padding: 0; cursor: pointer; text-transform: none; letter-spacing: 0; }
 :root {
   --bg: #07090d; --panel: #0e1218; --panel-2: #121823; --line: #222a36; --line-2: #2c3646;
   --ink: #eef2f7; --dim: #93a0b2; --faint: #5d6a7c;
@@ -362,14 +367,39 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 # passes without a person, accepts on the second A within two seconds, so a stray key does not release it.
 SCRIPT = """
 <script>
-const seq = %d;
+const seq = %d, boot = document.body.dataset.boot;
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
-setInterval(async () => {
+let poll = null;
+const check = async () => {
   try {
-    const r = await fetch("/seq"); const now = Number(await r.text());
-    if (now !== seq && !busy() && (document.querySelector("#editor") || {}).className !== "") location.reload();
+    const [now, at] = (await (await fetch("/seq")).text()).split(" ");
+    if (at !== boot) {  // Jaynes restarted, with a new key, and opened its own tab
+      clearInterval(poll);
+      document.body.innerHTML = '<div class="empty" style="height:100vh"><h1>Jaynes restarted in a new tab</h1><p>You can close this one.</p></div>';
+      return;
+    }
+    if (Number(now) !== seq && !busy() && (document.querySelector("#editor") || {}).className !== "") location.reload();
   } catch (e) {}
-}, 2500);
+};
+check(); poll = setInterval(check, 2500);
+addEventListener("pagehide", () => navigator.sendBeacon("/bye"));
+// A stop that appeared since this tab last loaded: the count in the title, and a notification if the person
+// is elsewhere. Without a tab open, the server opens one instead.
+const qhead = document.querySelector(".qhead"), waiting = qhead ? Number(qhead.dataset.waiting) : 0;
+if (waiting) document.title = "(" + waiting + ") " + document.title;
+let before = null;
+try { before = sessionStorage.getItem("jaynes-waiting"); sessionStorage.setItem("jaynes-waiting", waiting); } catch (e) {}
+const first = document.querySelector("a.item.stop, a.item.blocked, a.item.idle");
+if ("Notification" in window && Notification.permission === "granted" && before !== null && waiting > Number(before)
+    && !document.hasFocus() && first) {
+  const n = new Notification("Jaynes: your answer", {body: first.querySelector(".t").textContent, tag: "jaynes"});
+  n.onclick = () => { window.focus(); n.close(); location.href = first.getAttribute("href"); };
+}
+const ask = document.querySelector("#notify");
+if (ask && "Notification" in window && Notification.permission === "default") {
+  ask.classList.remove("hidden");
+  ask.addEventListener("click", () => Notification.requestPermission().then(() => ask.classList.add("hidden")));
+}
 const form = document.querySelector("#answer");
 if (form) {
   const note = form.querySelector("[name=note]"), hint = form.querySelector("#hint"), editor = form.querySelector("#editor");
@@ -478,6 +508,8 @@ class Shared:
     first_seen: dict[tuple[str, str, float], float] = field(default_factory=dict[tuple[str, str, float], float])
     history: tuple[float, Report | None, str] | None = None  # when it was read, the report, the policy used
     previews: Previews = field(default_factory=Previews)
+    polled: float = 0.0  # when a tab opened as the person last asked for /seq: one is open
+    latest: str | None = None  # the commit Jaynes's address points at, read in the background
 
 
 class Review:
@@ -555,7 +587,9 @@ class Review:
         body = "".join(rows) or '<div class="empty-q">Nothing is waiting.</div>'
         return ('<aside><div class="brand"><a href="/">Jaynes</a> <span>review</span><nav>'
                 '<a href="/">Queue</a><a href="/new">New run</a><a href="/roles">Roles</a><a href="/history">History</a><a href="/log">Log</a><a href="/setup">Setup</a></nav></div>'
-                f'<div class="qhead"><span>Waiting</span><span>{sum(w.needs_person for w in items)}</span></div>'
+                f'<div class="qhead" data-waiting="{sum(w.needs_person for w in items)}"><span>Waiting</span>'
+                '<button id="notify" class="hidden" type="button">Notify me</button>'
+                f'<span>{sum(w.needs_person for w in items)}</span></div>'
                 f'{body}{foot}</aside>')
 
     # pages ------------------------------------------------------------------
@@ -910,15 +944,85 @@ class Review:
                 + f'<form method="post" action="/setup" class="checks"><input type="hidden" name="token" value="{self.shared.token}">'
                 f'{buttons}</form>'
                 f'<div class="sub">Install and Remove rewrite {esc(str(g.settings))} and keep the previous file as '
-                f'{esc(g.settings.name)}.jaynes-backup. Your other hooks and settings stay as they are.</div></div>')
+                f'{esc(g.settings.name)}.jaynes-backup. Your other hooks and settings stay as they are.</div>'
+                + self._command_part() + self._version_part() + '</div>')
         return page("Setup", self.sidebar(None), main, self.seq())
+
+    def _command_part(self) -> str:
+        if skill.installed():
+            state = '<span class="chip green">added</span>'
+            button = '<button class="btn" name="action" value="skill-remove">Remove</button>'
+        else:
+            state = '<span class="chip amber">not added</span>'
+            button = '<button class="btn go" name="action" value="skill">Add</button>'
+        return ('<div><h2>/jaynes in Claude Code</h2><div class="sub">Type /jaynes and the task in Claude Code, in '
+                'your project: the agent picks the role, starts the run, and this page calls you at its stops.</div>'
+                f'</div><div class="box"><table class="kv"><tr><td>state</td><td>{state}</td></tr>'
+                f'<tr><td>file</td><td class="m">{esc(str(skill.path()))}</td></tr></table></div>'
+                f'<form method="post" action="/setup" class="checks"><input type="hidden" name="token" '
+                f'value="{self.shared.token}">{button}</form>')
+
+    def _version_part(self) -> str:
+        at = update.RUNNING
+        where = (f'{esc(at.short)} <span class="m">from {esc(at.url)}</span>' if at else
+                 f'<span class="m">the files in {esc(str(Path(__file__).parent))}, not an install from git</span>')
+        return (f'<div><h2>Version</h2></div><div class="box"><table class="kv"><tr><td>commit</td><td>{where}</td>'
+                f'</tr></table></div>')
 
     def setup(self, fields: dict[str, str]) -> tuple[int, str]:
         action = fields.get("action", "")
-        if action not in ("install", "remove"):
+        if action == "skill":
+            skill.install()
+        elif action == "skill-remove":
+            skill.path().unlink(missing_ok=True)
+        elif action in ("install", "remove"):
+            (install.install if action == "install" else install.remove)(self.c.home)
+        else:
             return 400, self.setup_page()
-        (install.install if action == "install" else install.remove)(self.c.home)
         return 303, "/setup"
+
+    def banner(self) -> str:
+        """A newer Jaynes: one installed on disk since this page started, or one out at its address."""
+        disk = update.installed()
+        running = update.RUNNING
+        if running is None or disk is None:
+            return ""
+        if disk.commit != running.commit:
+            text, action, label = f"Jaynes was updated to {disk.short}.", "/restart", "Restart the page"
+        elif self.shared.latest and self.shared.latest != disk.commit:
+            text, action, label = "A newer Jaynes is out.", "/update", "Update"
+        else:
+            return ""
+        return (f'<div class="notice new"><span>{text}</span><form method="post" action="{action}">'
+                f'<input type="hidden" name="token" value="{self.shared.token}">'
+                f'<button class="btn go">{label}</button></form></div>')
+
+    def update(self, fields: dict[str, str]) -> tuple[int, str]:
+        working = [w for w in self.queue() if w.kind == "running"]
+        if working:  # a run imports parts of Jaynes as it goes, so the files must not change under it
+            return 200, self.message("Update after the runs finish",
+                                     f"{len(working)} run{' is' if len(working) == 1 else 's are'} working. "
+                                     "Jaynes changes its files when it updates, so it waits for them.")
+        at = update.installed()
+        ok, out = update.reinstall(at) if at else (False, "Jaynes is not installed from git")
+        if not ok:
+            return 200, self.message("The update failed", out)
+        if update.installed() == update.RUNNING:
+            return 200, self.message("Jaynes is up to date", out)
+        return 200, self.restarting()
+
+    def restart(self, fields: dict[str, str]) -> tuple[int, str]:
+        return 200, self.restarting()
+
+    def restarting(self) -> str:
+        main = ('<div class="crumbs"><b>Restarting</b></div><div class="body" style="display:flex">'
+                '<div class="empty"><h1>Restarting Jaynes</h1><p>It opens in a new tab in a moment.</p></div></div>')
+        return page("Restarting", self.sidebar(None), main, self.seq())
+
+    def message(self, title: str, text: str) -> str:
+        main = (f'<div class="crumbs"><b>{esc(title)}</b></div><div class="body"><div><h1>{esc(title)}</h1>'
+                f'<pre class="sub">{esc(text)}</pre></div></div>')
+        return page(title, self.sidebar(None), main, self.seq())
 
     def roles_page(self) -> str:
         names = sorted({str(ev.payload["role"]) for ev in self.c.store.events("RunStarted")})
@@ -1280,9 +1384,11 @@ class Review:
 
 # --- HTTP ------------------------------------------------------------------------------
 
-def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_every: float = 15.0) -> ReviewServer:
+def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_every: float = 15.0,
+                call: bool = False) -> ReviewServer:
     """A review server for ``home`` on 127.0.0.1; ``port=0`` picks a free one. Every ``wake_every`` seconds it
-    continues the runs whose quota pause has ended, since nothing else would."""
+    continues the runs whose quota pause has ended, since nothing else would. With ``call``, it is the person's
+    page: it opens the browser at a new stop when no tab is open, and looks for a newer Jaynes."""
     if str(Path.cwd()) not in sys.path:
         sys.path.insert(0, str(Path.cwd()))  # role modules are imported from the project, as `jaynes run` does
     shared = Shared(secrets.token_urlsafe(16), secrets.token_urlsafe(24), idle_after)
@@ -1293,8 +1399,11 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
 
         def _send(self, status: int, body: str | bytes, kind: str = "text/html; charset=utf-8",
                   location: str | None = None, frame: str = "DENY", cookie: str | None = None) -> None:
-            if isinstance(body, str) and kind.startswith("text/html") and not self._person():
-                body = body.replace("<main>", f'<main><div class="notice">{NOT_PERSON}</div>', 1)
+            if isinstance(body, str) and kind.startswith("text/html"):
+                notice = (f'<div class="notice">{NOT_PERSON}</div>' if not self._person() else
+                          Review(home, shared).banner())
+                body = body.replace("<main>", f"<main>{notice}", 1).replace(
+                    "<body>", f'<body data-boot="{shared.token}">', 1)
             data = body.encode() if isinstance(body, str) else body
             self.send_response(status)
             if cookie:
@@ -1359,8 +1468,10 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
             match parts:
                 case []:
                     self._send(200, app.queue_page())
-                case ["seq"]:
-                    self._send(200, str(app.seq()), "text/plain")
+                case ["seq"]:  # also says which start of the server answers, so a tab sees a restart
+                    if self._person():
+                        shared.polled = time.time()
+                    self._send(200, f"{app.seq()} {shared.token}", "text/plain")
                 case ["stop", run_id, step]:
                     self._send(200, app.stop_page(run_id, step))
                 case ["stop", run_id]:  # a run blocked with no step, in logs from before it had one
@@ -1405,7 +1516,13 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                 return self._send(400, "bad Content-Length", "text/plain")
             fields = dict(urllib.parse.parse_qsl(self.rfile.read(length).decode(errors="replace"), keep_blank_values=True))
             path = urllib.parse.urlsplit(self.path).path
-            handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss, "/start": Review.start, "/setup": Review.setup}
+            if path == "/bye":  # a tab closing or reloading; a reload asks for /seq again at once
+                if self._person():
+                    shared.polled = 0.0
+                return self._send(204, b"", "text/plain")
+            handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
+                        "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
+                        "/restart": Review.restart}
             if path not in handlers:
                 return self._send(404, "not found", "text/plain")
             if not secrets.compare_digest(fields.get("token", ""), shared.token):
@@ -1418,10 +1535,55 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                 self._send(303, "", location=out)
             else:
                 self._send(status, out)
+            if path in ("/update", "/restart") and update.installed() != update.RUNNING:
+                threading.Timer(0.5, cast(ReviewServer, self.server).restart).start()
 
-    server = ReviewServer(("127.0.0.1", port), Handler, shared.previews, shared.key)
+    server = ReviewServer(("127.0.0.1", port), Handler, shared.previews, shared.key, home)
+    server.shared = shared
     threading.Thread(target=_wake, args=(home, wake_every, server.stopping), daemon=True).start()
+    if call:
+        threading.Thread(target=_call, args=(home, shared, server.link, server.stopping), daemon=True).start()
+        threading.Thread(target=_look, args=(shared, server.stopping), daemon=True).start()
     return server
+
+
+def _call(home: Path, shared: Shared, link: str, stopping: threading.Event, every: float = 2.0,
+          alive: float = 75.0) -> None:
+    """Open the page when something new needs the person and no tab is open; an open tab notifies by itself. A
+    hidden tab may ask for /seq only once a minute, so a tab counts as open for ``alive`` seconds after it asked."""
+    import webbrowser
+    seen: set[tuple[str, str, float]] | None = None
+    while not stopping.wait(every):
+        try:
+            now = {(w.run_id, w.step, w.since) for w in Conductor(home).queue(idle_after=shared.idle_after)
+                   if w.needs_person}
+        except Exception:  # a locked or half-written log is read again on the next tick
+            continue
+        if seen is not None and now - seen and time.time() - shared.polled > alive:
+            webbrowser.open(link)
+        seen = now
+
+
+def _look(shared: Shared, stopping: threading.Event, every: float = 6 * 3600) -> None:
+    """What Jaynes's address points at, now and every ``every`` seconds, for the page's banner."""
+    at = update.RUNNING
+    while at is not None:
+        shared.latest = update.latest(at.url) or shared.latest
+        if stopping.wait(every):
+            return
+
+
+def ensure_page(home: Path, port: int = 8740) -> None:
+    """Start ``home``'s review page in the background, opened in the browser, unless it already runs. Its link,
+    which lets a browser answer as the person, goes only to the browser, never to a log an agent reads."""
+    if os.environ.get("JAYNES_NO_PAGE") or _running(home.resolve(), port) is not None:
+        return
+    home.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [os.getcwd(), os.environ.get("PYTHONPATH")])))
+    with (home / "review.log").open("ab") as log:
+        subprocess.Popen([sys.executable, "-m", "jaynes.cli", "review", "--home", str(home), "--port", str(port),
+                          "--open"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log, env=env,
+                         start_new_session=True)
 
 
 def _wake(home: Path, every: float, stopping: threading.Event) -> None:
@@ -1445,9 +1607,11 @@ class ReviewServer(ThreadingHTTPServer):
     """Stops the previews it started when it shuts down. ``link`` opens the page as the person."""
 
     def __init__(self, address: tuple[str, int], handler: type[BaseHTTPRequestHandler], previews: Previews,
-                 key: str) -> None:
+                 key: str, home: Path) -> None:
         self.previews = previews  # set first: a port in use closes the server inside __init__
         self.key = key
+        self.home = home
+        self.shared: Shared | None = None
         self.stopping = threading.Event()  # ends the thread that continues paused runs
         super().__init__(address, handler)
 
@@ -1465,6 +1629,13 @@ class ReviewServer(ThreadingHTTPServer):
         self.stopping.set()
         self.previews.stop_all()
 
+    def restart(self) -> None:
+        """Become the Jaynes installed now, in this same process, so whoever started the page still holds it. The
+        new start has a new key and opens its own tab; the socket closes on exec."""
+        self.previews.stop_all()
+        os.execv(sys.executable, [sys.executable, "-m", "jaynes.cli", "review", "--home", str(self.home),
+                                  "--port", str(self.server_address[1]), "--open"])
+
 
 def _running(home: Path, port: int) -> int | None:
     """The process serving ``home``'s page on ``port``, if one still is."""
@@ -1477,17 +1648,21 @@ def _running(home: Path, port: int) -> int | None:
     return pid if info.get("port") == port else None
 
 
-def serve(home: Path, port: int, browser: bool = False) -> None:
-    """Serve the page; ``browser`` opens it with its link, as the person. If ``home``'s page already runs on
-    ``port``, point to it instead: its key stays in the browser that opened it first."""
+def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> None:
+    """Serve the page; ``browser`` opens it with its link, as the person, and makes it call the person at stops.
+    If ``home``'s page already runs on ``port``, ``point`` to it instead: its key stays in the browser that
+    opened it first."""
     home = home.resolve()
     home.mkdir(parents=True, exist_ok=True)  # a new home: the page records itself there before any request
+    skill.refresh()
     try:
-        server = make_server(home, port)
+        server = make_server(home, port, call=browser)
     except OSError as err:
         if err.errno != errno.EADDRINUSE:
             raise
         pid = _running(home, port)
+        if not point:  # started for a run, and another start won the port
+            return
         if pid is None:
             sys.exit(f"port {port} is in use by another program or another Jaynes home; stop it or pass --port")
         print(f"Jaynes review is already running on http://127.0.0.1:{port}/ (process {pid})", flush=True)

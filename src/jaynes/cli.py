@@ -17,6 +17,9 @@
   jaynes review [--port 8740]       the review page on 127.0.0.1: queue, stops, runs, roles, log
   jaynes policy                     print the built-in policy, a starting point for ~/.jaynes/jaynes.toml
   jaynes demo [--port 8740]         a scripted run that stops for you, then the review page
+  jaynes skill                      add /jaynes to Claude Code: /jaynes <task> runs the task with Jaynes
+  jaynes update                     install the newest Jaynes from where this one came from, if there is one
+  jaynes version                    the commit this Jaynes was installed from
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from jaynes import bounds, gate, hook, verify
+from jaynes import bounds, gate, hook, skill, update, verify
 from jaynes.history import past_calls, report
 from jaynes.install import BUILT_IN_POLICY
 from jaynes.policy import Policy, classify, find_policy, jaynes_home, load_policy
@@ -227,11 +230,16 @@ def cmd_run(args: argparse.Namespace) -> None:
         if args.suite:
             started["suite"] = args.suite
     from jaynes.project import ProjectError
+    from jaynes.review import ensure_page
+    skill.refresh()
+    ensure_page(c.home)  # the person sees the run, and is called at its stops
     try:
         result = c.run(r, task, run_id, started=started,
                        project=Path(args.project) if args.project and args.role else None)
     except ProjectError as err:
         sys.exit(str(err))
+    if result.status in ("waiting", "blocked"):
+        ensure_page(c.home)  # in case it was closed while the run worked
     print(json.dumps({"run": run_id, "status": result.status, "step": result.step, "until": result.until,
                       "reasons": list(result.reasons)}))
 
@@ -291,6 +299,44 @@ def cmd_answer(args: argparse.Namespace) -> None:
         sys.exit(f"run {args.run} is busy in another process; try again in a moment")
     continue_in_background(c.home, args.run)
     print(json.dumps({"run": args.run, "step": args.step, "answer": answer, "continuing": True}))
+
+
+def cmd_skill(args: argparse.Namespace) -> None:
+    where = skill.install()
+    body = skill.SOURCE.read_text().split("---\n", 2)[2].strip()
+    print(f"Installed {where}: in Claude Code, /jaynes <task> runs the task with Jaynes.\n\n"
+          f"To run a task now, do this, with the task in place of $ARGUMENTS:\n\n{body}")
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    from jaynes.conductor import Conductor
+    at = update.installed()
+    if at is None:
+        print(f"Jaynes is not installed from git ({Path(__file__).parent}); update it where it came from")
+        return
+    now = update.latest(at.url)
+    if now is None:
+        print(f"could not reach {at.url}; Jaynes stays at {at.short}")
+        return
+    if now == at.commit:
+        print(f"Jaynes is up to date ({at.short})")
+        return
+    working = [w for w in Conductor(_home(args)).queue() if w.kind == "running"]
+    if working:  # a run imports parts of Jaynes as it goes, so the files must not change under it
+        print(f"{len(working)} run{' is' if len(working) == 1 else 's are'} working; "
+              f"Jaynes updates after {'it finishes' if len(working) == 1 else 'they finish'}")
+        return
+    ok, out = update.reinstall(at)
+    if not ok:
+        sys.exit(f"update failed:\n{out}")
+    after = update.installed()
+    print(f"Jaynes updated: {at.short} -> {after.short if after else now[:7]}. "
+          "A review page that is open offers to restart.")
+
+
+def cmd_version(args: argparse.Namespace) -> None:
+    at = update.installed()
+    print(f"{at.short} from {at.url}" if at else f"not installed from git ({Path(__file__).parent})")
 
 
 def cmd_demo(args: argparse.Namespace) -> None:
@@ -364,11 +410,16 @@ def main(argv: list[str] | None = None) -> int:
     v = sub.add_parser("review")
     v.add_argument("--port", type=int, default=8740)
     v.add_argument("--home")
+    v.add_argument("--open", action="store_true", help="open the page in the browser, unless it already runs")
     sub.add_parser("policy")
     d = sub.add_parser("demo")
     d.add_argument("--port", type=int, default=8740)
     d.add_argument("--home")
     d.add_argument("--no-serve", action="store_true", help="start the run and exit, without the review page")
+    sub.add_parser("skill", help="add /jaynes to Claude Code")
+    u = sub.add_parser("update", help="install the newest Jaynes, if there is one")
+    u.add_argument("--home")
+    sub.add_parser("version")
     args = ap.parse_args(argv)
     if args.cmd is None:
         _open_page(jaynes_home(), 8740)
@@ -380,10 +431,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "review":
         from jaynes.review import serve
-        serve(_home(args), args.port)
+        serve(_home(args), args.port, browser=args.open, point=not args.open)
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
-     "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo}[args.cmd](args)
+     "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
+     "skill": cmd_skill, "update": cmd_update, "version": cmd_version}[args.cmd](args)
     return 0
 
 
