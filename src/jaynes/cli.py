@@ -22,6 +22,7 @@
   jaynes demo [--port 8740]         a scripted run that stops for you, then the review page
   jaynes skill                      add /jaynes to Claude Code: /jaynes <task> runs the task with Jaynes, and
                                     the hook that records answers given in its question dialog
+  jaynes guide                      how an agent carries out a change through Jaynes: the skill's steps
   jaynes update                     install the newest Jaynes from where this one came from, if there is one
   jaynes version                    the commit this Jaynes was installed from
 """
@@ -347,7 +348,12 @@ def cmd_skill(args: argparse.Namespace) -> None:
         said = "The Jaynes plugin is installed: in Claude Code, /jaynes <task> runs the task with Jaynes."
     else:
         said = f"Installed {skill.install()}: in Claude Code, /jaynes <task> runs the task with Jaynes."
-    print(f"{said}\n\nTo run a task now, do this, with the task in place of $ARGUMENTS:\n\n{body}")
+    print(f"{said}\n\nTo run a task now, do this, with the task in place of $ARGUMENTS:\n\n{body}\n\n"
+          f"jaynes guide prints:\n\n{skill.GUIDE.read_text().strip()}")
+
+
+def cmd_guide(args: argparse.Namespace) -> None:
+    print(skill.GUIDE.read_text(), end="")
 
 
 def cmd_update(args: argparse.Namespace) -> None:
@@ -362,6 +368,8 @@ def cmd_update(args: argparse.Namespace) -> None:
         return
     if now == at.commit:
         print(f"Jaynes is up to date ({at.short})")
+        if said := skill.update_plugin(now):
+            print(said)
         return
     working = [w for w in Conductor(_home(args)).queue() if w.kind == "running"]
     if working:  # a run imports parts of Jaynes as it goes, so the files must not change under it
@@ -374,6 +382,8 @@ def cmd_update(args: argparse.Namespace) -> None:
     after = update.installed()
     print(f"Jaynes updated: {at.short} -> {after.short if after else now[:7]}. "
           "A review page that is open offers to restart.")
+    if said := skill.update_plugin(now):
+        print(said)
 
 
 def cmd_version(args: argparse.Namespace) -> None:
@@ -461,6 +471,7 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--home")
     d.add_argument("--no-serve", action="store_true", help="start the run and exit, without the review page")
     sub.add_parser("skill", help="add /jaynes to Claude Code")
+    sub.add_parser("guide", help="how an agent carries out a change through Jaynes; the skill runs it")
     u = sub.add_parser("update", help="install the newest Jaynes, if there is one")
     u.add_argument("--home")
     sub.add_parser("version")
@@ -485,7 +496,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
-     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask}[args.cmd](args)
+     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask,
+     "guide": cmd_guide}[args.cmd](args)
     return 0
 
 

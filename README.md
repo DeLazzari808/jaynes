@@ -135,7 +135,11 @@ shows a stop in full and offers Change and Context too. When a newer Jaynes
 is out, the page offers to update and restarts itself.
 
 The plugin is the skill and the hook that records your answers in the dialog,
-installed by you: no agent writes your Claude Code settings.
+installed by you: no agent writes your Claude Code settings. The skill only
+says when to use Jaynes; the steps come from `jaynes guide`, so they change
+with the `jaynes` command. The agent runs `jaynes update` at the start of each
+task, and it brings the plugin to the same commit with Claude Code's own
+`claude plugin update`, used from the next session.
 
 Or by hand:
 
@@ -206,7 +210,7 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes ask`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes ask`, `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps

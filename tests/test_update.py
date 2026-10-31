@@ -109,6 +109,17 @@ def test_jaynes_skill_installs_the_command_and_prints_what_to_do(capsys: pytest.
     assert "/jaynes <task>" in out and "jaynes run --here --role" in out and "jaynes ask" in out
 
 
+def test_the_skill_only_says_when_and_jaynes_guide_says_how_naming_every_built_in_role(
+        capsys: pytest.CaptureFixture[str]) -> None:
+    from jaynes.roles import BUILT_IN
+    text = skill.SOURCE.read_text()
+    assert "jaynes guide" in text and "jaynes run" not in text  # steps change with the CLI, not with the plugin
+    cli.main(["guide"])
+    out = capsys.readouterr().out
+    assert "jaynes run --here --role" in out and "jaynes ask" in out and "$ARGUMENTS" not in out
+    assert all(f"`{name}`" in out for name in BUILT_IN)
+
+
 def test_an_installed_skill_is_kept_current_and_an_absent_one_stays_absent() -> None:
     skill.refresh()
     assert not skill.path().exists()
@@ -116,3 +127,25 @@ def test_an_installed_skill_is_kept_current_and_an_absent_one_stays_absent() -> 
     skill.path().write_text("old")
     skill.refresh()
     assert skill.path().read_text() == skill.SOURCE.read_text()
+
+
+def test_update_brings_the_plugin_to_the_same_commit_through_claude_code(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    (bin_ / "claude").write_text(f'#!/bin/sh\necho "$@" >> {tmp_path}/claude.log\n')
+    (bin_ / "claude").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:/usr/bin:/bin")
+    monkeypatch.setattr(update, "installed", returns(AT))
+    monkeypatch.setattr(update, "latest", returns(AT.commit))
+    skill.plugins().write_text('{"version": 2, "plugins": {"jaynes@jaynes": [{"scope": "user", '
+                               '"version": "cb9f7e00212a"}]}}')
+    cli.main(["update", "--home", str(tmp_path)])
+    assert (tmp_path / "claude.log").read_text() == "plugin marketplace update jaynes\nplugin update jaynes@jaynes\n"
+    assert "plugin updated" in capsys.readouterr().out
+
+    (tmp_path / "claude.log").unlink()
+    skill.plugins().write_text('{"version": 2, "plugins": {"jaynes@jaynes": [{"scope": "user", '
+                               f'"version": "{AT.commit[:12]}"}}]}}}}')
+    cli.main(["update", "--home", str(tmp_path)])
+    assert not (tmp_path / "claude.log").exists()  # already at that commit
