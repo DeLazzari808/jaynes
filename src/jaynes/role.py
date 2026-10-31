@@ -138,6 +138,7 @@ class Step(Generic[T]):
     effect: Effect = "pure"  # what a trusted executor does to the world
     ends: Callable[[Any], bool] | None = None  # an output it holds true for ends the run once a person accepts it
     max_messages: int | None = None  # messages per agent turn, where the runtime counts them; None: its default
+    asks: Callable[[Any, str], bool] | None = None  # of the output and the step's diff: whether the stop asks at all
 
     @property
     def executor(self) -> str:
@@ -169,6 +170,7 @@ class Step(Generic[T]):
         s = self.stop
         question = [code_hash(self.question)] if self.question else []  # absent, so older windows are kept
         question += [f"ends:{code_hash(self.ends)}"] if self.ends else []
+        question += [f"asks:{code_hash(self.asks)}"] if self.asks else []
         return _sha("\0".join([self.role.name, self.name, self.prompt_hash(), self.check_hash(), *question,
                                repr(s.budget), repr(s.delta), repr(s.sampled), model]))[:16]
 
@@ -190,7 +192,7 @@ class Role:
              question: Callable[[T, Witnesses], str] | None = None,
              project: Literal["read", "write"] | None = None, may_change: Sequence[str] = (),
              web: bool = False, effect: Effect | None = None, ends: Callable[[T], bool] | None = None,
-             max_messages: int | None = None) -> Step[T]:
+             max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None) -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -205,6 +207,8 @@ class Role:
         if ends is not None and stop is None:
             raise ValueError(f"step {name!r} ends the run only at a stop, where a person accepts the ending; "
                              "give it a stop")
+        if asks is not None and stop is None:
+            raise ValueError(f"step {name!r} says when its stop asks, but has no stop")
         if question is not None and stop is None:
             raise ValueError(f"step {name!r} has a question but no stop to ask it at")
         if may_change and project != "write":
@@ -231,13 +235,14 @@ class Role:
         s: Step[T] = Step(self, name, output, tuple(needs), checks, stop, run_by, agent or self.agent,
                           instructions, max_turns, deadline, cast(Callable[[Any, Witnesses], str] | None, question),
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
-                          max_messages)
+                          max_messages, cast(Callable[[Any, str], bool] | None, asks))
         self.steps.append(s)
         return s
 
     def fingerprint(self) -> str:
         parts = [self.name] + [
             f"{s.name}:{s.executor}:{s.prompt_hash()}:{s.check_hash()}:{s.stop}:{[n.name for n in s.needs]}"
+            + (f":asks:{code_hash(s.asks)}" if s.asks else "")  # appended only when set, so older roles keep theirs
             for s in self.steps
         ]
         return _sha("\0".join(parts))[:16]

@@ -93,13 +93,14 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
 | Built-in role fix-bug: a failing test first, then a fix, both run in the box | Works; first real run delivered its branch |
+| Built-in roles build-feature (the agreed plan's tests first, then the code) and small-change (no stop unless the change is big) | Works in tests; no real run yet |
 
 Missing, roughly in order:
 
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
-- **More built-in roles** that need no design taste to check: build a feature
-  (a spec stop, then tests), upgrade dependencies.
+- **More built-in roles** that need no design taste to check, such as
+  upgrading dependencies.
 - **Choosing among two or three directions** at a stop, instead of one.
 - **A box on Linux.** There, previews and test runs refuse to run unless
   `JAYNES_UNBOXED=1`.
@@ -123,9 +124,11 @@ marketplace, and press Enter to install it for your user.
 /plugin install jaynes --marketplace alk0x1/jaynes
 ```
 
-Then ask for a task with Jaynes, such as "make the team page dark and calm,
-with Jaynes". The first time, the agent installs the `jaynes` command with uv.
-It picks the role and starts the run. At each stop the agent shows you the
+Then work as usual: talk the change through with the agent and approve the
+plan ("go ahead", "do it"). The agent hands it to Jaynes by itself; you can
+also ask for a task "with Jaynes". The first time, the agent installs the
+`jaynes` command with uv. It picks the role and starts the run; a small
+change goes through with the suite and no stop. At each stop the agent shows you the
 question and its evidence in Claude Code's question dialog, and you answer
 there: Accept, or Return with a note. The review page, opened by `jaynes`,
 shows a stop in full and offers Change and Context too. When a newer Jaynes
@@ -168,7 +171,13 @@ Everything else happens in the page:
   the test. Then the agent fixes the code, never the
   tests, until Jaynes sees those tests and the whole suite pass. If the agent
   finds no bug a test can show, it says why and you decide: accepting ends
-  the run with nothing changed. The agent runs the tests itself too. The box
+  the run with nothing changed. The agent runs the tests itself too.
+  **build-feature** works the same way from the plan you approved: tests that
+  fail because the feature does not exist yet, a stop where you see whether
+  they describe what you agreed, then the code, then a stop before the merge.
+  **small-change** is the light path: the agent makes the change and Jaynes
+  runs the suite, with no stop, unless the diff has more than 30 changed lines
+  or touches a path that runs later; then you see it. The box
   reaches no internet, only local ports (tests that start servers or use a
   local database work), so the suite must pass at your last commit with its
   dependencies already installed (`node_modules`, `.venv`). With a preview command, such as

@@ -881,7 +881,7 @@ class Review:
                 f'<label><span class="label">Test suite</span>'
                 f'<input type="text" name="suite" placeholder="npm test" value="{esc(f.get("suite", ""))}">'
                 f'<span class="m" style="margin-top:6px">Optional. The command that runs all the project\'s tests, '
-                f'for fix-bug; Jaynes finds it when the project uses pytest, a test script, go, cargo or make.'
+                f'for fix-bug, build-feature and small-change; Jaynes finds it when the project uses pytest, a test script, go, cargo or make.'
                 f'</span></label>'
                 + (f'<div class="err">{esc(error)}</div>' if error else '')
                 + '<button class="btn go" type="submit">Start the run</button></form></div>')
@@ -1361,7 +1361,8 @@ class Review:
             "TurnInterrupted": lambda: str(p["reason"]),
             "Checked": lambda: f"by {p['source']}" + (f", output {str(p['output_hash'])[:12]}" if p.get("output_hash") else ""),
             "StopOpened": lambda: f"{p['status']}, {p['n']} labels, {p['k']} errors",
-            "StopSkipped": lambda: f"certified, coin {float(p['coin']):.2f}",
+            "StopSkipped": lambda: ("small change, not asked" if p["status"] == "small" else
+                                    f"certified, coin {float(p['coin']):.2f}"),
             "StopAnswered": lambda: (f"{p['answer']} to {p['to']}" + (f" ({p['revises']['label']} for {p['to']})"
                                                                       if p.get("revises") else "")
                                      if p.get("to") else

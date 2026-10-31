@@ -52,7 +52,8 @@ def test_the_demo_role_can_be_started_from_the_page_and_stops_for_you(served: tu
     base, home = served
     page = get(base + "/new")
     assert options(page) == ["jaynes.demo:ROLE", "jaynes.roles.visual_identity:ROLE",
-                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE"]
+                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE",
+                             "jaynes.roles.build_feature:ROLE", "jaynes.roles.small_change:ROLE"]
 
     assert '<option value="jaynes.demo:ROLE" selected>' in page  # with nothing run yet
     run = start(base, {**form(page), "role": "jaynes.demo:ROLE", "ref": "", "task": "People"})
@@ -70,7 +71,8 @@ def test_roles_already_run_are_offered_with_their_runtimes(served: tuple[str, Pa
               "--runtime", "quick=tests.stopped:Agent"])
     page = get(base + "/new")
     assert options(page) == ["jaynes.demo:ROLE", "jaynes.roles.visual_identity:ROLE",
-                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE", "tests.stopped:ROLE"]
+                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE",
+                             "jaynes.roles.build_feature:ROLE", "jaynes.roles.small_change:ROLE", "tests.stopped:ROLE"]
     assert '<option value="tests.stopped:ROLE" selected>' in page  # the role run last is proposed first
     run = start(base, {**form(page), "role": "tests.stopped:ROLE", "ref": "", "task": "again"})
     store = Store(home / "jaynes.sqlite3")

@@ -664,6 +664,9 @@ class Conductor:
         sp = step.stop
         later = list(s.checked.get("floor") or [])  # paths that run later: a person sees them every time
         ending = self._ends(step, s)  # only a person ends a run early
+        if not later and not ending and step.asks is not None and not self._asks(step, s):
+            self._emit(run_id, "StopSkipped", {"step": step.name, "status": "small", "fingerprint": fp})
+            return
         if not sp.sampled or later or ending:
             status = "floor"
         elif bounds.certified(n, k, sp.budget, sp.delta):
@@ -692,6 +695,18 @@ class Conductor:
         if step.ends is None or step.output is None or s.checked is None:
             return False
         return bool(step.ends(step.output.model_validate_json(self._object(str(s.checked["output_hash"])))))
+
+    def _asks(self, step: Step[Any], s: StepState) -> bool:
+        """Whether the step's own condition wants a person for this output and diff; a broken one asks."""
+        assert step.asks is not None and s.checked is not None
+        value = None if step.output is None else step.output.model_validate_json(
+            self._object(str(s.checked["output_hash"])))
+        patch = s.checked.get("patch")
+        diff = (self.home / "objects" / f"{patch}.patch").read_bytes().decode(errors="replace") if patch else ""
+        try:
+            return bool(step.asks(value, diff))
+        except Exception:
+            return True
 
     def _question(self, step: Step[Any], s: StepState, st: RunState) -> str | None:
         if step.question is None or s.checked is None:

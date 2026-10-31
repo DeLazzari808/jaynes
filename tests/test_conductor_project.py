@@ -264,3 +264,41 @@ def test_a_change_at_a_project_stop_is_checked_with_the_projects_dependencies(re
     assert c.run(r, "t", "r1", project=repo).status == "waiting"  # the agent's turn passed the check
     c.answer(r, "r1", "note", "change", output={"text": "edited"}, by="person")
     assert payloads(c, "r1", "Checked")[-1]["source"] == "person"
+
+
+def test_a_stop_that_asks_only_of_some_changes_lets_the_others_through_unless_they_touch_the_floor(
+        repo: Path, tmp_path: Path) -> None:
+    r = role("paint", agent="fake")
+    seen: list[str] = []
+
+    def big(out: Note, patch: str) -> bool:
+        seen.append(patch)
+        return patch.count("\n+") > 2
+
+    r.step("apply", output=Note, project="write", may_change=["**"], stop=stop(0.05, sampled=False), asks=big)
+    agent = Scripted({("apply", 1): edit("src/app.css", ":root { --bg: #000000; }\n", {"text": "dark"})})
+    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", "r1", project=repo).status == "finished"
+    assert "+:root { --bg: #000000; }" in seen[0]
+    [skipped] = payloads(c, "r1", "StopSkipped")
+    assert skipped["status"] == "small"
+    assert git(repo, "show", "jaynes/r1:src/app.css") == ":root { --bg: #000000; }"
+
+    agent = Scripted({("apply", 1): edit("src/app.css", "a {}\nb {}\nc {}\n", {"text": "more"})})
+    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", "r2", project=repo).status == "waiting"
+    assert payloads(c, "r2", "StopOpened")[0]["status"] == "floor"
+
+    agent = Scripted({("apply", 1): edit("package.json", "{}\n", {"text": "tiny"})})
+    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", "r3", project=repo).status == "waiting"  # a path that runs later: always a person
+    assert payloads(c, "r3", "StopOpened")[0]["floor_paths"] == ["package.json"]
+
+
+def test_a_stop_condition_needs_a_stop_and_changes_the_stops_fingerprint() -> None:
+    with pytest.raises(ValueError, match="asks"):
+        role("x").step("s", output=Note, asks=lambda out, patch: True)
+    a, b = role("x"), role("x")
+    sa = a.step("s", output=Note, stop=stop(0.1))
+    sb = b.step("s", output=Note, stop=stop(0.1), asks=lambda out, patch: True)
+    assert sa.stop_fingerprint("m") != sb.stop_fingerprint("m") and a.fingerprint() != b.fingerprint()
