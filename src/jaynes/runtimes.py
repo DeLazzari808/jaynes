@@ -175,7 +175,7 @@ def claude_failure(result: dict[str, Any], code: int, err: str) -> QuotaExhauste
 
 class ClaudeRuntime:
     name = "claude"
-    scratch_dirs = (".claude",)  # Claude Code 2.1 creates .claude/.cc-writes in its working directory
+    scratch_dirs = (".claude",)  # Claude Code 2.1 creates .claude/.cc-writes in every folder it works in
 
     def __init__(self, model: str | None = None, max_messages: int = 200) -> None:
         self.model = model or os.environ.get("JAYNES_CLAUDE_MODEL")

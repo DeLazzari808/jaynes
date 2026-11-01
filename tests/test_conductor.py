@@ -398,6 +398,25 @@ def test_empty_folders_a_runtime_creates_for_itself_are_not_writes_but_files_in_
     assert rejected["reasons"] == ["only output.json may be written; the turn changed: .claude/notes.md"]
 
 
+def test_a_runtime_makes_its_empty_folders_in_every_folder_it_enters_and_files_there_are_still_writes(
+        tmp_path: Path) -> None:
+    def own_dirs(ws: Path) -> None:  # what Claude Code 2.1.316 left on entering inputs/
+        (ws / "inputs" / ".claude" / ".cc-writes").mkdir(parents=True)
+        write({"text": "hi"})(ws)
+
+    def own_file(ws: Path) -> None:
+        own_dirs(ws)
+        (ws / "inputs" / ".claude" / "x.txt").write_text("x")
+
+    r = role("echo", agent="fake")
+    r.step("draft", output=Note)
+    agent = Scripted({("draft", 1): own_file, ("draft", 2): own_dirs}, scratch_dirs=(".claude",))
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", "r1").status == "finished"
+    [rejected] = [e.payload for e in c.store.events("TurnRejected", run_id="r1")]
+    assert rejected["reasons"] == ["only output.json may be written; the turn changed: inputs/.claude/x.txt"]
+
+
 # --- who answered and what they saw (hole A1) ------------------------------------
 
 def test_answers_from_an_agent_release_the_stop_but_never_count_as_labels(tmp_path: Path) -> None:

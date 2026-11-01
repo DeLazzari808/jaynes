@@ -643,9 +643,10 @@ class Conductor:
                 self._reject(run_id, step, attempt, "runtime", [str(err)[:500]], t0)
                 return None
             after = manifest(ws, skip="project")
-            own = tuple(getattr(runtime, "scratch_dirs", ()))  # empty folders the runtime makes for itself
+            # empty folders the runtime makes for itself, in every folder it enters
+            own = set(getattr(runtime, "scratch_dirs", ()))
             changed = sorted(p for p in before.keys() | after.keys() if p != OUTPUT and before.get(p) != after.get(p)
-                             and not (after.get(p) == "dir" and any(p == d or p.startswith(d + "/") for d in own)))
+                             and not (after.get(p) == "dir" and own.intersection(p.split("/"))))
             self._emit(run_id, "TurnFinished", {"step": step.name, "attempt": attempt, "files_changed": changed,
                                                 "tokens_in": turn.tokens_in, "tokens_out": turn.tokens_out,
                                                 "tokens_cached": turn.tokens_cached,
