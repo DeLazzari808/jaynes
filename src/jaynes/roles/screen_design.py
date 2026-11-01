@@ -20,9 +20,10 @@ capture they cite is checked against what Jaynes saw.
 7. test, then implement: the slice's path with its ending, which must fail on the product as it is; then the change,
    which makes it pass with the suite, without touching tests.
 8. measure (Jaynes): the person's own measuring and comparing tools; what fails goes back to implement.
-9. proof (Jaynes) and review: the result in both themes and sizes and the slice's transitions; defects found go
-   back to implement.
-10. report (Jaynes), accept: the screen before and after on desktop and phone, a line per change, and folded below
+9. proof (Jaynes) and review: where the slice ends, reached by its path on the product as it was and as changed,
+   in both themes and sizes; the changed screen as it opens; and the slice's transitions. Defects found go back to
+   implement.
+10. report (Jaynes), accept: where the slice ends, before and after, on desktop and phone, cut around what changed, a line per change, and folded below
     them the measures, what was not verified, and tokens and minutes against the budget. Then heuristics: one entry for every note the owner gave and every defect only the proof found.
 """
 
@@ -226,7 +227,8 @@ class ProofShot(BaseModel):
     file: str
     theme: str
     size: str
-    kind: str = Field(description="screen, or before, 90ms or settled around an action of the slice")
+    kind: str = Field(description="screen; end-before or end-after, where the slice ends on the product as it was "
+                                  "and as changed; or before, 90ms or settled around an action of the slice")
     region: list[int] = Field(default_factory=list[int], description="where to look in it: x, y, width and height")
 
 
@@ -432,49 +434,89 @@ def measure_slice(ctx: StepContext) -> Measured:
                     unexplained=[f for f in against if f.id not in kept])
 
 
+def _to_the_end(page: Any, path: list[sc.TestAction]) -> list[str]:
+    """Perform the slice's path up to where it ends, without its expectations; what went wrong, by step."""
+    return [f"step {i}: {err}" for i, a in enumerate(path, 1)
+            if a.action not in EXPECTS and (err := page.act(a.model_dump()))]
+
+
+def _the_end(ctx: StepContext, origin: str, files: Path, test: Test, kind: str) -> tuple[list[ProofShot], list[str]]:
+    """Where the slice ends, reached by its path, in both themes on desktop and phone."""
+    owner, shots, errors = sc.theme(ctx.started), list[ProofShot](), list[str]()
+    for t in (owner, sc.other(owner)):
+        for size, view in (("desktop", DESKTOP), ("phone", PHONE)):
+            with open_page(origin, deny=sc.denied(ctx.started)) as page:
+                page.view(t, view)
+                errors += [f"{kind}, {t} {size}, {e}" for e in _to_the_end(page, test.path)]
+                cid = f"E-{t}-{size}-{kind}"
+                page.screenshot(files / f"{cid}.png")
+                region = page.region()
+                if kind == "after":  # cut around what changed, so the difference is in the picture
+                    region = page.region(page.difference(files / f"E-{t}-{size}-before.png", files / f"{cid}.png")
+                                         or region)
+                shots.append(ProofShot(id=cid, file=f"{cid}.png", theme=t, size=size, kind=f"end-{kind}",
+                                       region=region))
+    return shots, errors
+
+
 def prove(ctx: StepContext) -> Proof:
-    """The changed screen in both themes and sizes, and the slice's path in the owner's theme with each action's
-    transition: before, about 90 ms after, and settled."""
+    """Where the slice ends, before and after the change, reached by the slice's path, in both themes and sizes;
+    the changed screen as it opens; and the slice's path in the owner's theme with each action's transition:
+    before, about 90 ms after, and settled."""
     assert ctx.needs.project is not None
     files, path, owner = _files(ctx), sc.screen_path(ctx.started), sc.theme(ctx.started)
     test: Test = ctx.needs[TEST].value
     end: End = ctx.needs[REQUIREMENTS].value.slice.end
     shots: list[ProofShot] = []
     errors: list[str] = []
+    info: dict[str, Any] = dict(ctx.started.get("project") or {})
+    work = Path(tempfile.mkdtemp(prefix="jaynes-before-"))
     try:
-        with sc.serve(ctx.needs.project, ctx.started, ctx.needs.source, ctx.needs.hidden) as origin, \
-                open_page(origin, deny=sc.denied(ctx.started)) as page:
-            for t in (owner, sc.other(owner)):
-                for size, view in (("desktop", DESKTOP), ("phone", PHONE)):
-                    page.view(t, view)
-                    page.goto(path)
-                    cid = f"P-{t}-{size}"
-                    page.screenshot(files / f"{cid}.png")
-                    shots.append(ProofShot(id=cid, file=f"{cid}.png", theme=t, size=size, kind="screen",
-                                           region=page.region()))
-            page.view(owner, DESKTOP)
-            for i, action in enumerate(test.path, 1):
-                a = action.model_dump()
-                if action.action in EXPECTS:
-                    if err := page.act(a):
+        try:  # the product as the run found it, for the before
+            repo.prepare(Path(str(info["root"])), str(info["base"]), [], work / "project", cache=work / "cache")
+        except (repo.ProjectError, KeyError) as err:
+            raise Blocked(f"the product as it was could not be copied: {err}") from None
+        with sc.serve(work / "project", ctx.started, ctx.needs.source, ctx.needs.hidden) as before:
+            found, _ = _the_end(ctx, before, files, test, "before")  # the path may not get as far before the change
+            shots += found
+        with sc.serve(ctx.needs.project, ctx.started, ctx.needs.source, ctx.needs.hidden) as origin:
+            found, missed = _the_end(ctx, origin, files, test, "after")
+            shots += found
+            errors += missed
+            with open_page(origin, deny=sc.denied(ctx.started)) as page:
+                for t in (owner, sc.other(owner)):
+                    for size, view in (("desktop", DESKTOP), ("phone", PHONE)):
+                        page.view(t, view)
+                        page.goto(path)
+                        cid = f"P-{t}-{size}"
+                        page.screenshot(files / f"{cid}.png")
+                        shots.append(ProofShot(id=cid, file=f"{cid}.png", theme=t, size=size, kind="screen",
+                                               region=page.region()))
+                page.view(owner, DESKTOP)
+                for i, action in enumerate(test.path, 1):
+                    a = action.model_dump()
+                    if action.action in EXPECTS:
+                        if err := page.act(a):
+                            errors.append(f"step {i}: {err}")
+                        continue
+                    cid = f"T-s{i:02}"
+                    page.screenshot(files / f"{cid}-before.png")
+                    err = page.act(a, wait=False)
+                    page.pump(0.09)
+                    page.screenshot(files / f"{cid}-90ms.png")
+                    page.settle()
+                    page.screenshot(files / f"{cid}-settled.png")
+                    if err:
                         errors.append(f"step {i}: {err}")
-                    continue
-                cid = f"T-s{i:02}"
-                page.screenshot(files / f"{cid}-before.png")
-                err = page.act(a, wait=False)
-                page.pump(0.09)
-                page.screenshot(files / f"{cid}-90ms.png")
-                page.settle()
-                page.screenshot(files / f"{cid}-settled.png")
-                if err:
-                    errors.append(f"step {i}: {err}")
-                shots += [ProofShot(id=f"{cid}-{k}", file=f"{cid}-{k}.png", theme=owner, size="desktop", kind=k)
-                          for k in ("before", "90ms", "settled")]
-            for check in ({"action": "expectRoute", "route": end.route}, {"action": "expectText", "text": end.text}):
-                if err := page.act(check):
-                    errors.append(f"the end: {err}")
+                    shots += [ProofShot(id=f"{cid}-{k}", file=f"{cid}-{k}.png", theme=owner, size="desktop", kind=k)
+                              for k in ("before", "90ms", "settled")]
+                for check in ({"action": "expectRoute", "route": end.route}, {"action": "expectText", "text": end.text}):
+                    if err := page.act(check):
+                        errors.append(f"the end: {err}")
     except BrowserError as err:
         raise Blocked(f"Jaynes's Chrome could not look at the product: {err}") from None
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     return Proof(captures=shots, errors=errors)
 
 
@@ -770,18 +812,20 @@ def _show_accept(_: Any, needs: Witnesses) -> list[Shown]:
     shots = {x.id: x for x in needs[PROOF].value.captures}
 
     def side(size: str, theme: str) -> tuple[Picture, ...]:
-        after = shots.get(f"P-{theme}-{size}")
-        before = snap.regions.get(f"screen-{size}.png", []) if theme == owner else []
-        cut = _region(before, after.region if after else [])
-        return ((Picture(SNAPSHOT.name, f"screen-{size}.png", "before", cut),) if theme == owner else ()) + (
-            (Picture(PROOF.name, after.file, "after", cut),) if after else ())
+        """Where the slice ends, before and after, cut alike around what changed."""
+        before, after = shots.get(f"E-{theme}-{size}-before"), shots.get(f"E-{theme}-{size}-after")
+        cut = _region(after.region) if after else ()
+        return tuple(Picture(PROOF.name, x.file, label, cut) for x, label in ((before, "before"), (after, "after")) if x)
 
-    items = [Shown("On a computer", "Before, then after, in your theme.", side("desktop", owner)),
+    items = [Shown("On a computer", "Where the change is, before and then after, in your theme.", side("desktop", owner)),
              Shown("On a phone", "Before and after, in your theme.", side("phone", owner))]
     items += [Shown(_sentence(c)) for c in built.changes]
     other = sc.other(owner)
-    items.append(Shown(f"In the {other} theme", "After, on a computer and on a phone.",
+    items.append(Shown(f"In the {other} theme", "Before and after, on a computer and on a phone.",
                        side("desktop", other) + side("phone", other), more=True))
+    items.append(Shown("The screen as it opens", "After the change, in your theme.",
+                       tuple(Picture(PROOF.name, shots[f"P-{owner}-{size}"].file, size, _region(shots[f"P-{owner}-{size}"].region))
+                             for size in ("desktop", "phone") if f"P-{owner}-{size}" in shots), more=True))
     items.append(Shown("Cost", f"{r.tokens_new} new tokens of {r.budget_tokens}, {r.tokens_cached} read from the "
                                f"cache, {r.minutes} of {r.budget_minutes:g} minutes.", more=True))
     items += [Shown("Over budget", _sentence(o), more=True) for o in r.over]
@@ -894,7 +938,7 @@ MEASURE = ROLE.step("measure", output=Measured, needs=[IMPLEMENT], run_by=measur
                     effect="read", max_turns=1, max_files=100, inputs=["measure", "compare"],
                     back=Back(to=IMPLEMENT, when=measured_badly, rounds=2))
 PROOF = ROLE.step("proof", output=Proof, needs=[REQUIREMENTS, TEST], run_by=prove, project="read", effect="read",
-                  max_turns=1, max_files=80)
+                  max_turns=1, max_files=100)
 REVIEW = ROLE.step(
     "review", output=Review, needs=[REQUIREMENTS, IMPLEMENT, PROOF], check=defects_cite_proof,
     inputs=["method", "heuristics"], back=Back(to=IMPLEMENT, when=defects_found, rounds=2),

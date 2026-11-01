@@ -415,13 +415,13 @@ def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lanter
     go(c, run, "requirements")
     accept = shown("accept")
     front = [x for x in accept if not x["more"]]
-    assert [(x["title"], [(p["step"], p["caption"]) for p in x["pictures"]]) for x in front] == [
-        ("On a computer", [("snapshot", "before"), ("proof", "after")]),
-        ("On a phone", [("snapshot", "before"), ("proof", "after")]),
+    assert [(x["title"], [(p["file"], p["caption"]) for p in x["pictures"]]) for x in front] == [
+        ("On a computer", [("E-dark-desktop-before.png", "before"), ("E-dark-desktop-after.png", "after")]),
+        ("On a phone", [("E-dark-phone-before.png", "before"), ("E-dark-phone-after.png", "after")]),
         ("A book's page shows its status beside who picked it.", [])]
     assert front[0]["pictures"][0]["region"] == front[0]["pictures"][1]["region"]  # cut alike
     folded = [x["title"] for x in accept if x["more"]]
-    assert folded[:2] == ["In the light theme", "Cost"] and "Not verified" in folded
+    assert folded[:3] == ["In the light theme", "The screen as it opens", "Cost"] and "Not verified" in folded
 
 
 def test_no_question_names_a_slice_a_route_or_a_capture(lantern: Lantern) -> None:
@@ -432,3 +432,27 @@ def test_no_question_names_a_slice_a_route_or_a_capture(lantern: Lantern) -> Non
     assert questions[-1].startswith("Keep this change? ")
     for q in questions:
         assert "slice" not in q.lower() and "/" not in q and "M1" not in q and "R1" not in q, q
+
+
+def test_accept_shows_where_the_slice_ends_before_and_after_cut_around_what_changed(lantern: Lantern) -> None:
+    """Accepting is comparing two pictures: of the book's page, reached by the slice's path, not of the list."""
+    c, run, _ = lantern.start(Agent())
+    to_requirements(c, run)
+    go(c, run, "requirements")
+    proof = c.output(run, sd.PROOF)
+    assert proof is not None
+    ends = {x.id: x for x in proof.captures if x.kind.startswith("end-")}
+    assert set(ends) == {f"E-{t}-{s}-{k}" for t in ("dark", "light") for s in ("desktop", "phone") for k in ("before", "after")}
+    [checked] = [e.payload for e in c.store.events("Checked", run_id=run) if e.payload["step"] == "proof"]
+
+    def picture(name: str) -> bytes:
+        return (lantern.tmp / "home" / "objects" / checked["files"][name]).read_bytes()
+
+    for size in ("desktop", "phone"):  # the end differs before and after; the list as it opens does not
+        assert picture(f"E-dark-{size}-before.png") != picture(f"E-dark-{size}-after.png")
+        _, _, w, h = ends[f"E-dark-{size}-after"].region
+        assert w < (1440 if size == "desktop" else 390) or h < (900 if size == "desktop" else 844)
+    [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "accept"]
+    shown = [p["file"] for x in opened["shown"] if not x["more"] for p in x["pictures"]]
+    assert shown == ["E-dark-desktop-before.png", "E-dark-desktop-after.png", "E-dark-phone-before.png",
+                     "E-dark-phone-after.png"]

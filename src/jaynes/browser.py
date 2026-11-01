@@ -328,10 +328,22 @@ class Page:
         self.screenshot(path)
         return Shot(path.name, self.location(), self.text(), self.controls(), region=self.region())
 
-    def region(self) -> list[int]:
-        """Where to look in the screenshot, as x, y, width and height in its pixels: what the last action changed,
-        else where the page has content, padded, at least 480 by 270."""
-        found = self.evaluate(_REGION)
+    def region(self, around: Sequence[int] = ()) -> list[int]:
+        """Where to look in the screenshot, as x, y, width and height in its pixels: ``around``, a box in them, else
+        what the last action changed, else where the page has content; padded, at least 480 by 270, and never
+        cutting through a line or a control."""
+        found = self.evaluate(f"({_REGION})({json.dumps(list(around) or None)})")
+        box = cast(list[Any], found) if isinstance(found, list) else []
+        return [int(x) for x in box] if len(box) == 4 else []
+
+    def difference(self, before: Path, after: Path) -> list[int]:
+        """Where two screenshots differ, as x, y, width and height in their pixels; empty when they do not, or
+        when this page cannot compare them."""
+        urls = [json.dumps("data:image/png;base64," + base64.b64encode(p.read_bytes()).decode()) for p in (before, after)]
+        try:
+            found = self.evaluate(f"({_DIFFERENCE})({urls[0]}, {urls[1]})")
+        except BrowserError:
+            return []
         box = cast(list[Any], found) if isinstance(found, list) else []
         return [int(x) for x in box] if len(box) == 4 else []
 
@@ -410,7 +422,23 @@ _WATCH = """(() => {
                                                           characterData: true});
 })()"""
 
-_REGION = """(() => {
+_DIFFERENCE = """(async (a, b) => {
+  const load = src => new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const [x, y] = await Promise.all([load(a), load(b)]);
+  const w = Math.min(x.width, y.width), h = Math.min(x.height, y.height);
+  const pixels = img => { const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const g = c.getContext("2d"); g.drawImage(img, 0, 0); return g.getImageData(0, 0, w, h).data; };
+  const p = pixels(x), q = pixels(y);
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const k = (j * w + i) * 4;
+    if (p[k] !== q[k] || p[k + 1] !== q[k + 1] || p[k + 2] !== q[k + 2]) {
+      if (i < x0) x0 = i; if (i > x1) x1 = i; if (j < y0) y0 = j; if (j > y1) y1 = j; }
+  }
+  return x1 < 0 ? [] : [x0, y0, x1 - x0 + 1, y1 - y0 + 1];
+})"""
+
+_REGION = """((around) => {
   const vw = innerWidth, vh = innerHeight, pad = 24;
   // a page with no viewport tag is shown zoomed out on a phone: the picture's pixels are its pixels times this
   const k = (window.visualViewport && visualViewport.scale) || 1, pw = Math.round(vw * k), ph = Math.round(vh * k);
@@ -431,7 +459,8 @@ _REGION = """(() => {
     return out;
   };
   const changed = (window.__jaynesChanged || []).filter(el => el && el !== document.body && el !== document.documentElement);
-  let boxes = changed.flatMap(inked).filter(shown);
+  let boxes = around ? [new DOMRect(around[0] / k, around[1] / k, around[2] / k, around[3] / k)]
+                     : changed.flatMap(inked).filter(shown);
   if (!boxes.length) boxes = inked(document.body).filter(shown);
   if (!boxes.length) return [0, 0, pw, ph];
   // never cut through a line or a control: take in whole any the box reaches into
@@ -449,7 +478,7 @@ _REGION = """(() => {
     if (a < 0) { b -= a; a = 0; } if (b > most) { a -= b - most; b = most; } return [Math.max(0, a), Math.min(most, b)]; };
   [x0, x1] = grow(x0, x1, Math.min(480, pw), pw); [y0, y1] = grow(y0, y1, Math.min(270, ph), ph);
   return [Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)];
-})()"""
+})"""
 
 _CONTROLS = """(() => {
   const shown = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);

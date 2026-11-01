@@ -420,6 +420,7 @@ details.menu .pop .btn { text-align: left; }
   .bar .acts { margin-left: auto; }
   .tiles { grid-template-columns: 1fr; }
   .previews { grid-template-columns: 1fr; }
+  .card .shot.tall { flex-basis: 100%; }  /* a phone's picture at about its own size, one to a row */
 }
 """
 
