@@ -186,6 +186,30 @@ class Choice:
 
 
 @dataclass(frozen=True)
+class Picture:
+    """A picture a step of the run left, by the step's name and the file's path among its files."""
+
+    step: str
+    file: str
+    caption: str = ""
+
+
+@dataclass(frozen=True)
+class Shown:
+    """One thing a stop shows the person, in the form they judge it: a title, a sentence and pictures.
+
+    ``id`` names the item when the person may choose it; ``more`` folds it below, with costs and measures, so the
+    stop opens on what the person judges. The output itself stays one click away, under the stop's details.
+    """
+
+    title: str
+    text: str = ""
+    pictures: tuple[Picture, ...] = ()
+    id: str = ""
+    more: bool = False
+
+
+@dataclass(frozen=True)
 class Back:
     """Jaynes sends an earlier step back, with what it found, when a checked output says so.
 
@@ -224,6 +248,7 @@ class Step(Generic[T]):
     choose: Choice | None = None  # the stop lets the person pick among the output's items
     back: Back | None = None  # when Jaynes sends an earlier step back from this one
     max_files: int = 20  # files a trusted executor may leave
+    shows: Callable[[Any, Witnesses], list[Shown]] | None = None  # how the stop shows the output to the person
 
     @property
     def executor(self) -> str:
@@ -261,6 +286,7 @@ class Step(Generic[T]):
         question += [f"asks:{code_hash(self.asks)}"] if self.asks else []
         question += [f"choose:{code_hash(self.choose.items)}:{code_hash(self.choose.keep)}"] if self.choose else []
         question += [f"inputs:{inputs}"] if inputs else []
+        question += [f"shows:{code_hash(self.shows)}"] if self.shows else []
         return _sha("\0".join([self.role.name, self.name, self.prompt_hash(), self.check_hash(), *question,
                                repr(s.budget), repr(s.delta), repr(s.sampled), model]))[:16]
 
@@ -285,7 +311,7 @@ class Role:
              web: bool = False, effect: Effect | None = None, ends: Callable[[T], bool] | None = None,
              max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
              inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
-             max_files: int = 20) -> Step[T]:
+             max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None) -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -304,6 +330,8 @@ class Role:
             raise ValueError(f"step {name!r} says when its stop asks, but has no stop")
         if question is not None and stop is None:
             raise ValueError(f"step {name!r} has a question but no stop to ask it at")
+        if shows is not None and stop is None:
+            raise ValueError(f"step {name!r} says how its stop shows the output, but has no stop")
         if unknown := [i for i in inputs if i not in self.inputs]:
             raise ValueError(f"step {name!r} lists inputs {', '.join(unknown)}, which {self.name!r} does not declare")
         if choose is not None and (stop is None or output is None):
@@ -341,7 +369,7 @@ class Role:
                           instructions, max_turns, deadline, cast(Callable[[Any, Witnesses], str] | None, question),
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
                           max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
-                          back, max_files)
+                          back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows))
         self.steps.append(s)
         return s
 

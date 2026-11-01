@@ -8,21 +8,22 @@ capture they cite is checked against what Jaynes saw.
 1. snapshot (Jaynes): the screen in the owner's theme, on desktop and phone, its text, controls, and a summary of
    each API response with the facts computed from it.
 2. moments: up to five moments where the owner gets stuck, each with a real case quoted from the snapshot. The
-   owner chooses two to five and orders them.
+   owner chooses two to five and orders them, with the screen in front of them.
 3. object-map: the things the owner thinks in, where each exists, how many there are, what is missing, and the
-   routes between them. Every object of the chosen moments is on it.
+   routes between them. Every object of the chosen moments is on it. It does not stop: the owner judges it in the
+   requirements it leads to, not as data.
 4. paths, then walkthrough (Jaynes): each moment click by click in a closed vocabulary, performed by Jaynes with
    everything but the product's own GETs refused, one capture per action.
 5. breaks: where each moment breaks, citing captures of that moment.
 6. requirements: one per break, in the order of the moments, with the first slice and where its moment must end.
-   The owner approves them.
+   The owner approves them, each beside the capture where its break happens.
 7. test, then implement: the slice's path with its ending, which must fail on the product as it is; then the change,
    which makes it pass with the suite, without touching tests.
 8. measure (Jaynes): the person's own measuring and comparing tools; what fails goes back to implement.
 9. proof (Jaynes) and review: the result in both themes and sizes and the slice's transitions; defects found go
    back to implement.
-10. report (Jaynes), accept: what changed, the measures, what was not verified, and tokens and minutes against the
-    budget. Then heuristics: one entry for every note the owner gave and every defect only the proof found.
+10. report (Jaynes), accept: the screen before and after on desktop and phone, a line per change, and folded below
+    them the measures, what was not verified, and tokens and minutes against the budget. Then heuristics: one entry for every note the owner gave and every defect only the proof found.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ from pydantic import BaseModel, Field
 
 from jaynes import inputs, project as repo, screens as sc
 from jaynes.browser import DESKTOP, PHONE, BrowserError, open_page
-from jaynes.role import Back, Blocked, Choice, Fail, Input, Pass, StepContext, Witnesses, role, stop
+from jaynes.role import Back, Blocked, Choice, Fail, Input, Pass, Picture, Shown, StepContext, Witnesses, role, stop
 from jaynes.roles import fix_bug as fb
 from jaynes.roles import small_change as sm
 
@@ -198,6 +199,7 @@ class Kept(BaseModel):
 
 class Built(BaseModel):
     summary: str = Field(description="what changed and where to look, for the owner")
+    changes: list[str] = Field(min_length=1, description="each change the owner will see on the screen, a line each")
     files: list[str]
     kept: list[Kept] = Field(default_factory=list[Kept], description="comparison failures kept on purpose, each "
                                                                     "with the reason")
@@ -695,17 +697,77 @@ def defects_found(out: Review, _: Witnesses) -> list[str]:
     return [f"{d.id} ({d.capture}): {d.what}" for d in out.defects]
 
 
+def _sentence(text: str) -> str:
+    text = text.strip()
+    return text[:1].upper() + text[1:].rstrip(".") + "." if text else ""
+
+
 def _accept_question(_: Any, needs: Witnesses) -> str:
     r: Report = needs[REPORT].value
-    parts = [f"Merge this slice? {r.summary.rstrip('.')}.",
-             f"Cost: {r.tokens_new} new tokens of {r.budget_tokens}, {r.tokens_cached} read from the cache, "
-             f"{r.minutes} of {r.budget_minutes:g} minutes."]
-    parts += [f"Over budget: {'; '.join(r.over)}."] if r.over else []
-    parts += [f"Measures failing: {'; '.join(f.id for f in r.measure)}."] if r.measure else []
-    parts += [f"Worse than approved, unexplained: {'; '.join(f.id for f in r.unexplained)}."] if r.unexplained else []
-    parts += [f"Defects left: {'; '.join(d.id for d in r.defects)}."] if r.defects else []
-    parts += [f"Not verified: {'; '.join(r.unverified)}."] if r.unverified else []
-    return " ".join(parts)
+    problems = ([f"{len(r.measure)} measure{'s' * (len(r.measure) > 1)} failing"] if r.measure else []) + (
+        [f"{len(r.unexplained)} worse than approved"] if r.unexplained else []) + (
+        [f"{len(r.defects)} defect{'s' * (len(r.defects) > 1)} left"] if r.defects else []) + (
+        ["over budget"] if r.over else [])
+    return f"Merge this slice? {_sentence(r.summary)}" + (f" Before you do: {', '.join(problems)}, under More."
+                                                         if problems else "")
+
+
+def _show_moments(out: Moments, _: Witnesses) -> list[Shown]:
+    screen = Shown("The screen as it is", "In your theme, on a computer and on a phone.",
+                   (Picture(SNAPSHOT.name, "screen-desktop.png", "computer"),
+                    Picture(SNAPSHOT.name, "screen-phone.png", "phone")))
+    return [screen, *(Shown(_sentence(m.statement), _sentence(m.case.text), id=m.id) for m in out.moments)]
+
+
+def _show_requirements(out: Requirements, needs: Witnesses) -> list[Shown]:
+    """Each requirement beside the capture where its break happens: the problem, then what changes."""
+    breaks = {b.id: b for m in needs[BREAKS].value.moments for b in m.breaks}
+    shots = {c.id: c.file for c in needs[WALK].value.captures}
+
+    def where(break_id: str) -> tuple[str, tuple[Picture, ...]]:
+        b = breaks.get(break_id)
+        last = b.captures[-1] if b else ""
+        return (_sentence(b.where) if b else break_id), ((Picture(WALK.name, shots[last], last),) if last in shots else ())
+
+    items: list[Shown] = []
+    for r in out.requirements:
+        title, pictures = where(r.break_id)
+        first = " Built first." if r.id in out.slice.requirements else ""
+        items.append(Shown(title, f"{r.id}: {_sentence(r.need)}{first}", pictures))
+    for d in out.deferred:
+        title, pictures = where(d.break_id)
+        items.append(Shown(title, f"Not now: {_sentence(d.reason)}", pictures))
+    return items
+
+
+def _show_accept(_: Any, needs: Witnesses) -> list[Shown]:
+    """The screen before and after, side by side, a line per change; measures, costs and the rest folded below."""
+    owner, r, built = needs[SNAPSHOT].value.theme, needs[REPORT].value, needs[IMPLEMENT].value
+    shots = {x.id: x.file for x in needs[PROOF].value.captures}
+
+    def side(size: str, theme: str) -> tuple[Picture, ...]:
+        after = shots.get(f"P-{theme}-{size}")
+        return ((Picture(SNAPSHOT.name, f"screen-{size}.png", "before"),) if theme == owner else ()) + (
+            (Picture(PROOF.name, after, "after"),) if after else ())
+
+    items = [Shown("On a computer", "Before and after, in your theme.", side("desktop", owner)),
+             Shown("On a phone", "Before and after, in your theme.", side("phone", owner))]
+    items += [Shown(_sentence(c)) for c in built.changes]
+    other = sc.other(owner)
+    items.append(Shown(f"In the {other} theme", "After, on a computer and on a phone.",
+                       side("desktop", other) + side("phone", other), more=True))
+    items.append(Shown("Cost", f"{r.tokens_new} new tokens of {r.budget_tokens}, {r.tokens_cached} read from the "
+                               f"cache, {r.minutes} of {r.budget_minutes:g} minutes.", more=True))
+    items += [Shown("Over budget", _sentence(o), more=True) for o in r.over]
+    items += [Shown(f"Measure failing: {f.id}", _sentence(f.what), more=True) for f in r.measure]
+    unexplained = {f.id for f in r.unexplained}
+    items += [Shown(f"{'Worse than approved' if f.id in unexplained else 'Kept on purpose'}: {f.id}",
+                    _sentence(f.what), more=True) for f in r.compare]
+    items += [Shown(f"Defect left: {d.id}", _sentence(d.what),
+                    (Picture(PROOF.name, shots[d.capture], d.capture),) if d.capture in shots else (), more=True)
+              for d in r.defects]
+    items += [Shown("Not verified", _sentence(u), more=True) for u in r.unverified]
+    return items
 
 
 def _moment_items(out: Moments) -> list[tuple[str, str]]:
@@ -748,14 +810,13 @@ MOMENTS = ROLE.step(
     "moments", output=Moments, needs=[SNAPSHOT], check=moments_cited, stop=stop(0.2, sampled=False),
     choose=Choice(items=_moment_items, keep=_keep_moments), inputs=["method"],
     question=lambda out, _: "Where do you get stuck on this screen? Choose two to five of these moments, most "
-                            "important first.",
+                            "important first.", shows=_show_moments,
     instructions="Offer the owner up to five moments where they get stuck or lost on this screen, each with a real "
                  "case from the data the screen shows, and the objects they think in during it. The owner chooses "
                  "two to five and orders them; offer concrete options rather than an open question. Read "
                  "inputs/snapshot/screen.txt, controls.json and the api/ summaries before the pictures. " + CITE)
 OBJECTS = ROLE.step(
-    "object-map", output=ObjectMap, needs=[SNAPSHOT, MOMENTS], check=objects_mapped, stop=stop(0.2),
-    inputs=["method"], question=lambda out, _: "Is this how you think of the things on this screen?",
+    "object-map", output=ObjectMap, needs=[SNAPSHOT, MOMENTS], check=objects_mapped, inputs=["method"],
     instructions="Map the things the owner thinks in on this screen: what each is to them, where it exists on the "
                  "screen and in storage (the API's responses), how many there are, what is missing for it to be "
                  "navigable, and its links to other things, each link a route the interface must offer. Every object "
@@ -777,9 +838,8 @@ BREAKS = ROLE.step(
 REQUIREMENTS = ROLE.step(
     "requirements", output=Requirements, needs=[MOMENTS, OBJECTS, BREAKS, WALK], check=requirements_follow,
     stop=stop(0.2, sampled=False), inputs=["method", "heuristics"],
-    question=lambda out, _: (f"Approve these requirements? The first slice is {', '.join(out.slice.requirements)}: "
-                             f"{out.slice.moment} must end at {out.slice.end.route}, showing {out.slice.end.text!r}. "
-                             "The captures of the breaks are in the review page."),
+    question=lambda out, _: (f"Approve these requirements? The first slice ends at {out.slice.end.route}, showing "
+                             f"{out.slice.end.text!r}."), shows=_show_requirements,
     instructions="Write one requirement per break, in terms of objects and routes (a thing becomes a place with an "
                  "address; every name is a link), not components, in the order of the chosen moments, each with your "
                  "recommendation and why. Defer a break only with a reason. Mark the first slice: the smallest path "
@@ -799,7 +859,8 @@ IMPLEMENT = ROLE.step(
     may_change=("**", *(f"!{t}" for t in fb.TESTS)), check=slice_works, deadline=3600.0,
     inputs=["method", "heuristics"],
     instructions="Build the first slice so its path (inputs/test.json) reaches the approved ending, in the product's "
-                 "approved brand and design system. Change the product's code, never its tests. Read the heuristics "
+                 "approved brand and design system. Change the product's code, never its tests. List each change the "
+                 "owner will see on the screen in changes, a line each. Read the heuristics "
                  "before designing. Run the suite yourself as inputs/runner.json says. Jaynes performs the slice's "
                  "path on your change with the real data and runs the suite; then it measures the screen and compares "
                  "it with the approved version, and sends you back what fails: fix it, or keep a comparison failure "
@@ -818,9 +879,9 @@ REVIEW = ROLE.step(
                  "that imitates another screen, an approved style that stopped applying, a rough transition. Cite the "
                  "capture of each. Defects go back to the implementer. Say what you could not verify.")
 REPORT = ROLE.step("report", output=Report, needs=[IMPLEMENT, MEASURE, REVIEW], run_by=report, max_turns=1)
-# the proof's captures go with it, so the page shows them beside the preview before and after
-ACCEPT = ROLE.step("accept", needs=[REPORT, IMPLEMENT, PROOF], stop=stop(0.05, sampled=False),
-                   question=_accept_question)
+# the snapshot and the proof go with it: the screen before and after
+ACCEPT = ROLE.step("accept", needs=[SNAPSHOT, REPORT, IMPLEMENT, PROOF], stop=stop(0.05, sampled=False),
+                   question=_accept_question, shows=_show_accept)
 NOTES = ROLE.step("notes", output=Notes, needs=[ACCEPT, REVIEW], run_by=collect_notes, max_turns=1)
 ROLE.step(
     "heuristics", output=Heuristics, needs=[NOTES], check=notes_covered, inputs=["heuristics"],

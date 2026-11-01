@@ -200,3 +200,15 @@ def test_words_that_are_not_items_are_still_a_return(home: Path, capsys: pytest.
     hook(asked(home, run, capsys), "none of these, look at the inbox")
     [a] = answers(home, run)
     assert (a["answer"], a["note"]) == ("return", "none of these, look at the inbox")
+
+
+def test_a_stop_that_says_how_it_shows_its_output_is_asked_in_sentences_with_the_pictures_in_the_page(
+        home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run = started(home, "tests.shown:ROLE", "quick=tests.shown:Agent", "--here")
+    shown = asked(home, run, capsys)
+    preview = shown["questions"][0]["options"][0]["preview"]
+    assert preview == ("The list hides the status: Say it: the status goes beside the name.\n\nMore:\nCost: 12 new "
+                       "tokens.\n\n1 picture of this stop is in the review page (jaynes review --open), with the full "
+                       "output under Details.")
+    assert "{" not in preview  # no JSON in front of the person
+    assert "recorded the person's answer at change: accept" in str(hook(shown, "Accept"))

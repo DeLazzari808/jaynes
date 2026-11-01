@@ -94,7 +94,8 @@ STATUS = ('document.getElementById("who").textContent = "Picked by " + b.picked_
 def build(ws: Path) -> None:
     app = ws / "project" / "app.js"
     app.write_text(app.read_text().replace(*STATUS))
-    write({"summary": "A book's page says whether the club read it, beside who picked it", "files": ["app.js"]})(ws)
+    write({"summary": "A book's page says whether the club read it, beside who picked it", "files": ["app.js"],
+           "changes": ["a book's page shows its status beside who picked it"]})(ws)
 
 
 def heuristics(ws: Path) -> None:
@@ -188,8 +189,7 @@ def rejected(c: Conductor, run: str, step: str) -> list[str]:
 
 
 def to_requirements(c: Conductor, run: str) -> RunResult:
-    go(c, run, "moments", "choose", chosen=["M1", "M3"])
-    return go(c, run, "object-map")
+    return go(c, run, "moments", "choose", chosen=["M1", "M3"])  # the object map does not stop
 
 
 def test_the_snapshot_sees_the_screen_with_the_frozen_data_and_summarizes_its_api(lantern: Lantern) -> None:
@@ -241,7 +241,7 @@ def test_an_object_of_a_moment_missing_from_the_map_and_a_wrong_count_are_refuse
     wrong["objects"][0]["links"] = []
     c, run, _ = lantern.start(Agent({("object-map", 1): write(wrong)}))
     out = go(c, run, "moments", "choose", chosen=["M1", "M3"])
-    assert (out.status, out.step) == ("waiting", "object-map")
+    assert (out.status, out.step) == ("waiting", "requirements")  # the second attempt passed, and nobody was asked
     reasons = rejected(c, run, "object-map")
     assert "status, an object of M1, is not on the map; add it, or name it as an alias" in reasons
     assert "O1 count: the value is 7, but the query computes 3" in reasons
@@ -319,7 +319,9 @@ def test_a_measured_violation_goes_back_to_implement_and_stays_in_sight(lantern:
     assert [(b["step"], b["to"]) for b in back] == [("measure", "implement"), ("measure", "implement")]
     assert "measure spacing: 13px is off the spacing scale" in agent.prompts["implement"][1]
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "accept"]
-    assert "Measures failing: spacing." in opened["question"]
+    assert "Before you do: 1 measure failing, under More." in opened["question"]
+    assert {"title": "Measure failing: spacing", "text": "13px is off the spacing scale.", "pictures": [], "id": "",
+            "more": True} in opened["shown"]
 
 
 def test_a_note_without_a_heuristic_is_refused(lantern: Lantern) -> None:
@@ -327,7 +329,6 @@ def test_a_note_without_a_heuristic_is_refused(lantern: Lantern) -> None:
     c, run, _ = lantern.start(Agent({("heuristics", n): lazy for n in (1, 2, 3)}))
     go(c, run, "moments", "return", note="the moments should come from the inbox, not the list")
     go(c, run, "moments", "choose", chosen=["M1", "M3"], note="M1 matters most")
-    go(c, run, "object-map")
     go(c, run, "requirements")
     out = go(c, run, "accept")
     assert (out.status, out.step) == ("blocked", "heuristics")
@@ -348,8 +349,7 @@ def test_a_whole_run_from_snapshot_to_heuristics(lantern: Lantern) -> None:
     c, run, out = lantern.start(agent)
     assert out.step == "moments"
     assert "Design from use" in agent.prompts["moments"][0] and "beside its name" not in agent.prompts["moments"][0]
-    assert go(c, run, "moments", "choose", chosen=["M1", "M3"]).step == "object-map"
-    assert go(c, run, "object-map").step == "requirements"
+    assert go(c, run, "moments", "choose", chosen=["M1", "M3"]).step == "requirements"
     out = go(c, run, "requirements")
     assert (out.status, out.step) == ("waiting", "accept")
     assert "beside its name" in agent.prompts["implement"][0]  # the heuristics, where it designs
@@ -382,3 +382,37 @@ def test_jaynes_output_prints_a_steps_checked_output(lantern: Lantern, capsys: p
     assert json.loads(capsys.readouterr().out)["moments"][0]["id"] == "M1"
     with pytest.raises(SystemExit, match="no checked output"):
         cli.main(["output", run, "heuristics", "--home", str(lantern.tmp / "home")])
+
+
+def test_the_object_map_never_stops(lantern: Lantern) -> None:
+    """The owner judges the map in the requirements it leads to; asked about it as data, they could not tell."""
+    assert sd.OBJECTS.stop is None
+    c, run, _ = lantern.start(Agent())
+    to_requirements(c, run)
+    assert [e.payload["step"] for e in c.store.events("StopOpened", run_id=run)] == ["moments", "requirements"]
+
+
+def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lantern) -> None:
+    c, run, _ = lantern.start(Agent())
+    def shown(step: str) -> list[dict[str, Any]]:
+        return [e.payload["shown"] for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == step][-1]
+
+    moments = shown("moments")
+    assert [p["file"] for p in moments[0]["pictures"]] == ["screen-desktop.png", "screen-phone.png"]
+    assert [(m["id"], m["title"]) for m in moments[1:]] == [
+        ("M1", "I cannot tell whether a book is finished without opening it."),
+        ("M2", "I do not know who suggested a book."), ("M3", "I search for the next book by its name.")]
+    to_requirements(c, run)
+    [req] = shown("requirements")  # one break, beside the capture where it happens
+    assert req["title"] == "The book opens without saying whether the club read it."
+    assert req["text"] == "R1: A book's place says whether the club read it. Built first."
+    assert req["pictures"] == [{"step": "walkthrough", "file": "M1-s02.png", "caption": "M1-s02"}]
+    go(c, run, "requirements")
+    accept = shown("accept")
+    front = [x for x in accept if not x["more"]]
+    assert [(x["title"], [(p["step"], p["caption"]) for p in x["pictures"]]) for x in front] == [
+        ("On a computer", [("snapshot", "before"), ("proof", "after")]),
+        ("On a phone", [("snapshot", "before"), ("proof", "after")]),
+        ("A book's page shows its status beside who picked it.", [])]
+    folded = [x["title"] for x in accept if x["more"]]
+    assert folded[:2] == ["In the light theme", "Cost"] and "Not verified" in folded

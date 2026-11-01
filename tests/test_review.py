@@ -162,7 +162,10 @@ def test_an_idle_run_can_be_continued_from_the_page(served: tuple[str, Path, str
     store = Store(home / "jaynes.sqlite3")
     store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
-    page = get(base + "/")  # answered, but nothing continued it: the run is idle
+    queue = get(base + "/")  # answered, but nothing continued it: the run is idle, which waits for nobody's answer
+    assert "Nothing is waiting for you" in queue and "Other runs" in queue
+    assert f'href="/stop/{run}/draft">Continue or dismiss' in get(f"{base}/run/{run}")  # one click from its page
+    page = get(f"{base}/stop/{run}/draft")
     assert "not running" in page
     status, _ = post(base + "/continue", {**form(page)})
     assert status == 303
@@ -177,7 +180,7 @@ def test_an_idle_run_can_be_dismissed_from_the_page_and_the_queue_moves_on(serve
     store = Store(home / "jaynes.sqlite3")
     store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
-    page = get(base + "/")
+    page = get(f"{base}/stop/{run}/draft")
     assert 'action="/dismiss"' in page
     status, _ = post(base + "/dismiss", {**form(page)}, jar=None)
     assert status == 403 and not list(store.events("RunFinished", run_id=run))  # only the person's browser
@@ -210,7 +213,7 @@ def test_a_stop_offers_to_return_an_earlier_step_and_the_answer_goes_there(tmp_p
         while '<option value="outline">' not in (page := get(base + "/")):
             assert time.monotonic() < deadline, (tmp_path / "runs" / run / "continue.log").read_text()
             time.sleep(0.05)
-        assert '<option value="outline">back to outline</option>' in page
+        assert '<option value="outline">outline</option>' in page
         status, _ = post(base + "/answer", {**form(page), "answer": "return", "note": "shorter", "to": "outline"})
         assert status == 303
         answered = [e.payload for e in store.events("StopAnswered", run_id=run)][-1]
@@ -400,7 +403,7 @@ def test_a_stop_with_no_output_returns_to_the_step_before_it_by_default(tmp_path
     base, server = serving(tmp_path)
     try:
         page = get(base + f"/stop/{run}/accept")
-        assert '<option value="write" selected>back to write</option>' in page
+        assert '<option value="write" selected>write</option>' in page
         assert "to accept</option>" not in page
         status, _ = post(base + "/answer", {**form(page), "answer": "return", "note": "shorter", "to": "write"})
         assert status == 303
@@ -454,7 +457,7 @@ def test_a_paused_run_shows_in_the_queue_and_continues_by_itself_when_its_quota_
     try:
         page = get(base + "/")
         assert '<span class="chip amber">paused</span>' in page and f'href="/run/{run}"' in page
-        assert '<div class="qhead" data-waiting="0"><span>Waiting</span>' in page
+        assert '<div class="qhead" data-waiting="0"><span>Waiting for you</span>' in page
         assert 'id="answer"' not in page and "Nothing is waiting" in page
         store = Store(tmp_path / "jaynes.sqlite3")
         deadline = time.monotonic() + 30
@@ -545,7 +548,7 @@ def test_a_person_chooses_among_the_items_from_the_page(tmp_path: Path) -> None:
     base, server = serving(tmp_path)
     try:
         page = get(base + "/")
-        assert 'name="chosen"' in page and "M1: moment 1" in page
+        assert 'name="chosen"' in page and 'class="card pick" data-id="M1"' in page and "moment 1" in page
         status, body = post(base + "/answer", {**form(page), "answer": "choose", "chosen": "M9"})
         assert status == 400 and "&#x27;M9&#x27; is not one of" in body
         assert post(base + "/answer", {**form(page), "answer": "choose", "chosen": "M4, M2"})[0] == 303
@@ -553,3 +556,92 @@ def test_a_person_chooses_among_the_items_from_the_page(tmp_path: Path) -> None:
         server.shutdown()
     [answered] = [e.payload for e in Store(tmp_path / "jaynes.sqlite3").events("StopAnswered", run_id=run)]
     assert answered["chosen"] == ["M4", "M2"] and answered["by"] == "person"
+
+
+def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_details(tmp_path: Path) -> None:
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.shown:ROLE", "--task", "say the status",
+              "--runtime", "quick=tests.shown:Agent"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + "/")
+    finally:
+        server.shutdown()
+    front, _, details = page.partition('<details class="fold"><summary>Details')
+    assert "<h1>Make this change?</h1>" in front
+    assert f'<img src="/file/{run}/look/screen.png" alt="before"' in front and 'style="flex:1.600 1 0"' in front
+    assert "<b>The list hides the status</b><p>Say it: the status goes beside the name.</p>" in front
+    assert '<details class="fold"><summary>More <span>1</span></summary>' in front  # the cost, folded
+    assert "Output" not in front and ">Turns" not in front and 'class="label">Output' in details
+    bar = page[page.index('<form id="answer"'):]
+    menu, _, sight = bar.partition("</details>")
+    assert 'data-a="context"' in menu and 'data-a="change"' in menu  # in the secondary menu
+    assert 'data-a="return"' in sight and 'data-a="accept"' in sight  # in sight, with the note
+
+
+def test_only_stops_wait_for_the_person_and_the_same_task_twice_is_told_apart(served: tuple[str, Path, str]) -> None:
+    base, home, run = served
+    cli.main(["run", "--home", str(home), "--role", "tests.stopped:ROLE", "--task", "write the draft",
+              "--runtime", "quick=tests.stopped:Agent"])
+    blocked = next(r for r in Store(home / "jaynes.sqlite3").runs() if r != run)
+    store = Store(home / "jaynes.sqlite3")
+    store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
+                                  "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=blocked)
+    store.append("RunBlocked", {"step": "final", "reasons": ["every attempt failed"]}, run_id=blocked)
+    page = get(base + "/")
+    waiting, _, others = page.partition('<details class="others">')
+    assert '<div class="qhead" data-waiting="1">' in waiting and f'href="/stop/{run}/draft"' in waiting
+    assert f'href="/stop/{blocked}/final"' not in waiting and f'href="/stop/{blocked}/final"' in others
+    assert len(re.findall(r"<span>started \d\d:\d\d</span>", page)) == 2
+    call = get(f"{base}/run/{run}")
+    assert ('<div class="call stop"><span>Waiting for you: Ship &#x27;draft one&#x27;?</span>'
+            f'<a class="btn go" href="/stop/{run}/draft">Open the stop</a>') in call
+
+
+def test_a_restart_keeps_the_key_so_the_open_tab_still_answers_and_no_tab_opens(
+        served: tuple[str, Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    from jaynes import review
+    _, home, run = served
+    first = make_server(home, port=0)
+    threading.Thread(target=first.serve_forever, daemon=True).start()
+    port = first.server_address[1]
+    get(f"http://127.0.0.1:{port}/?key={first.key}")  # the tab, opened with the link
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    def execve(path: str, args: list[str], env: dict[str, str]) -> None:
+        calls.append((args, env))
+
+    monkeypatch.setattr(review.os, "execve", execve)
+    first.restart()
+    [(args, env)] = calls
+    assert env[review.KEPT] == first.key and args[-1] == "--open"
+    first.shutdown()
+    first.server_close()
+    again = make_server(home, port=port, key=first.key)  # what the restart starts, on the same port
+    threading.Thread(target=again.serve_forever, daemon=True).start()
+    try:
+        page = get(f"http://127.0.0.1:{port}/stop/{run}/draft")  # the same tab, reloaded: no new link needed
+        assert "can look but not answer" not in page
+        assert post(f"http://127.0.0.1:{port}/answer", {**form(page), "answer": "accept"})[0] == 303
+    finally:
+        again.shutdown()
+    made: list[str | None] = []
+    opened: list[str] = []
+
+    class Stub:
+        server_address, link = ("127.0.0.1", port + 1), "unused"
+
+        def serve_forever(self) -> None:
+            pass
+
+        def server_close(self) -> None:
+            pass
+
+    monkeypatch.setenv(review.KEPT, first.key)
+    def make(*args: object, key: str | None = None, **rest: object) -> Stub:
+        made.append(key)
+        return Stub()
+
+    monkeypatch.setattr(review, "make_server", make)
+    monkeypatch.setattr("webbrowser.open", opened.append)
+    review.serve(home, port + 1, browser=True)
+    assert made == [first.key] and opened == [] and review.KEPT not in review.os.environ  # runs never see it

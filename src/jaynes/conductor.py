@@ -268,9 +268,11 @@ def start_in_background(home: Path, run_id: str, ref: str, task: str, runtimes: 
     return continue_in_background(home, run_id, "--role", ref, "--task", task, *overrides, *on)
 
 
-def evidence_hash(checked: Mapping[str, Any], question: str | None) -> str:
-    """What a stop shows: its checked output with the project change and files it carries, and the question."""
-    return hashlib.sha256(json.dumps([checked, question], sort_keys=True).encode()).hexdigest()[:16]
+def evidence_hash(checked: Mapping[str, Any], question: str | None, shown: list[dict[str, Any]] | None = None) -> str:
+    """What a stop shows: its checked output with the project change and files it carries, the question, and the
+    output as the step shows it to the person, when it says how."""
+    return hashlib.sha256(json.dumps([checked, question, *([shown] if shown else [])], sort_keys=True)
+                          .encode()).hexdigest()[:16]
 
 
 def coin(run_id: str, step: str) -> float:
@@ -781,13 +783,13 @@ class Conductor:
             self._emit(run_id, "StopSkipped", {"step": step.name, "status": status, "coin": u, "fingerprint": fp,
                                                "budget": sp.budget, "delta": sp.delta})
             return
-        question = self._question(step, s, st)
+        question, shown = self._question(step, s, st), self._shown(step, s, st)
         self._emit(run_id, "StopOpened", {
             "step": step.name, "round": s.round, "status": status, "coin": u, "n": n, "k": k,
             "log_e": bounds.log_certify_evalue(n, k, sp.budget) if n else 0.0, "fingerprint": fp,
             "budget": sp.budget, "delta": sp.delta, "question": question,
-            "evidence": evidence_hash(s.checked, question), **({"floor_paths": later} if later else {}),
-            **({"ends": True} if ending else {})})
+            "evidence": evidence_hash(s.checked, question, shown), **({"floor_paths": later} if later else {}),
+            **({"ends": True} if ending else {}), **({"shown": shown} if shown else {})})
 
     # helpers ------------------------------------------------------------------
 
@@ -818,6 +820,18 @@ class Conductor:
             return str(step.question(value, self._witnesses(step, st)))[:2000]
         except Exception as err:  # a broken question must not hide the stop
             return f"(the step's question failed: {type(err).__name__}: {err})"[:500]
+
+    def _shown(self, step: Step[Any], s: StepState, st: RunState) -> list[dict[str, Any]] | None:
+        """The output as the step shows it to the person; a broken one shows a line saying so, never hides the stop."""
+        if step.shows is None or s.checked is None:
+            return None
+        value = None if step.output is None else step.output.model_validate_json(
+            self._object(str(s.checked["output_hash"])))
+        try:
+            return [asdict(x) for x in step.shows(value, self._witnesses(step, st))]
+        except Exception as err:
+            return [{"title": "The step could not show its output", "text": f"{type(err).__name__}: {err}"[:500],
+                     "pictures": [], "id": "", "more": False}]
 
     def prompt(self, role: Role, step: Step[Any], task: str, s: StepState,
                files: Mapping[str, Mapping[str, str]] | None = None,

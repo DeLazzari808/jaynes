@@ -355,6 +355,60 @@ details.ran pre { margin: 8px 0 0; max-height: 320px; overflow: auto; white-spac
 .pictures img { width: 100%; height: 220px; object-fit: cover; object-position: top; display: block; background: var(--panel); }
 .pictures span { padding: 8px 12px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; color: var(--dim); }
 .btn.go { background: var(--blue); border-color: var(--blue); color: #04101f; font-weight: 500; justify-self: start; }
+details.others { border-top: 1px solid var(--line); margin-top: 8px; }
+details.others > summary { cursor: pointer; list-style: none; }
+details.others > summary::-webkit-details-marker { display: none; }
+details.others > summary span:first-child::before { content: "\\25B8  "; }
+details.others[open] > summary span:first-child::before { content: "\\25BE  "; }
+.cards { display: grid; gap: 12px; }
+.card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.card .pics { display: flex; gap: 8px; padding: 10px 10px 0; }
+.card .pics a { position: relative; min-width: 0; display: block; }
+.card .pics img { width: 100%; display: block; border-radius: 4px; background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
+.card .pics span { position: absolute; left: 6px; top: 6px; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; background: rgba(7, 9, 13, .82); color: var(--ink); }
+.card .txt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
+.card .txt b { font-weight: 500; }
+.card .txt p { margin: 2px 0 0; color: var(--dim); }
+.card.pick { cursor: pointer; }
+.card.pick:hover { border-color: var(--line-2); }
+.card.pick:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+.card.pick i.n { flex: none; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-2); font-style: normal; font-family: var(--mono); font-size: 12px; display: grid; place-items: center; margin-top: 1px; }
+.card.pick.on { border-color: var(--green); }
+.card.pick.on i.n { background: var(--green); color: #04150c; box-shadow: none; }
+details.fold { border-top: 1px solid var(--line); padding-top: 14px; }
+details.fold > summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); }
+details.fold > summary span { color: var(--faint); margin-left: 6px; }
+details.fold[open] > summary { margin-bottom: 18px; }
+details.fold > * + * { margin-top: 22px; }
+.bar .row { flex-wrap: wrap; }
+.bar .acts { display: flex; gap: 10px; align-items: center; }
+details.menu { position: relative; }
+details.menu > summary { list-style: none; }
+details.menu > summary::-webkit-details-marker { display: none; }
+details.menu .pop { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 2; display: grid; gap: 8px; padding: 12px; min-width: 280px; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 6px; box-shadow: 0 12px 32px rgba(0, 0, 0, .5); }
+details.menu .pop label { display: grid; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+details.menu .pop .btn { text-align: left; }
+.call { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 6px; background: var(--amber-soft); color: var(--amber); }
+.call span { flex: 1; }
+.call.blocked { background: var(--red-soft); color: var(--red); }
+.call.idle { background: var(--blue-soft); color: var(--blue); }
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+  aside { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  aside > :not(.brand) { display: none; }
+  .brand { padding: 10px 16px; }
+  .crumbs { padding: 10px 16px; font-size: 11px; white-space: nowrap; overflow: hidden; }
+  .crumbs > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
+  .crumbs b { flex-shrink: 0; }
+  .crumbs .r { display: none; }
+  .body { padding: 18px 16px 32px; }
+  h1 { font-size: 21px; }
+  .bar { padding: 10px 16px; }
+  .bar .row > input[type=text] { flex-basis: 100%; }
+  .bar .acts { margin-left: auto; }
+  .tiles { grid-template-columns: 1fr; }
+  .previews { grid-template-columns: 1fr; }
+}
 """
 
 ICON = ('<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%2307090d%22/%3E%3Cpath d=%22M11.5 14.6 20 9.6M11.5 17.4 20 22.4%22 stroke=%22%236fb4ff%22 stroke-width=%222%22/%3E%3Ccircle cx=%229%22 cy=%2216%22 r=%224.2%22 fill=%22%236fb4ff%22/%3E%3Ccircle cx=%2222.5%22 cy=%228.5%22 r=%223.2%22 fill=%22%23eef2f7%22/%3E%3Ccircle cx=%2222.5%22 cy=%2223.5%22 r=%223.2%22 fill=%22%23eef2f7%22/%3E%3C/svg%3E">')
@@ -369,14 +423,15 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
+const posted = ["/answer", "/continue", "/dismiss", "/start", "/setup", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
   try {
     const [now, at] = (await (await fetch("/seq")).text()).split(" ");
-    if (at !== boot) {  // Jaynes restarted, with a new key, and opened its own tab
+    if (at !== boot) {  // Jaynes restarted and kept this browser's key: this tab moves to it
       clearInterval(poll);
-      document.body.innerHTML = '<div class="empty" style="height:100vh"><h1>Jaynes restarted in a new tab</h1><p>You can close this one.</p></div>';
+      location.replace(posted.includes(location.pathname) ? "/" : location.href);
       return;
     }
     if (Number(now) !== seq && !busy() && (document.querySelector("#editor") || {}).className !== "") location.reload();
@@ -404,16 +459,35 @@ if (ask && "Notification" in window && Notification.permission === "default") {
 const form = document.querySelector("#answer");
 if (form) {
   const note = form.querySelector("[name=note]"), hint = form.querySelector("#hint"), editor = form.querySelector("#editor");
+  const chosen = form.querySelector("[name=chosen]"), accept = form.querySelector("[data-a=accept]");
+  const picked = () => chosen.value.split(" ").filter(Boolean);
+  const show = () => {
+    const ids = picked();
+    document.querySelectorAll(".card.pick").forEach(c => {
+      const at = ids.indexOf(c.dataset.id);
+      c.classList.toggle("on", at >= 0);
+      c.querySelector("i.n").textContent = at >= 0 ? at + 1 : "";
+    });
+    accept.firstChild.textContent = ids.length ? "Choose " + ids.length + ", in this order" : "Accept";
+  };
+  document.querySelectorAll(".card.pick").forEach(c => {
+    const toggle = () => {
+      const ids = picked(), at = ids.indexOf(c.dataset.id);
+      if (at >= 0) ids.splice(at, 1); else ids.push(c.dataset.id);
+      chosen.value = ids.join(" "); show();
+    };
+    c.addEventListener("click", (ev) => { if (!ev.target.closest("a")) toggle(); });
+    c.addEventListener("keydown", (ev) => { if (ev.key === " " || ev.key === "Enter") { ev.preventDefault(); toggle(); } });
+  });
+  if (chosen.value) show();
   const send = (a) => {
     if (!form.querySelector("[data-a=" + a + "]")) return;
+    if (a === "accept" && chosen.value.trim()) a = "choose";
     if ((a === "return" || a === "context") && !note.value.trim()) { hint.textContent = a + " needs a note for the agent"; note.focus(); return; }
-    const chosen = form.querySelector("[name=chosen]");
-    if (a === "choose" && !chosen.value.trim()) { hint.textContent = "type the items you choose, in order"; chosen.focus(); return; }
     if (a === "change" && editor.className === "hidden") { editor.className = ""; editor.querySelector("textarea").focus(); return; }
     form.querySelector("[name=answer]").value = a; form.submit();
   };
   form.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => send(b.dataset.a)));
-  const accept = form.querySelector("[data-a=accept]");
   let armed = null;
   document.addEventListener("keydown", (ev) => {
     if (busy() || ev.metaKey || ev.ctrlKey || ev.altKey) return;
@@ -421,9 +495,9 @@ if (form) {
     if (!a) return;
     ev.preventDefault();
     if (a === "accept" && form.dataset.floor && !armed) {
-      const label = accept.innerHTML;
-      accept.innerHTML = "Press A again to accept<kbd>A</kbd>";
-      armed = setTimeout(() => { accept.innerHTML = label; armed = null; }, 2000);
+      const label = accept.firstChild.textContent;
+      accept.firstChild.textContent = "Press A again to " + (chosen.value.trim() ? "choose" : "accept");
+      armed = setTimeout(() => { accept.firstChild.textContent = label; armed = null; }, 2000);
       return;
     }
     send(a);
@@ -480,6 +554,19 @@ def _cell(v: Any, first: bool) -> str:
     if isinstance(v, (int, float)) or (isinstance(v, str) and len(v) <= 24):
         return f'<td class="m">{swatch(v)}</td>'
     return f"<td>{render_value(v)}</td>"
+
+
+def _ratio(picture: Path) -> float:
+    """A picture's width over its height, read from a PNG's header; 1 for anything else."""
+    try:
+        with picture.open("rb") as f:
+            head = f.read(24)
+    except OSError:
+        return 1.0
+    if head[:8] != b"\x89PNG\r\n\x1a\n":
+        return 1.0
+    width, height = int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
+    return width / height if width and height else 1.0
 
 
 def stage_list(items: list[Stage]) -> str:
@@ -561,12 +648,16 @@ class Review:
     # sidebar ----------------------------------------------------------------
 
     def sidebar(self, selected: tuple[str, str] | None) -> str:
+        """What waits for the person, the open stops; below it, folded, runs that are blocked, idle or working."""
         items = self.queue()
         now = self.c.clock()
-        rows: list[str] = []
-        foot = ""
+        starts = {w.run_id: next(iter(self.c.store.events("RunStarted", run_id=w.run_id))).ts for w in items}
+        tasks = [w.task for w in items]
+        waiting: list[str] = []
+        others: list[str] = []
+        foot, unfold = "", False
         for w in items:
-            on = selected == (w.run_id, w.step)
+            on = selected == (w.run_id, w.step) or selected == (w.run_id, "")
             events = list(self.c.store.events(run_id=w.run_id))
             run_stages = stages(self.names(self.role_of(w.run_id), events), events, project(events), now)
             chip = {"stop": '<span class="chip amber">stop</span>', "blocked": '<span class="chip red">blocked</span>',
@@ -576,29 +667,39 @@ class Review:
             href = f"/stop/{q(w.run_id)}/{q(w.step)}" if w.needs_person else f"/run/{q(w.run_id)}"
             when = (f"until {time.strftime('%H:%M', time.localtime(w.until))}" if w.until is not None
                     else age(now - w.since))
-            rows.append(f'<a class="item{" on" if on else ""} {w.kind}" href="{href}">'
-                        f'<div class="t">{esc(w.task)}</div>'
-                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>'
-                        f'<span>{when}</span></div>'
-                        f'{stage_list(run_stages) if on else stage_strip(run_stages)}</a>')
+            started = ""
+            if tasks.count(w.task) > 1:  # the same task twice: told apart by when each started
+                at = time.localtime(starts[w.run_id])
+                same_day = time.strftime("%Y%m%d", at) == time.strftime("%Y%m%d", time.localtime(now))
+                started = f'<span>started {time.strftime("%H:%M" if same_day else "%b %d %H:%M", at)}</span>'
+            row = (f'<a class="item{" on" if on else ""} {w.kind}" href="{href}">'
+                   f'<div class="t">{esc(w.task)}</div>'
+                   f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}'
+                   f'<span>{when}</span></div>'
+                   f'{stage_list(run_stages) if on else stage_strip(run_stages)}</a>')
+            (waiting if w.kind == "stop" else others).append(row)
+            unfold = unfold or (on and w.kind != "stop")
             if on:
                 t = totals(events)
                 foot = (f'<div class="foot"><span>started</span><b>{age(now - events[0].ts)} ago</b>'
                         f'<span>turns</span><b>{t.turns}</b>'
                         f'<span>tokens</span><b>{tokens(t.tokens_in)} in, {tokens(t.tokens_out)} out</b>'
                         f'<span>you answered</span><b>{t.answered} of {t.stops} stops</b></div>')
-        body = "".join(rows) or '<div class="empty-q">Nothing is waiting.</div>'
+        body = "".join(waiting) or '<div class="empty-q">Nothing is waiting for you.</div>'
+        if others:
+            body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
+                     f'<span>{len(others)}</span></summary>{"".join(others)}</details>')
         return ('<aside><div class="brand"><a href="/">Jaynes</a> <span>review</span><nav>'
                 '<a href="/">Queue</a><a href="/new">New run</a><a href="/roles">Roles</a><a href="/history">History</a><a href="/log">Log</a><a href="/setup">Setup</a></nav></div>'
-                f'<div class="qhead" data-waiting="{sum(w.needs_person for w in items)}"><span>Waiting</span>'
+                f'<div class="qhead" data-waiting="{len(waiting)}"><span>Waiting for you</span>'
                 '<button id="notify" class="hidden" type="button">Notify me</button>'
-                f'<span>{sum(w.needs_person for w in items)}</span></div>'
+                f'<span>{len(waiting)}</span></div>'
                 f'{body}{foot}</aside>')
 
     # pages ------------------------------------------------------------------
 
     def queue_page(self) -> str:
-        items = [w for w in self.queue() if w.needs_person]
+        items = [w for w in self.queue() if w.kind == "stop"]
         if items:
             return self.stop_page(items[0].run_id, items[0].step)
         main = ('<div class="crumbs"><b>Queue</b></div><div class="body" style="display:flex">'
@@ -646,9 +747,7 @@ class Review:
 
         value = self._value(s, target)
         pure = target is not None and target.output is None  # a stop over what earlier steps made
-        needs = [n.name for n in target.needs] if target else []
-        default = f"Do you accept the result of {', '.join(needs)}?" if pure and needs else f"Is the output of {step} right?"
-        question = w.question or default
+        question = self._question_of(w, role)
         rejected = [ev for ev in events if ev.type == "TurnRejected" and ev.payload["step"] == step
                     and self._round_of(events, ev) == s.round]
         sub = (f'<div class="sub">{len(rejected)} earlier attempt{"s" if len(rejected) != 1 else ""} '
@@ -659,33 +758,53 @@ class Review:
                     'to have the agent look again.</div>')
         if s.note:
             sub += f'<div class="sub">You returned round {s.round - 1} with: {esc(s.note)}</div>'
+        shown = cast(list[dict[str, Any]] | None, s.open_stop[1].get("shown")) if s.open_stop else None
+        items = self._items(target, s)
+        if items:
+            sub += ('<div class="sub">Click them in order of importance to choose; Accept keeps them all, in the order '
+                    'shown.</div>')
         parts.append(f"<div><h1>{esc(question)}</h1>{sub}</div>")
-        parts.append(self._floor_part(s))
-        parts.append(self._project_part(run_id, st, role))
-        parts.append(self._pictures_part(run_id, st, target))
+        parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
+        # in front, what the person judges; behind Details, the output, its checks, turns and statistics
+        details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]
+        outputs: list[str] = []
         if pure and target is not None:
             for need in target.needs:
-                parts.append(self._output(f"From {need.name}", self._value(st.steps.get(need.name, StepState()), need)))
+                outputs.append(self._output(f"From {need.name}", self._value(st.steps.get(need.name, StepState()), need)))
         else:
-            parts.append(self._output("Output", value, f"round {s.round}"))
+            outputs.append(self._output("Output", value, f"round {s.round}"))
             if s.previous:
-                parts.append(self._output("Before", self._value_of(s.previous, target), f"round {s.round - 1}, returned"))
+                outputs.append(self._output("Before", self._value_of(s.previous, target), f"round {s.round - 1}, returned"))
+        if shown:
+            parts.append(self._shown(run_id, st, [x for x in shown if not x.get("more")], items))
+            more = [x for x in shown if x.get("more")]
+            if more:
+                parts.append(f'<details class="fold"><summary>More <span>{len(more)}</span></summary>'
+                             f'{self._shown(run_id, st, more, [])}</details>')
+            details = outputs + details
+        else:
+            if items:
+                parts.append(self._shown(run_id, st, [{"title": label, "id": i} for i, label in items], items))
+            parts += details + outputs
+            details = []
         if target is not None and target.checks:
             # a Checked witness means every check passed; the names come from the role's code
             check_names = ", ".join(esc(getattr(c, "__name__", "check")) for c in target.checks)
-            parts.append(f'<div><div class="label">Checks</div><div class="checks">'
-                         f'<span class="chip green">passed: {check_names}</span></div></div>')
+            details.append(f'<div><div class="label">Checks</div><div class="checks">'
+                           f'<span class="chip green">passed: {check_names}</span></div></div>')
         if s.open_stop is not None:
             self.shared.first_seen.setdefault((run_id, step, s.open_stop[0]), time.time())
         if not pure:
-            parts.append(self._turns(events, step, s.round))
-        parts.append(self._tiles(s, target))
+            details.append(self._turns(events, step, s.round))
+        details.append(self._tiles(s, target))
+        parts.append(f'<details class="fold"><summary>Details <span>the output, its checks and turns</span></summary>'
+                     f'{"".join(details)}</details>')
         main = (crumbs + f'<div class="body">{"".join(parts)}</div>'
                 + self._answer_bar(run_id, step, value, error, fields, editable=not pure,
                                    earlier=self._earlier(role, step),
                                    default_to=return_to(role, step) if pure and role else None,
                                    floor=bool(s.open_stop and s.open_stop[1].get("status") == "floor"),
-                                   items=self._items(target, s),
+                                   items=items,
                                    evidence=str(s.open_stop[1].get("evidence") or "") if s.open_stop else ""))
         return page(f"Stop: {step}", self.sidebar((run_id, step)), main, self.seq())
 
@@ -740,6 +859,36 @@ class Review:
                 out += (f'<div class="wide"><div class="label">Pictures from {esc(x.name)}</div>'
                         f'<div class="pictures">{pics}</div></div>')
         return out
+
+    def _shown(self, run_id: str, st: RunState, shown: list[dict[str, Any]], items: list[tuple[str, str]]) -> str:
+        """The stop's items as cards: pictures side by side at one height, a title and a sentence. An item the
+        person may choose is picked by clicking it, in order."""
+        choosable = {i for i, _ in items}
+        cards: list[str] = []
+        for x in shown:
+            pics: list[str] = []
+            ratios: list[float] = []
+            for pic in cast(list[dict[str, str]], x.get("pictures") or []):
+                step, rel = str(pic["step"]), str(pic["file"])
+                obj = self._files(st, step).get(rel)
+                if obj is None:
+                    continue
+                ratio = _ratio(self.c.home / "objects" / obj)
+                ratios.append(ratio)
+                link = f"/file/{q(run_id)}/{q(step)}/{q(rel)}"
+                caption = f"<span>{esc(str(pic.get('caption') or ''))}</span>" if pic.get("caption") else ""
+                pics.append(f'<a href="{link}" target="_blank" style="flex:{ratio:.3f} 1 0"><img src="{link}" '
+                            f'alt="{esc(str(pic.get("caption") or rel))}" loading="lazy">{caption}</a>')
+            # one height for the row, at most 280 px: the width it takes is that height times the ratios
+            row = (f'<div class="pics" style="max-width:{max(240, 280 * sum(ratios)):.0f}px">{"".join(pics)}</div>'
+                   if pics else "")
+            ident = str(x.get("id") or "")
+            pick = ident in choosable
+            text = f"<p>{esc(str(x['text']))}</p>" if x.get("text") else ""
+            cards.append(f'<div class="card{" pick" if pick else ""}"' + (f' data-id="{esc(ident)}" tabindex="0"' if pick else "")
+                         + f'>{row}<div class="txt">' + ('<i class="n"></i>' if pick else "")
+                         + f'<div><b>{esc(str(x["title"]))}</b>{text}</div></div></div>')
+        return f'<div class="cards">{"".join(cards)}</div>'
 
     @staticmethod
     def _files(st: RunState, step: str) -> dict[str, str]:
@@ -822,17 +971,35 @@ class Review:
         crumbs = (f'<div class="crumbs"><a href="/role/{q(str(started.get("role", "")))}">{esc(str(started.get("role", "")))}</a>/'
                   f'<b>{esc(str(started.get("task", "")))}</b><span class="r">{esc(run_id)}</span></div>')
         rows = "".join(self._event_row(ev) for ev in events)
+        w = next((x for x in self.queue() if x.run_id == run_id and x.needs_person), None)
+        call = ""  # what the run waits for, in one line, one click from it
+        if w is not None:
+            stop = self._question_of(w, role)
+            say = {"stop": f"Waiting for you: {stop}", "blocked": f"Blocked at {w.step}: {w.reasons[0] if w.reasons else ''}",
+                   "idle": "This run is not running: no process holds it."}[w.kind]
+            label = {"stop": "Open the stop", "blocked": "See why", "idle": "Continue or dismiss"}[w.kind]
+            call = (f'<div class="call {w.kind}"><span>{esc(say)}</span><a class="btn go" '
+                    f'href="/stop/{q(run_id)}/{q(w.step)}">{label}</a></div>')
         made = (f'<div class="box"><table class="kv"><tr><td>branch</td><td class="m">{esc(str(st.branch["branch"]))} '
                 f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr></table></div>'
                 if st.branch else "")
-        body = (stage_list(stages(names, events, st, self.c.clock())) + made
+        body = (call + stage_list(stages(names, events, st, self.c.clock())) + made
                 + f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
                 f'<div><div class="n">{t.turns}<small>turns</small></div><p>{tokens(t.tokens_in)} tokens in, {tokens(t.tokens_out)} out</p></div>'
                 f'<div><div class="n">{age(t.seconds)}</div><p>from start to last event</p></div></div>'
                 f'<div><div class="label">Events <span><a href="/log?run={q(run_id)}">raw log</a></span></div>'
                 f'<div class="box"><table><tr><th>time</th><th>event</th><th>step</th><th>detail</th></tr>{rows}</table></div></div>')
         main = crumbs + f'<div class="body">{body}</div>'
-        return page(f"Run {run_id}", self.sidebar(None), main, self.seq())
+        return page(f"Run {run_id}", self.sidebar((run_id, w.step) if w else (run_id, "")), main, self.seq())
+
+    def _question_of(self, w: Waiting, role: Role | None) -> str:
+        """The question a stop asks, its step's own or the default the stop page shows."""
+        if w.question:
+            return w.question
+        target = next((s for s in role.steps if s.name == w.step), None) if role else None
+        needs = [n.name for n in target.needs] if target else []
+        return (f"Do you accept the result of {', '.join(needs)}?" if target is not None and target.output is None
+                and needs else f"Is the output of {w.step} right?")
 
     def known_roles(self) -> dict[str, dict[str, str]]:
         """Roles a run can be started with and their runtime overrides: those that come with Jaynes, then each one run."""
@@ -1025,7 +1192,7 @@ class Review:
 
     def restarting(self) -> str:
         main = ('<div class="crumbs"><b>Restarting</b></div><div class="body" style="display:flex">'
-                '<div class="empty"><h1>Restarting Jaynes</h1><p>It opens in a new tab in a moment.</p></div></div>')
+                '<div class="empty"><h1>Restarting Jaynes</h1><p>This tab comes back by itself in a moment.</p></div></div>')
         return page("Restarting", self.sidebar(None), main, self.seq())
 
     def message(self, title: str, text: str) -> str:
@@ -1354,33 +1521,34 @@ class Review:
                     editable: bool = True, earlier: list[str] | None = None, evidence: str = "",
                     default_to: str | None = None, floor: bool = False,
                     items: list[tuple[str, str]] | None = None) -> str:
+        """Accept and Return, with the note, in sight; Change, Context and going back to an earlier step in a menu.
+        Where the person may choose, the cards they click fill ``chosen`` and Accept becomes Choose."""
         fields = fields or {}
-        choose = ("" if not items else
-                  f'<input type="text" name="chosen" value="{esc(fields.get("chosen", ""))}" '
-                  f'placeholder="Choose in order: {esc(", ".join(i for i, _ in items[:3]))}" '
-                  f'title="{esc("; ".join(f"{i}: {label}" for i, label in items))}">'
-                  f'<button type="button" class="btn" data-a="choose">Choose</button>')
         chosen = fields.get("to", "") or (default_to or "")
         back = ("" if not earlier else
-                '<select name="to" title="Return and context go to this step; every step after it runs again">'
-                + ("" if default_to else f'<option value="">to {esc(step)}</option>')  # a step with no output reruns nothing
-                + "".join(f'<option value="{esc(n)}"{" selected" if n == chosen else ""}>back to {esc(n)}</option>'
-                          for n in earlier) + "</select>")
+                '<label>Return and context go to<select name="to" title="Every step after it runs again">'
+                + ("" if default_to else f'<option value="">{esc(step)}</option>')  # a step with no output reruns nothing
+                + "".join(f'<option value="{esc(n)}"{" selected" if n == chosen else ""}>{esc(n)}</option>'
+                          for n in earlier) + "</select></label>")
         edited = fields.get("output") or json.dumps(value, indent=2, ensure_ascii=False)
         editor_class = "" if fields.get("answer") == "change" else "hidden"
         hidden = "".join(f'<input type="hidden" name="{k}" value="{esc(v)}">' for k, v in (
-            ("token", self.shared.token), ("run", run_id), ("step", step), ("evidence", evidence), ("answer", "")))
+            ("token", self.shared.token), ("run", run_id), ("step", step), ("evidence", evidence), ("answer", ""),
+            ("chosen", fields.get("chosen", "") if items else "")))
         floor_mark = ' data-floor="1"' if floor else ""  # the page script asks for A twice
+        menu = (f'<details class="menu"><summary class="btn">More</summary><div class="pop">{back}'
+                f'<button type="button" class="btn" data-a="context">Context: add facts, same output<kbd>X</kbd></button>'
+                + (f'<button type="button" class="btn" data-a="change">Change: edit the output yourself<kbd>C</kbd>'
+                   f'</button>' if editable else "") + '</div></details>')
         return (f'<form id="answer" class="bar" method="post" action="/answer"{floor_mark}>{hidden}'
                 f'<div id="editor" class="{editor_class}"><div class="label">Edit the output, then press Change again '
                 f'<span>it is checked before it replaces the agent\'s</span></div>'
                 f'<textarea name="output" spellcheck="false">{esc(edited)}</textarea></div>'
                 f'<div class="row"><input type="text" name="note" value="{esc(fields.get("note", ""))}" '
-                f'placeholder="Note for the agent (needed for return and context)">{back}{choose}'
-                f'<button type="button" class="btn" data-a="context">Context<kbd>X</kbd></button>'
+                f'placeholder="What is wrong? (needed to return)">'
+                f'<div class="acts">{menu}'
                 f'<button type="button" class="btn" data-a="return">Return<kbd>R</kbd></button>'
-                + (f'<button type="button" class="btn" data-a="change">Change<kbd>C</kbd></button>' if editable else "") +
-                f'<button type="button" class="btn solid" data-a="accept">Accept<kbd>A</kbd></button></div>'
+                f'<button type="button" class="btn solid" data-a="accept">Accept<kbd>A</kbd></button></div></div>'
                 f'<div id="hint" class="err">{esc(error)}</div></form>')
 
     def _event_row(self, ev: Event) -> str:
@@ -1420,13 +1588,14 @@ class Review:
 # --- HTTP ------------------------------------------------------------------------------
 
 def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_every: float = 15.0,
-                call: bool = False) -> ReviewServer:
+                call: bool = False, key: str | None = None) -> ReviewServer:
     """A review server for ``home`` on 127.0.0.1; ``port=0`` picks a free one. Every ``wake_every`` seconds it
     continues the runs whose quota pause has ended, since nothing else would. With ``call``, it is the person's
-    page: it opens the browser at a new stop when no tab is open, and looks for a newer Jaynes."""
+    page: it opens the browser at a new stop when no tab is open, and looks for a newer Jaynes. ``key`` is the one a
+    restart keeps, so the browser that held it still answers."""
     if str(Path.cwd()) not in sys.path:
         sys.path.insert(0, str(Path.cwd()))  # role modules are imported from the project, as `jaynes run` does
-    shared = Shared(secrets.token_urlsafe(16), secrets.token_urlsafe(24), idle_after)
+    shared = Shared(secrets.token_urlsafe(16), key or secrets.token_urlsafe(24), idle_after)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:
@@ -1634,6 +1803,7 @@ def _wake(home: Path, every: float, stopping: threading.Event) -> None:
             continue
 
 
+KEPT = "JAYNES_REVIEW_KEY"  # the key a restart hands to the start that replaces it, never to a run
 NOT_PERSON = ("This browser can look but not answer. To answer, open the link jaynes printed in its terminal "
               "when it started.")
 
@@ -1666,10 +1836,12 @@ class ReviewServer(ThreadingHTTPServer):
 
     def restart(self) -> None:
         """Become the Jaynes installed now, in this same process, so whoever started the page still holds it. The
-        new start has a new key and opens its own tab; the socket closes on exec."""
+        new start keeps the key, so the open tab, which sees the restart, reloads into it and still answers, and no
+        new tab opens; the socket closes on exec."""
         self.previews.stop_all()
-        os.execv(sys.executable, [sys.executable, "-m", "jaynes.cli", "review", "--home", str(self.home),
-                                  "--port", str(self.server_address[1]), "--open"])
+        os.execve(sys.executable, [sys.executable, "-m", "jaynes.cli", "review", "--home", str(self.home),
+                                   "--port", str(self.server_address[1]), "--open"],
+                  {**os.environ, KEPT: self.key})
 
 
 def _running(home: Path, port: int) -> int | None:
@@ -1690,8 +1862,9 @@ def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> N
     home = home.resolve()
     home.mkdir(parents=True, exist_ok=True)  # a new home: the page records itself there before any request
     skill.refresh()
+    kept = os.environ.pop(KEPT, None)  # a restart: the tab that was open moves to it by itself
     try:
-        server = make_server(home, port, call=browser)
+        server = make_server(home, port, call=browser, key=kept)
     except OSError as err:
         if err.errno != errno.EADDRINUSE:
             raise
@@ -1714,7 +1887,7 @@ def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> N
     for sig in (signal.SIGTERM, signal.SIGHUP):  # a closed terminal or a kill still stops the previews
         signal.signal(sig, leave)
     print(f"Jaynes review on {server.link}  (Ctrl+C to stop)", flush=True)
-    if browser:
+    if browser and not kept:
         import webbrowser
         threading.Timer(0.5, webbrowser.open, [server.link]).start()
     try:

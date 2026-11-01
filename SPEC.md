@@ -88,7 +88,7 @@ snapshot = design.step("snapshot", output=Snapshot, run_by=take_snapshot)
 moments  = design.step("moments", output=Moments, needs=[snapshot],
                        check=cites_snapshot, stop=stop(budget=0.20))
 objects  = design.step("object-map", output=ObjectMap, needs=[moments, snapshot],
-                       check=[cites_snapshot, counts_match_data], stop=stop(budget=0.20))
+                       check=[cites_snapshot, counts_match_data])
 paths    = design.step("paths", output=Paths, needs=[objects])
 walk     = design.step("walkthrough", output=Captures, needs=[paths], run_by=walk_paths)
 breaks   = design.step("breaks", output=Breaks, needs=[walk], check=breaks_cite_captures)
@@ -424,8 +424,8 @@ order with how each was released (`by jaynes`, `checked`, `accepted`,
 
 | View | Content |
 |---|---|
-| Queue (`/`) | Stops waiting, then blocked runs, then idle runs (unfinished, not waiting, no process holds them, no event for 10 s), each oldest first; the first opens. An idle run shows the end of its `continue.log` and a Continue button. Idle and blocked runs have Dismiss, which finishes the run with nothing delivered (refused while a process holds it). After them, runs a process holds (`running`) and runs paused for quota (`paused`, with the reset time), which need nobody: they link to their run page, have no answer bar, and are not counted in Waiting |
-| Stop (`/stop/<run>/<step>`) | The question, the output rendered from its JSON in schema order (lists of records as tables), after a return the returned output as Before, earlier rejections of the round, the person's note from the last round, the names of the checks its witness passed, turns and their cost with each shell command the agent ran, green or red by its exit and its output a click away, the stop's labels and evidence; answer buttons with keys A, C, R, X and a note field (at a floor, A accepts only when pressed again within two seconds; a click accepts at once); Change opens an editor over the output JSON. For a step with no output, the outputs of the steps it needs, no Change, and Return and Context going to the earlier step selected by default (section 6.2) |
+| Queue (`/`) | Waiting for you: the open stops, oldest first; the first opens. Below them, folded under Other runs: blocked runs, idle runs (unfinished, not waiting, no process holds them, no event for 10 s), runs a process holds (`running`) and runs paused for quota (`paused`, with the reset time). Two runs of the same task show when each started. An idle run shows the end of its `continue.log` and a Continue button. Idle and blocked runs have Dismiss, which finishes the run with nothing delivered (refused while a process holds it). A run's page says at the top what it waits for, one click from it |
+| Stop (`/stop/<run>/<step>`) | The question; when the step says how its stop shows the output (`shows`), its items in front: a title, a sentence and pictures side by side, the items the person may choose picked by clicking them in order, and costs and measures folded under More. Everything below sits under a folded Details then: the output rendered from its JSON in schema order (lists of records as tables), after a return the returned output as Before, earlier rejections of the round, the person's note from the last round, the names of the checks its witness passed, turns and their cost with each shell command the agent ran, green or red by its exit and its output a click away, the stop's labels and evidence. Code that runs later, outside any box, stays in front. Accept and Return, with the note field, are in sight; Change, Context and the step a return goes to are under More; keys A, C, R, X (at a floor, A accepts only when pressed again within two seconds; a click accepts at once); Change opens an editor over the output JSON. For a step with no output, the outputs of the steps it needs, no Change, and Return and Context going to the earlier step selected by default (section 6.2) |
 | Blocked | The last rejection reasons and the turns of the round. A run blocked after its last step, because its branch was not created, says so with the reason |
 | Run (`/run/<run>`) | Step timeline, state, turns, tokens, time, every event; witnesses by output hash |
 | Role (`/role/<name>`) | Per stop: status, labels, evidence against 1/δ with the budget and δ logged at the stop, audits and skips, and each audit with its answer; per week: runs, distinct steps checked, rounds until accepted, tokens per finished run, the person's minutes; the runs |
@@ -445,7 +445,10 @@ Answers are accepted only with the server's per-process token and a local
 Host and Origin, so another site open in the same browser cannot answer a
 stop or send a run on. Only a browser opened with the link the server prints,
 which carries the page key once and keeps it as a cookie, answers as the
-person; any other client can read the page but not answer from it.
+person; any other client can read the page but not answer from it. When the
+page restarts after an update it keeps its key, handed to the new start in
+its environment and removed there before any run starts: the open tab sees
+the restart, reloads into it and still answers, and no new tab opens.
 
 Known limit: the agent runs as the same operating-system user as the person,
 so a process that starts `jaynes review` itself and reads the printed link

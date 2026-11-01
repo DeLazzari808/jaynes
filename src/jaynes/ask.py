@@ -7,7 +7,8 @@ so an agent that changes the question, its evidence or its options gets nothing 
 
 Accept, with any note the person adds to it, and return, with the note that says what is wrong, are answered
 here. Typing an answer of one's own is a return with that text as the note. Change and context, which need the
-output edited or a step chosen, stay in the review page. At a stop that lets the person choose among the output's
+output edited or a step chosen, stay in the review page. A step that says how its stop shows the output is shown
+here in its sentences, with a word that the pictures are in the review page; the output itself stays there. At a stop that lets the person choose among the output's
 items, typing their numbers or ids in order, such as ``2, 1``, chooses them; the dialog has room for four
 options and no order, so the items are listed in the evidence rather than as options.
 """
@@ -43,7 +44,8 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
     question = w.question or (f"Do you accept the result of {', '.join(needs)}?" if pure and needs
                               else f"Is the output of {w.step} right?")
     ends = bool(s.open_stop and s.open_stop[1].get("ends"))
-    evidence = _evidence(c, role, st, s, target)
+    shown = cast(list[dict[str, Any]] | None, s.open_stop[1].get("shown")) if s.open_stop else None
+    evidence = _evidence(c, role, st, s, target, shown)
     accept = "Accepting ends the run here, with nothing delivered." if ends else "It is right: the run goes on."
     back = return_to(role, w.step) if pure else w.step
     items = _items(c, s, target)
@@ -64,7 +66,8 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
     }]}
 
 
-def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step[Any]) -> str:
+def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step[Any],
+              shown: list[dict[str, Any]] | None = None) -> str:
     parts: list[str] = []
     if s.note:
         parts.append(f"You returned the last round with: {s.note}")
@@ -72,9 +75,11 @@ def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step
     patch = (s.checked or {}).get("patch")
     if later and patch:
         text = (c.home / "objects" / f"{patch}.patch").read_bytes().decode(errors="replace")
-        shown = "".join(d for path, d in repo.diffs(text).items() if path in later)
-        parts.append(f"These files run later, outside any box; read every line: {', '.join(sorted(later))}\n{shown}")
-    if target.output is None:
+        diff = "".join(d for path, d in repo.diffs(text).items() if path in later)
+        parts.append(f"These files run later, outside any box; read every line: {', '.join(sorted(later))}\n{diff}")
+    if shown:
+        parts.append(_sentences(shown, chosen_apart=target.choose is not None))
+    elif target.output is None:
         for need in target.needs:
             parts.append(f"From {need.name}:\n{_text(_value(c, st.step(need.name), need))}")
     else:
@@ -86,6 +91,20 @@ def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step
         text = (text[:LIMIT] + f"\n\n[{len(text) - LIMIT} more characters not shown: read them in the review page, "
                 "jaynes review --open]")
     return text
+
+
+def _sentences(shown: list[dict[str, Any]], chosen_apart: bool) -> str:
+    """What the stop shows, as lines: the items the person may choose are listed apart, numbered."""
+    def line(x: dict[str, Any]) -> str:
+        return ": ".join(filter(None, [str(x["title"]), str(x.get("text") or "")]))
+    main = [line(x) for x in shown if not x.get("more") and not (chosen_apart and x.get("id"))]
+    more = [line(x) for x in shown if x.get("more")]
+    pictures = sum(len(x.get("pictures") or []) for x in shown)
+    out = "\n".join(main)
+    out += "\n\nMore:\n" + "\n".join(more) if more else ""
+    out += (f"\n\n{pictures} picture{'s' * (pictures > 1)} of this stop {'are' if pictures > 1 else 'is'} in the "
+            "review page (jaynes review --open), with the full output under Details." if pictures else "")
+    return out.strip()
 
 
 def _items(c: Conductor, s: StepState, target: Step[Any]) -> list[tuple[str, str]]:
