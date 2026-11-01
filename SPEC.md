@@ -99,6 +99,10 @@ build    = design.step("implement", output=Patch, needs=[reqs],
 accept   = design.step("accept", needs=[build], stop=stop(budget=0.05, sampled=False))
 ```
 
+The built-in `screen-design` role (`src/jaynes/roles/screen_design.py`) is the
+full version of this sketch, with the person's method and heuristics as
+inputs.
+
 Rules:
 
 - A step can only need steps defined before it, so `needs` is acyclic by
@@ -172,6 +176,44 @@ Rules:
   run, the step and the payload, to pass to the service that acts; and if
   Jaynes stopped while it was running, the run is blocked instead of resumed,
   since it may have acted.
+- `role(..., inputs={"method": Input(help, kind="file")})` declares what a
+  run starts with, given as `jaynes run --input name=value` (or Inputs on New
+  run). A run missing a required input, or given one the role does not
+  declare, is refused before it exists. Each is resolved once at the start
+  and recorded in `RunStarted` with a digest: `text` as given; `file` read
+  then, so later edits change nothing; `command` with the files it names, so
+  a looser limits file changes the digest; `folder` copied then into the
+  run's folder (a clone on macOS, instant and taking no space) as `source` or
+  `source:where-in-the-project`. A frozen folder is never read live again:
+  every preview, check or executor that serves the project gets its own clone
+  in place. A step lists the inputs it uses, `inputs=["method"]`: a `file`
+  input's text is shown in its prompt, a `text` input as `name: value`, and
+  the digests of all it lists enter its stop fingerprint, so a new method
+  text opens a new window at the steps that read it and no other.
+- `choose=Choice(items, keep)` lets the person pick among the output's items
+  at the stop, in their order of importance: `items(output)` lists them as
+  (id, label), and `keep(output, ids)` gives the output with only those, which
+  is checked again like a change. It is answered `choose` (section 6.2). In
+  Claude Code's dialog, which has four options and no order, the items are
+  listed in the evidence and typing their numbers in order chooses them.
+- `back=Back(to, when, rounds=2)` lets Jaynes send an earlier step back:
+  when the checked output makes `when(output, needs)` return reasons, `to`
+  and every step after it run again with the reasons in `to`'s prompt, as a
+  person's return would, but no label is recorded, since nobody answered.
+  After `rounds` returns in a run, the output goes on as it is and later
+  steps, and the person, see what remains. A broken `when` sends nothing
+  back.
+- A check or trusted executor that cannot judge at all, such as a measuring
+  tool that failed, raises `Blocked(reason)`: the run blocks with the reason
+  at once and no attempt is spent, since the agent is not at fault.
+- A trusted executor leaves files for later steps in `files/`, at most
+  `max_files` (default 20) of 10 MB each. Files under `files/private/` reach
+  checks only, as `needs.files[step][path]`, and are never copied to an
+  agent: raw data a check recomputes from, which would cost an agent tokens.
+  `needs.started` is what the run started with, inputs included.
+  `ctx.history` gives an executor what people said in the run (their notes
+  and changes), what Jaynes sent back and why, and each step's turns, new
+  tokens, cached tokens and seconds.
 - Before a new run, from the CLI or the page, the verifier reads the role's
   checks, questions and trusted executors from their bytecode, without
   running them, and refuses the role if one names a step its step does not
@@ -289,6 +331,7 @@ reproduces every decision.
 | change | the person's edited output replaces the agent's and is rechecked | error |
 | return | the step reruns with the person's note in the prompt | error |
 | context | the step reruns with the note; the agent was not at fault | not counted |
+| choose | the chosen items of the output, in the person's order, replace it and are rechecked | correct |
 
 Only answers given while the stop was waiting count. A stop that continued
 without waiting produces no label, so labels are either every occurrence
@@ -423,15 +466,16 @@ Conductor events:
 
 | Event | Payload |
 |---|---|
-| `RunStarted` | role, task, role fingerprint, role reference and runtime overrides (for `jaynes run <id>`) |
+| `RunStarted` | role, task, role fingerprint, role reference and runtime overrides (for `jaynes run <id>`), inputs as resolved with their digests |
 | `StepStarted` | step, round, attempt, executor, workspace manifest hash; for an irreversible step, effect, idempotency key and payload |
-| `TurnFinished` | step, attempt, files changed, tokens in and out from the runtime meter, model, seconds; on a web step, what it read; the shell commands the turn ran as the runtime saw them (the last 50, each with whether it exited 0 and the last 2000 characters of its output) |
+| `TurnFinished` | step, attempt, files changed, tokens in and out from the runtime meter and the part of tokens in read back from the cache, model, seconds; on a web step, what it read; the shell commands the turn ran as the runtime saw them (the last 50, each with whether it exited 0 and the last 2000 characters of its output) |
 | `TurnRejected` | step, attempt, reason: `write_boundary`, `schema`, `check`, `deadline`, `runtime`, `executor`; reasons |
 | `TurnInterrupted` | step, attempt, reason `crash` or `quota`; not an attempt |
 | `Checked` | step, round, attempt, output hash, check hash, source (agent, `jaynes`, `person`), model |
 | `StopOpened` | step, round, status, coin, n, k, log evidence, stop fingerprint, budget, δ, question, evidence hash, floor paths |
 | `StopSkipped` | step, status `certified`, coin, stop fingerprint, budget, δ |
-| `StopAnswered` | step, answer, label, note, stop fingerprint, seconds waited, seconds spent, by (`person` or `agent`), the earlier label it revises |
+| `StopAnswered` | step, answer, label, note, stop fingerprint, seconds waited, seconds spent, by (`person` or `agent`), the earlier label it revises, the ids chosen |
+| `StepReturned` | step whose output sent it back, the earlier step, the steps reset, reasons, round |
 | `RunPaused` | reason `quota`, agent, until |
 | `RunBlocked` | step, reasons |
 | `RunFinished` | outcome: `delivered`, `ended` with the step whose accepted output ended it, or `dismissed` by a person from the page |
@@ -475,10 +519,14 @@ before Jaynes (Sep 1 to Oct 21, 2026):
 | Tokens per screen | 170k to 480k against a 150k budget |
 | Agent-reported cost vs measured | lower than measured in both recorded cases |
 
-Jaynes is validated on this user when its design roles (`visual-identity`, `redesign`) show: all
+Jaynes is validated on this user when its `screen-design` role shows: all
 steps fulfilled with requirements approved, fewer rounds until acceptance,
 fewer rejections after checks pass, tokens per screen measured and lower, and
-an error rate stated per stop.
+an error rate stated per stop. Tokens per screen count new tokens (input
+outside the cache, cache writes and output); what is read back from the cache
+is shown apart, with the minutes. `visual-identity` and `redesign` stay for
+changing a visual direction from references; they have no moments, objects,
+walkthrough or requirements, so they cannot show the first criterion.
 
 ## 11. Milestones
 
@@ -502,8 +550,14 @@ outbound integrations.
 
 ## 13. Open questions
 
-- How the method text is split between the role definition and step
-  instructions without duplicating the first user's `method-v2.md`.
+- Resolved: the method stays in the person's file, given as an input; the
+  role keeps only the structure and the checks (`screen-design`).
+- How a run of `screen-design` starts from requirements already approved, for
+  the slices after the first.
+- Whether the slice's test can be a browser test kept in the product: on
+  macOS, Chrome opens in Jaynes's box only with its own sandbox off and the
+  user's shared temporary folder writable, so today the test is a path Jaynes
+  performs with its own Chrome.
 - Whether `change` answers should feed the agent's examples for the step
   automatically.
 - Turn deadline and `max_turns` defaults per step type.

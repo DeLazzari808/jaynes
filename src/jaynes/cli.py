@@ -7,7 +7,7 @@
   jaynes simulate                   Monte Carlo check of the certification guarantee
   jaynes                            the review page, opened in the browser
   jaynes run [ID] --role R --task T [--project DIR] [--preview CMD] [--suite CMD]
-                                    start a run of a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change), a role
+                                    start a run of a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change, screen-design), a role
                                     file (.toml) or module:attribute, on the git repository at DIR
                                     --here: started from an agent's terminal, which asks the stops there
   jaynes run ID                     continue a run from its log (after a crash, a pause or a stop)
@@ -236,6 +236,11 @@ def cmd_run(args: argparse.Namespace) -> None:
                                   "ports": _ports(args.preview_ports or "")}
         if args.suite:
             started["suite"] = args.suite
+        if args.input:
+            if any("=" not in pair for pair in args.input):
+                sys.exit("--input takes name=value")
+            started["inputs"] = dict(pair.split("=", 1) for pair in args.input)
+    from jaynes.inputs import InputError
     from jaynes.project import ProjectError
     from jaynes.review import ensure_page
     skill.refresh()
@@ -248,6 +253,8 @@ def cmd_run(args: argparse.Namespace) -> None:
                        project=Path(args.project) if args.project and args.role else None)
     except ProjectError as err:
         sys.exit(str(err))
+    except InputError as err:
+        sys.exit("\n".join(err.reasons))
     if result.status in ("waiting", "blocked") and not here:
         ensure_page(c.home)  # in case it was closed while the run worked
     print(json.dumps({"run": run_id, "status": result.status, "step": result.step, "until": result.until,
@@ -302,13 +309,26 @@ def cmd_answer(args: argparse.Namespace) -> None:
     answer: Answer = args.answer
     try:
         c.answer(r, args.run, args.step, answer, note=args.note, output=output, to=args.to, by="agent",
-                 evidence=args.evidence)
+                 evidence=args.evidence, chosen=[x.strip() for x in (args.chosen or "").split(",") if x.strip()])
     except AnswerRejected as err:
         sys.exit("answer not recorded: " + "; ".join(err.reasons))
     except RunBusy:
         sys.exit(f"run {args.run} is busy in another process; try again in a moment")
     continue_in_background(c.home, args.run)
     print(json.dumps({"run": args.run, "step": args.step, "answer": answer, "continuing": True}))
+
+
+def cmd_output(args: argparse.Namespace) -> None:
+    from jaynes.conductor import Conductor
+    c = Conductor(_home(args))
+    r, _, _, _ = _started(c, args.run)
+    step = next((s for s in r.steps if s.name == args.step), None)
+    if step is None:
+        sys.exit(f"{r.name} has no step {args.step!r}; its steps are {', '.join(s.name for s in r.steps)}")
+    value = c.output(args.run, step)
+    if value is None:
+        sys.exit(f"{args.step} has no checked output in run {args.run} yet")
+    print(value.model_dump_json(indent=2))
 
 
 def cmd_ask(args: argparse.Namespace) -> None:
@@ -436,7 +456,7 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--p", type=float, nargs="+", default=[0.0, 0.01, 0.02, 0.03, 0.05, 0.06, 0.08])
     r = sub.add_parser("run")
     r.add_argument("id", nargs="?")
-    r.add_argument("--role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change), a role file (.toml) or module:attribute")
+    r.add_argument("--role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change, screen-design), a role file (.toml) or module:attribute")
     r.add_argument("--task")
     r.add_argument("--runtime", action="append", default=[], help="name=module:attribute, overrides a runtime")
     r.add_argument("--project", help="a folder in a git repository, for steps that work on a project")
@@ -445,17 +465,20 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--preview-ports", help="local ports the preview may connect to, such as a backend: 8789,5432")
     r.add_argument("--suite", help="the command that runs the project's whole test suite, when Jaynes does not "
                                    "find it (fix-bug, build-feature, small-change)")
+    r.add_argument("--input", action="append", default=[],
+                   help="name=value, an input the role declares, such as --input method=method.md")
     r.add_argument("--here", action="store_true",
                    help="started from an agent's terminal: its stops are asked there, and the page opens only when asked")
     r.add_argument("--home")
     k = sub.add_parser("check", help="find what a role gets wrong before any agent runs")
-    k.add_argument("role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change), a role file (.toml) or module:attribute")
+    k.add_argument("role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change, screen-design), a role file (.toml) or module:attribute")
     q = sub.add_parser("queue")
     q.add_argument("--home")
     w = sub.add_parser("answer")
     w.add_argument("run")
     w.add_argument("step")
-    w.add_argument("answer", choices=["accept", "change", "return", "context"])
+    w.add_argument("answer", choices=["accept", "change", "return", "context", "choose"])
+    w.add_argument("--chosen", help="with choose: the ids kept, in order of importance, such as M3,M1")
     w.add_argument("--note")
     w.add_argument("--output", help="the edited output for change: JSON, or @file")
     w.add_argument("--to", help="with return or context: an earlier step to run again, with every step after it")
@@ -475,6 +498,10 @@ def main(argv: list[str] | None = None) -> int:
     u = sub.add_parser("update", help="install the newest Jaynes, if there is one")
     u.add_argument("--home")
     sub.add_parser("version")
+    o = sub.add_parser("output", help="the checked output of a step of a run, as JSON")
+    o.add_argument("run")
+    o.add_argument("step")
+    o.add_argument("--home")
     ak = sub.add_parser("ask", help="the open stop of a run, as input for Claude Code's question dialog")
     ak.add_argument("run")
     ak.add_argument("--home")
@@ -496,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
-     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask,
+     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "output": cmd_output,
      "guide": cmd_guide}[args.cmd](args)
     return 0
 

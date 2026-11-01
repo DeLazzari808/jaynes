@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 from jaynes.preview import link_dependencies
 from jaynes.runtime import QuotaExhausted, Ran, RuntimeFailure
@@ -122,3 +123,13 @@ def test_a_claude_turn_has_200_messages_unless_its_step_says_and_running_out_say
     assert limit(claude.command(tmp_path)) == "200" and limit(claude.command(tmp_path, max_messages=500)) == "500"
     out = claude_failure({"is_error": True, "subtype": "error_max_turns"}, 1, "")
     assert isinstance(out, RuntimeFailure) and "ran out of messages" in str(out) and "max_messages" in str(out)
+
+
+def test_a_turn_says_how_much_of_its_input_was_read_back_from_the_cache(tmp_path: Path, monkeypatch: Any) -> None:
+    usage = {"input_tokens": 5, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 9000, "output_tokens": 40}
+    stream = json.dumps({"type": "result", "subtype": "success", "is_error": False, "usage": usage,
+                         "modelUsage": {"claude-x": {}}})
+    monkeypatch.setattr("jaynes.runtimes._run", lambda *a, **k: (0, stream + "\n", ""))  # pyright: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr("jaynes.runtimes._binary", lambda name: name)  # pyright: ignore[reportUnknownLambdaType]
+    turn = ClaudeRuntime().turn(tmp_path, tmp_path, "p", 10)
+    assert (turn.tokens_in, turn.tokens_cached, turn.tokens_out) == (9305, 9000, 40)  # new input: 305

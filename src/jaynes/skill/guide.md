@@ -5,6 +5,10 @@ with what was agreed in conversation.
    - `small-change` if it is small: a few lines in one or two files, such as a typo, a rename, a value, a message;
    - `fix-bug` if it describes a bug;
    - `build-feature` if it adds or changes what the code does;
+   - `screen-design` if it designs a screen from how the person uses it, and they keep a design method in a
+     file: it needs `--input method=<file> --input heuristics=<file>`, a preview, and `--preview-path <the
+     screen>`; add the theme they judge in, a copy of the data the product reads (`--input data=<folder>:<where
+     in the project>`), and their measuring tools, if they named them;
    - `redesign` if it names links or pictures of interfaces the person likes;
    - `visual-identity` if it is about the look: colors, fonts, a style.
    If none fits, or the folder is not in a git repository, do the task yourself as usual and say nothing about

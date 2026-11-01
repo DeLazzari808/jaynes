@@ -181,3 +181,22 @@ def test_with_the_plugin_jaynes_writes_no_skill_or_hook_and_takes_away_earlier_o
     assert skill.hooked()  # the plugin's hook
     skill.settings().write_text(json.dumps({"enabledPlugins": {"jaynes@jaynes": False}}))
     assert not skill.plugin() and not skill.hooked()
+
+
+def test_typing_numbers_in_order_chooses_among_the_items(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run = started(home, "tests.picked:ROLE", "fake=tests.picked:Agent", "--here")
+    shown = asked(home, run, capsys)
+    [q] = shown["questions"]
+    assert "Type the numbers you choose" in q["question"]
+    assert "1. M1: moment 1" in q["options"][0]["preview"] and "4. M4: moment 4" in q["options"][0]["preview"]
+    said = hook(shown, "3, 1")
+    assert said is not None and "choose M3, M1" in said
+    [a] = answers(home, run)
+    assert (a["answer"], a["chosen"], a["label"], a["by"]) == ("choose", ["M3", "M1"], "correct", "person")
+
+
+def test_words_that_are_not_items_are_still_a_return(home: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    run = started(home, "tests.picked:ROLE", "fake=tests.picked:Agent", "--here")
+    hook(asked(home, run, capsys), "none of these, look at the inbox")
+    [a] = answers(home, run)
+    assert (a["answer"], a["note"]) == ("return", "none of these, look at the inbox")

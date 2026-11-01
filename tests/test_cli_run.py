@@ -90,4 +90,4 @@ def test_a_built_in_role_is_started_by_its_name(tmp_path: Path, capsys: pytest.C
 
 def test_an_unknown_role_name_lists_the_built_in_ones(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="visual-identity, redesign"):
-        cli.main(["run", "--home", str(tmp_path), "--role", "screen-design", "--task", "t"])
+        cli.main(["run", "--home", str(tmp_path), "--role", "landing-page", "--task", "t"])

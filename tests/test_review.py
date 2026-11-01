@@ -536,3 +536,20 @@ def test_runs_open_the_page_unless_it_already_runs(tmp_path: Path, monkeypatch: 
     monkeypatch.setattr(review, "_running", running)
     review.ensure_page(tmp_path)
     assert started == []
+
+
+def test_a_person_chooses_among_the_items_from_the_page(tmp_path: Path) -> None:
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.picked:ROLE", "--task", "pick moments",
+              "--runtime", "fake=tests.picked:Agent"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + "/")
+        assert 'name="chosen"' in page and "M1: moment 1" in page
+        status, body = post(base + "/answer", {**form(page), "answer": "choose", "chosen": "M9"})
+        assert status == 400 and "&#x27;M9&#x27; is not one of" in body
+        assert post(base + "/answer", {**form(page), "answer": "choose", "chosen": "M4, M2"})[0] == 303
+    finally:
+        server.shutdown()
+    [answered] = [e.payload for e in Store(tmp_path / "jaynes.sqlite3").events("StopAnswered", run_id=run)]
+    assert answered["chosen"] == ["M4", "M2"] and answered["by"] == "person"

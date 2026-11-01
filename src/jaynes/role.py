@@ -52,19 +52,30 @@ class Checked(Generic[T]):
     check_hash: str
 
 
+class Blocked(Exception):
+    """Raised by a check or a trusted executor when it cannot judge at all, such as a measuring tool that failed:
+    the run blocks with the reason at once, and no attempt of the agent is spent, since the fault is not its."""
+
+
 class Witnesses:
     """The checked outputs a step needs, read by step, and the step's copy of the project if it has one.
 
     ``source`` is the person's repository, where installed dependencies are linked from when a check runs a
     project command (``jaynes.suite``); ``hidden`` is what such a command may not read, Jaynes's home.
+    ``started`` is what the run started with, its inputs among it; ``files`` the files each needed step left,
+    by step and path, private ones included.
     """
 
     def __init__(self, by_name: Mapping[str, Checked[Any]], project: Path | None = None,
-                 source: Path | None = None, hidden: tuple[Path, ...] = ()) -> None:
+                 source: Path | None = None, hidden: tuple[Path, ...] = (),
+                 started: Mapping[str, Any] | None = None,
+                 files: Mapping[str, Mapping[str, Path]] | None = None) -> None:
         self._by_name = dict(by_name)
         self.project = project
         self.source = source
         self.hidden = hidden
+        self.started = dict(started or {})
+        self.files = {k: dict(v) for k, v in (files or {}).items()}
 
     @overload
     def __getitem__(self, step: Step[T]) -> Checked[T]: ...
@@ -85,6 +96,35 @@ Check = Callable[[Any, Witnesses], Pass | Fail]
 
 
 @dataclass(frozen=True)
+class Note:
+    """Something said about a step in this run: a person's answer at its stop, or Jaynes sending it back."""
+
+    step: str  # the step whose output it is about
+    answer: str  # return, change, context or accept; back when Jaynes sent it back
+    note: str
+    by: Literal["person", "jaynes"]
+    round: int
+    reasons: tuple[str, ...] = ()  # what Jaynes found, one per line, when it sent the step back
+
+
+@dataclass(frozen=True)
+class Cost:
+    """What a step's agent turns cost in this run, from the runtime's meter. New input excludes the cache read."""
+
+    step: str
+    turns: int
+    tokens_new: int  # input outside the cache, cache writes and output
+    tokens_cached: int  # input read back from the cache
+    seconds: float
+
+
+@dataclass(frozen=True)
+class History:
+    notes: tuple[Note, ...] = ()
+    cost: tuple[Cost, ...] = ()
+
+
+@dataclass(frozen=True)
 class StepContext:
     """What a trusted executor receives. ``idempotency_key`` is set for an irreversible step: pass it to the service
     that acts, so a second call with the same payload in the same run does not act twice."""
@@ -95,6 +135,7 @@ class StepContext:
     workspace: Path
     idempotency_key: str = ""
     started: Mapping[str, Any] = field(default_factory=dict[str, Any])  # what the run started with, such as suite
+    history: History = field(default_factory=History)  # what was said and spent in the run so far
 
 
 # What a trusted executor does to the world. Only ``irreversible`` changes how it runs: after a floor stop over the
@@ -118,6 +159,46 @@ def stop(budget: float, sampled: bool = True, audit_rate: float = 0.1, delta: fl
     return Stop(budget, sampled, audit_rate, delta)
 
 
+@dataclass(frozen=True)
+class Input:
+    """Something a run of the role starts with, given as ``jaynes run --input name=value``.
+
+    ``text`` is kept as given; ``file`` is a text file read once at the start, whose text the steps that list it
+    are shown; ``command`` is a command line, fingerprinted with the files it names; ``folder`` is copied once at
+    the start, frozen, as ``source`` or ``source:where-in-the-project``.
+    """
+
+    help: str
+    kind: Literal["text", "file", "command", "folder"] = "text"
+    required: bool = True
+    default: str = ""
+
+
+@dataclass(frozen=True)
+class Choice:
+    """A stop where the person picks among the output's items, in their order of importance.
+
+    ``items`` lists the output's items as (id, label); ``keep`` gives the output with only the chosen, in order.
+    """
+
+    items: Callable[[Any], list[tuple[str, str]]]
+    keep: Callable[[Any, list[str]], Any]
+
+
+@dataclass(frozen=True)
+class Back:
+    """Jaynes sends an earlier step back, with what it found, when a checked output says so.
+
+    ``when(output, needs)`` returns what was found, one reason each; empty means go on. ``to`` and every step after
+    it run again, with the reasons in ``to``'s prompt, at most ``rounds`` times in a run; after that the run goes on
+    and the later steps, and the person, see what remains.
+    """
+
+    to: Step[Any]
+    when: Callable[[Any, Witnesses], list[str]]
+    rounds: int = 2
+
+
 @dataclass(eq=False)
 class Step(Generic[T]):
     role: Role
@@ -139,6 +220,10 @@ class Step(Generic[T]):
     ends: Callable[[Any], bool] | None = None  # an output it holds true for ends the run once a person accepts it
     max_messages: int | None = None  # messages per agent turn, where the runtime counts them; None: its default
     asks: Callable[[Any, str], bool] | None = None  # of the output and the step's diff: whether the stop asks at all
+    inputs: tuple[str, ...] = ()  # run inputs this step is shown and fingerprinted with
+    choose: Choice | None = None  # the stop lets the person pick among the output's items
+    back: Back | None = None  # when Jaynes sends an earlier step back from this one
+    max_files: int = 20  # files a trusted executor may leave
 
     @property
     def executor(self) -> str:
@@ -163,14 +248,19 @@ class Step(Generic[T]):
             parts.append("web")
         if self.effect != "pure":
             parts.append(f"effect:{self.effect}")
+        if self.inputs:
+            parts.append(f"inputs:{','.join(self.inputs)}")
         return _sha("\0".join(parts))
 
-    def stop_fingerprint(self, model: str) -> str:
+    def stop_fingerprint(self, model: str, inputs: str = "") -> str:
+        """``inputs`` is what the run's inputs this step lists hash to: a new method text opens a new window."""
         assert self.stop is not None
         s = self.stop
         question = [code_hash(self.question)] if self.question else []  # absent, so older windows are kept
         question += [f"ends:{code_hash(self.ends)}"] if self.ends else []
         question += [f"asks:{code_hash(self.asks)}"] if self.asks else []
+        question += [f"choose:{code_hash(self.choose.items)}:{code_hash(self.choose.keep)}"] if self.choose else []
+        question += [f"inputs:{inputs}"] if inputs else []
         return _sha("\0".join([self.role.name, self.name, self.prompt_hash(), self.check_hash(), *question,
                                repr(s.budget), repr(s.delta), repr(s.sampled), model]))[:16]
 
@@ -181,6 +271,7 @@ class Role:
     agent: str = "claude"
     method: str | Path = ""
     steps: list[Step[Any]] = field(default_factory=list[Step[Any]])
+    inputs: dict[str, Input] = field(default_factory=dict[str, Input])  # what a run starts with, by name
 
     def method_text(self) -> str:
         return self.method.read_text() if isinstance(self.method, Path) else self.method
@@ -192,7 +283,9 @@ class Role:
              question: Callable[[T, Witnesses], str] | None = None,
              project: Literal["read", "write"] | None = None, may_change: Sequence[str] = (),
              web: bool = False, effect: Effect | None = None, ends: Callable[[T], bool] | None = None,
-             max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None) -> Step[T]:
+             max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
+             inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
+             max_files: int = 20) -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -211,6 +304,18 @@ class Role:
             raise ValueError(f"step {name!r} says when its stop asks, but has no stop")
         if question is not None and stop is None:
             raise ValueError(f"step {name!r} has a question but no stop to ask it at")
+        if unknown := [i for i in inputs if i not in self.inputs]:
+            raise ValueError(f"step {name!r} lists inputs {', '.join(unknown)}, which {self.name!r} does not declare")
+        if choose is not None and (stop is None or output is None):
+            raise ValueError(f"step {name!r} lets the person choose, so it needs an output and a stop")
+        if back is not None:
+            if output is None:
+                raise ValueError(f"step {name!r} sends a step back by its output, but has no output")
+            if back.to not in self.steps or back.to.output is None:
+                raise ValueError(f"step {name!r} sends back {back.to.name!r}, which is not an earlier step of "
+                                 f"{self.name!r} with an output")
+            if back.rounds < 1:
+                raise ValueError(f"step {name!r} sends a step back in at least one round")
         if may_change and project != "write":
             raise ValueError(f"step {name!r} lists may_change but does not change the project")
         if project == "write" and not may_change:
@@ -235,7 +340,8 @@ class Role:
         s: Step[T] = Step(self, name, output, tuple(needs), checks, stop, run_by, agent or self.agent,
                           instructions, max_turns, deadline, cast(Callable[[Any, Witnesses], str] | None, question),
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
-                          max_messages, cast(Callable[[Any, str], bool] | None, asks))
+                          max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
+                          back, max_files)
         self.steps.append(s)
         return s
 
@@ -243,16 +349,19 @@ class Role:
         parts = [self.name] + [
             f"{s.name}:{s.executor}:{s.prompt_hash()}:{s.check_hash()}:{s.stop}:{[n.name for n in s.needs]}"
             + (f":asks:{code_hash(s.asks)}" if s.asks else "")  # appended only when set, so older roles keep theirs
+            + (f":choose:{code_hash(s.choose.items)}:{code_hash(s.choose.keep)}" if s.choose else "")
+            + (f":back:{s.back.to.name}:{s.back.rounds}:{code_hash(s.back.when)}" if s.back else "")
             for s in self.steps
-        ]
+        ] + [f"input:{n}:{i.kind}:{i.required}:{i.default}" for n, i in self.inputs.items()]
         return _sha("\0".join(parts))[:16]
 
 
-def role(name: str, agent: str = "claude", method: str | Path = "") -> Role:
+def role(name: str, agent: str = "claude", method: str | Path = "",
+         inputs: Mapping[str, Input] | None = None) -> Role:
     """``method`` is the method text, or a ``Path`` to it, relative paths resolved next to the calling module."""
     if isinstance(method, Path) and not method.is_absolute():
         method = Path(inspect.stack()[1].filename).resolve().parent / method
-    return Role(name, agent, method)
+    return Role(name, agent, method, inputs=dict(inputs or {}))
 
 
 def code_hash(fn: Callable[..., Any]) -> str:

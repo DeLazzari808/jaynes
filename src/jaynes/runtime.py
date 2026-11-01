@@ -28,6 +28,7 @@ class TurnResult:
     model: str  # the model that answered, as the runtime reports it
     web: tuple[str, ...] = ()  # addresses and searches the turn read on the web, as the runtime saw them
     commands: tuple[Ran, ...] = ()  # shell commands the turn ran, in order
+    tokens_cached: int = 0  # the part of tokens_in read back from the cache; the rest is new input
 
 
 class QuotaExhausted(Exception):

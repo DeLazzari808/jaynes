@@ -94,6 +94,8 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
 | Built-in role fix-bug: a failing test first, then a fix, both run in the box | Works; first real run delivered its branch |
 | Built-in roles build-feature (the agreed plan's tests first, then the code) and small-change (no stop unless the change is big) | Works in tests; no real run yet |
+| Built-in role screen-design: your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
+| Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
 
 Missing, roughly in order:
 
@@ -101,7 +103,12 @@ Missing, roughly in order:
 - **A first real case**, measured against the first user's baseline.
 - **More built-in roles** that need no design taste to check, such as
   upgrading dependencies.
-- **Choosing among two or three directions** at a stop, instead of one.
+- **Two or three directions to choose from** in redesign. Stops can let you
+  choose among an output's items now; the design roles still propose one
+  direction.
+- **The slices after the first** in screen-design. A run builds the first
+  slice of the requirements you approved; how the next run starts from them
+  is open.
 - **A box on Linux.** There, previews and test runs refuse to run unless
   `JAYNES_UNBOXED=1`.
 - **Roles without Python**, for people who don't write code.
@@ -181,7 +188,31 @@ Everything else happens in the page:
   they describe what you agreed, then the code, then a stop before the merge.
   **small-change** is the light path: the agent makes the change and Jaynes
   runs the suite, with no stop, unless the diff has more than 30 changed lines
-  or touches a path that runs later; then you see it. The box
+  or touches a path that runs later; then you see it.
+  **screen-design** carries out your own design method on one screen; you
+  give it as inputs, with your finishing heuristics:
+  `--input method=method.md --input heuristics=heuristics.md`. It needs a
+  preview command and the screen's path. Jaynes opens the screen itself, in
+  headless Chrome, in the theme you judge in (`--input theme=dark`), with a
+  copy of the data the product reads frozen at the start
+  (`--input data=~/app/data:data`), so it never touches live data. Agents read
+  a summary of each API response, and a number they write must name a query
+  that Jaynes computes. You choose and order the moments where you get
+  stuck, from cases quoted from the screen. The agent maps the objects you
+  think in and writes each moment's path in a closed vocabulary (open, click
+  a text, open a row, press a button, scroll, type, back). Jaynes walks each
+  path with every request refused but the product's own GETs, minus those you
+  list as having effects (`--input blocked_gets=api/logo`). You approve one
+  requirement per break, and the first slice with where its moment must
+  end. The slice's test is a path that must fail on the screen as it is and
+  pass once it is built. Your own measuring tools then check it
+  (`--input measure=...`, `--input compare=...`, each printing
+  `{"failures": [...]}`), against the version you last approved
+  (`--input approved=<commit>`). A reviewer looks at captures in both themes,
+  on desktop and phone, and at each transition, and what fails goes back to
+  the implementer. The final stop shows new tokens per step against the
+  budget (`--input budget=150000`). After it, every note you gave becomes a
+  heuristic for your file. The box
   reaches no internet, only local ports (tests that start servers or use a
   local database work), so the suite must pass at your last commit with its
   dependencies already installed (`node_modules`, `.venv`). With a preview command, such as
@@ -210,7 +241,7 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes ask`, `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps

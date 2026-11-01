@@ -7,7 +7,9 @@ so an agent that changes the question, its evidence or its options gets nothing 
 
 Accept, with any note the person adds to it, and return, with the note that says what is wrong, are answered
 here. Typing an answer of one's own is a return with that text as the note. Change and context, which need the
-output edited or a step chosen, stay in the review page.
+output edited or a step chosen, stay in the review page. At a stop that lets the person choose among the output's
+items, typing their numbers or ids in order, such as ``2, 1``, chooses them; the dialog has room for four
+options and no order, so the items are listed in the evidence rather than as options.
 """
 
 from __future__ import annotations
@@ -44,6 +46,12 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
     evidence = _evidence(c, role, st, s, target)
     accept = "Accepting ends the run here, with nothing delivered." if ends else "It is right: the run goes on."
     back = return_to(role, w.step) if pure else w.step
+    items = _items(c, s, target)
+    if items:
+        evidence = "Choose by typing numbers in order, such as 2, 1:\n" + "\n".join(
+            f"{n}. {i}: {label}" for n, (i, label) in enumerate(items, 1)) + "\n\n" + evidence
+        question += " Type the numbers you choose, most important first; Accept keeps them all in this order."
+        accept = "All of them are right, in the order shown: the run goes on."
     return {"questions": [{
         "question": f"{question}\n\n[run {run_id}, step {w.step}]",
         "header": HEADER,
@@ -78,6 +86,28 @@ def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step
         text = (text[:LIMIT] + f"\n\n[{len(text) - LIMIT} more characters not shown: read them in the review page, "
                 "jaynes review --open]")
     return text
+
+
+def _items(c: Conductor, s: StepState, target: Step[Any]) -> list[tuple[str, str]]:
+    if target.choose is None or target.output is None or s.checked is None:
+        return []
+    raw = (c.home / "objects" / f"{s.checked['output_hash']}.json").read_text()
+    return [(str(i), str(label)) for i, label in target.choose.items(target.output.model_validate_json(raw))]
+
+
+def chosen(text: str, items: list[tuple[str, str]]) -> list[str] | None:
+    """The ids a typed answer chooses, by number or id, in order; None when it is not a choice."""
+    words = [w for w in re.split(r"[\s,;]+", text.strip()) if w]
+    ids = {i.lower(): i for i, _ in items}
+    out: list[str] = []
+    for w in words:
+        if w.isdigit() and 1 <= int(w) <= len(items):
+            out.append(items[int(w) - 1][0])
+        elif w.lower() in ids:
+            out.append(ids[w.lower()])
+        else:
+            return None
+    return out or None
 
 
 def _value(c: Conductor, s: StepState, target: Step[Any]) -> Any:
@@ -137,7 +167,12 @@ def _record(home: Path, role_of: Callable[[Conductor, str], Role], run_id: str, 
                 f"`jaynes ask {run_id}` and pass its output to AskUserQuestion unchanged.")
     note = str(cast(dict[str, Any], note_of).get("notes") or "").strip() if isinstance(note_of, dict) else ""
     choice = str(choice or "").strip()
-    if choice == ACCEPT:
+    target = next(x for x in role.steps if x.name == step)
+    picked = chosen(choice, _items(c, project(c.store.events(run_id=run_id)).step(step), target)) \
+        if choice not in (ACCEPT, RETURN) else None
+    if picked:
+        answer, text = "choose", note or None
+    elif choice == ACCEPT:
         answer, text = "accept", note or None
     elif choice == RETURN:
         answer, text = "return", note
@@ -148,18 +183,18 @@ def _record(home: Path, role_of: Callable[[Conductor, str], Role], run_id: str, 
     if answer == "return" and not text:
         return (f"Jaynes recorded nothing for run {run_id}: a return needs a note saying what is wrong. Ask "
                 "again with `jaynes ask`; the person adds the note to Return, or types it as their own answer.")
-    target = next(x for x in role.steps if x.name == step)
     to = return_to(role, step) if answer == "return" and target.output is None else None
     opened = project(c.store.events(run_id=run_id)).step(step).open_stop
     evidence = opened[1].get("evidence") if opened else None
     try:
         c.answer(role, run_id, step, answer, note=text, to=to, by="person", via="terminal",
-                 evidence=str(evidence) if evidence else None)
+                 evidence=str(evidence) if evidence else None, chosen=picked)
     except AnswerRejected as err:
         return f"Jaynes recorded nothing for run {run_id}: " + "; ".join(err.reasons)
     except RunBusy:
         return f"Jaynes recorded nothing for run {run_id}: the run is busy in another process. Ask again."
-    return (f"Jaynes recorded the person's answer at {step}: {answer}. Continue the run in the background with "
+    what = f"choose {', '.join(picked)}" if picked else answer
+    return (f"Jaynes recorded the person's answer at {step}: {what}. Continue the run in the background with "
             f"`jaynes run {run_id}`.")
 
 

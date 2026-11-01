@@ -27,7 +27,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Generator, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -39,18 +39,22 @@ from jaynes import bounds
 from jaynes import project as repo
 from jaynes.gate import Window
 from jaynes.preview import link_dependencies
-from jaynes.role import OUTPUT, Checked, Fail, Pass, Role, Step, StepContext, Witnesses
+from jaynes import inputs as run_inputs
+from jaynes.role import OUTPUT, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
 from jaynes.runtime import QuotaExhausted, Runtime, RuntimeFailure, TurnTimeout
 from jaynes.store import Event, Store
 
 T = TypeVar("T", bound=BaseModel)
 
-Answer = Literal["accept", "change", "return", "context"]
+Answer = Literal["accept", "change", "return", "context", "choose"]
 By = Literal["person", "agent"]  # the page with its key, or anything else, such as the CLI an agent runs
-LABELS: dict[str, str] = {"accept": "correct", "change": "error", "return": "error", "context": "context"}
+# choosing among the output's items is accepting it: the items were right, the person ranked them
+LABELS: dict[str, str] = {"accept": "correct", "change": "error", "return": "error", "context": "context",
+                          "choose": "correct"}
 OUTPUT_BYTES = 1_000_000
 FILES = "files"  # where a trusted executor leaves files for the steps that need it
-FILE_BYTES, MAX_FILES = 10_000_000, 20
+FILE_BYTES = 10_000_000
+PRIVATE = "private/"  # files a trusted executor keeps for checks only: never copied to an agent
 UNKNOWN_RESET = 30 * 60  # pause this long when a runtime reports exhaustion without a reset time
 MAX_RAN = 50  # commands kept per turn
 
@@ -109,6 +113,7 @@ class StepState:
     resolved: bool = False  # the stop was skipped, accepted or changed
     released: dict[str, Any] | None = None  # how the stop was released: its fingerprint and label, or skipped
     note: str | None = None
+    note_from: str | None = None  # the step whose check sent this one back, when Jaynes did rather than a person
     reasons: tuple[str, ...] = ()
 
 
@@ -121,6 +126,7 @@ class RunState:
     blocked: dict[str, Any] | None = None
     paused_until: float | None = None
     branch: dict[str, Any] | None = None
+    returns: dict[str, int] = field(default_factory=dict[str, int])  # times Jaynes sent a step back, by sender
 
     def step(self, name: str) -> StepState:
         return self.steps.setdefault(name, StepState())
@@ -162,14 +168,8 @@ def project(events: Iterable[Event]) -> RunState:
                 assert s is not None
                 s.open_stop = None
                 if p.get("to"):  # an earlier step returned from this stop: it and every step after it run again
-                    for name in p["reset"]:
-                        x = st.step(name)
-                        x.round += 1
-                        x.attempts = 0
-                        x.open_stop, x.resolved, x.released, x.reasons = None, False, None, ()
-                        x.previous, x.note = (x.checked, p.get("note")) if name == p["to"] else (None, None)
-                        x.checked = None
-                elif p["answer"] in ("accept", "change"):
+                    _reset(st, p["to"], p["reset"], p.get("note"))
+                elif p["answer"] in ("accept", "change", "choose"):
                     s.resolved = True
                     # an agent's answer was never counted, so a later revision has nothing to replace
                     s.released = {"fingerprint": p["fingerprint"], "label": "none" if p.get("by") == "agent" else p["label"]}
@@ -179,6 +179,10 @@ def project(events: Iterable[Event]) -> RunState:
                     s.previous, s.checked = s.checked, None
                     s.note = p.get("note")
                     s.reasons = ()
+            case "StepReturned":  # Jaynes sent an earlier step back with what this one's output found
+                assert s is not None
+                st.returns[str(p["step"])] = st.returns.get(str(p["step"]), 0) + 1
+                _reset(st, p["to"], p["reset"], "\n".join(p["reasons"]), sender=str(p["step"]))
             case "RunPaused":
                 st.paused_until = float(p["until"])
             case "RunBlocked":
@@ -193,6 +197,18 @@ def project(events: Iterable[Event]) -> RunState:
 
 
 fold = project  # for scopes where ``project`` names a folder
+
+
+def _reset(st: RunState, to: str, names: Iterable[str], note: str | None, sender: str | None = None) -> None:
+    """``to`` and every step after it run again; ``to`` keeps its output as previous, with the note."""
+    for name in names:
+        x = st.step(name)
+        x.round += 1
+        x.attempts = 0
+        x.open_stop, x.resolved, x.released, x.reasons = None, False, None, ()
+        x.previous, x.note = (x.checked, note) if name == to else (None, None)
+        x.note_from = sender if name == to else None
+        x.checked = None
 
 
 # --- workspace -----------------------------------------------------------------
@@ -241,12 +257,14 @@ def continue_in_background(home: Path, run_id: str, *start: str) -> subprocess.P
 
 def start_in_background(home: Path, run_id: str, ref: str, task: str, runtimes: Mapping[str, str],
                         project: str = "", preview: str = "", preview_path: str = "",
-                        preview_ports: str = "", suite: str = "") -> subprocess.Popen[bytes]:
+                        preview_ports: str = "", suite: str = "",
+                        inputs: Mapping[str, str] | None = None) -> subprocess.Popen[bytes]:
     """Start a new run of the role at ``ref`` detached, as ``jaynes run <id> --role ref --task task``."""
     overrides = [arg for name, target in runtimes.items() for arg in ("--runtime", f"{name}={target}")]
     on = [arg for flag, value in (("--project", project), ("--preview", preview), ("--preview-path", preview_path),
                                   ("--preview-ports", preview_ports), ("--suite", suite))
           if value for arg in (flag, value)]
+    on += [arg for name, value in (inputs or {}).items() for arg in ("--input", f"{name}={value}")]
     return continue_in_background(home, run_id, "--role", ref, "--task", task, *overrides, *on)
 
 
@@ -299,6 +317,9 @@ class Conductor:
             first = next(iter(self.store.events("RunStarted", run_id=run_id)), None)
             if first is None:
                 extra = dict(started or {})
+                if role.inputs or extra.get("inputs"):  # read, copied and fingerprinted once, now
+                    extra["inputs"] = run_inputs.resolve(role, dict(extra.get("inputs") or {}),
+                                                         self.home / "runs" / run_id / "inputs")
                 if project is not None:
                     root, base = repo.resolve(project)
                     extra["project"] = {"root": str(root), "base": base}
@@ -313,7 +334,8 @@ class Conductor:
 
     def answer(self, role: Role, run_id: str, step: str, answer: Answer, *, note: str | None = None,
                output: BaseModel | Mapping[str, Any] | None = None, seconds_spent: float | None = None,
-               to: str | None = None, by: By, evidence: str | None = None, via: str | None = None) -> None:
+               to: str | None = None, by: By, evidence: str | None = None, via: str | None = None,
+               chosen: Sequence[str] | None = None) -> None:
         """Record the answer at an open stop. ``change`` needs the edited output, which must pass the checks.
 
         ``to`` returns an earlier step instead of this one: it runs again with the note, and so does every step
@@ -324,6 +346,7 @@ class Conductor:
         agent releases the stop but is never counted as a label, and a floor stop refuses it.
         ``evidence``, the hash of what was shown, refuses the answer if the stop has shown something else since.
         ``via`` names where a person answered when it was not the page, such as ``terminal``.
+        ``choose`` keeps the ``chosen`` items of the output, in that order, at a step that lets the person choose.
         """
         if answer not in LABELS:
             raise ValueError(f"unknown answer {answer!r}")
@@ -355,9 +378,11 @@ class Conductor:
                 raise AnswerRejected([f"the stop at {step!r} is a floor: only a person answers it, from the page"])
             target = next(x for x in role.steps if x.name == step)
             value: BaseModel | None = None
-            if answer == "change":
+            if answer == "choose":
+                output = self._chosen(target, s, list(chosen or []))
+            if answer in ("change", "choose"):
                 if output is None or target.output is None:
-                    raise AnswerRejected(["a change needs the edited output"])
+                    raise AnswerRejected([f"a {answer} needs the edited output"])
                 try:
                     value = target.output.model_validate(output.model_dump() if isinstance(output, BaseModel) else output)
                 except ValidationError as err:
@@ -365,9 +390,12 @@ class Conductor:
                 where = s.checked.get("workspace") if s.checked else None
                 info = (st.started or {}).get("project")
                 on = bool(where and target.project and info)  # the copy, with the repository for its dependencies
-                failures = self._check(target, value, self._witnesses(
-                    target, st, Path(str(where)) / "project" if on else None,
-                    Path(info["root"]) if on and info else None))
+                try:
+                    failures = self._check(target, value, self._witnesses(
+                        target, st, Path(str(where)) / "project" if on else None,
+                        Path(info["root"]) if on and info else None))
+                except Blocked as err:
+                    raise AnswerRejected([f"the checks could not judge it: {err}"]) from None
                 if failures:
                     raise AnswerRejected(failures)
             back: dict[str, Any] = {}
@@ -379,7 +407,8 @@ class Conductor:
             rows: list[tuple[str, dict[str, Any]]] = [("StopAnswered", {
                 "step": step, "answer": answer, "label": "none" if to else LABELS[answer], "note": note,
                 "fingerprint": opened["fingerprint"], "seconds_waited": round(self.clock() - opened_at, 3),
-                "seconds_spent": seconds_spent, "by": by, **({"via": via} if via else {}), **back})]
+                "seconds_spent": seconds_spent, "by": by, **({"via": via} if via else {}),
+                **({"chosen": list(chosen or [])} if answer == "choose" else {}), **back})]
             if value is not None:  # the edit and its witness are one write, so a crash cannot drop the edit
                 assert s.checked is not None
                 rows.append(self._witness(target, s, value, source=by, model=str(s.checked["model"]),
@@ -572,7 +601,11 @@ class Conductor:
         kept: dict[str, str] | list[str] = {}
         if step.run_by is not None:
             try:
-                value = step.run_by(StepContext(run_id, task, needs, ws, key, dict(st.started or {})))
+                value = step.run_by(StepContext(run_id, task, needs, ws, key, dict(st.started or {}),
+                                                self._history(run_id)))
+            except Blocked as err:  # it could not judge at all; no attempt is spent on what is nobody's fault here
+                self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]]})
+                return None
             except Exception as err:  # a trusted executor failed; it counts as a rejected turn
                 acted = [f"it may have acted; check under idempotency key {key}"] if key else []
                 self._reject(run_id, step, attempt, "executor", [f"{type(err).__name__}: {err}"[:500], *acted], t0)
@@ -582,7 +615,7 @@ class Conductor:
                 return None
             model = "jaynes"
             changed = []
-            kept = self._keep_files(ws / FILES)
+            kept = self._keep_files(ws / FILES, step.max_files)
             if isinstance(kept, list):
                 self._reject(run_id, step, attempt, "executor", kept, t0)
                 return None
@@ -596,7 +629,8 @@ class Conductor:
                 web: dict[str, Any] = {"web": True} if step.web else {}
                 if step.max_messages and "max_messages" in inspect.signature(runtime.turn).parameters:
                     web["max_messages"] = step.max_messages  # a runtime that counts no messages has no such limit
-                turn = runtime.turn(ws, scratch, self.prompt(role, step, task, s, files), step.deadline, **web)
+                turn = runtime.turn(ws, scratch, self.prompt(role, step, task, s, files, st.started), step.deadline,
+                                    **web)
             except QuotaExhausted as q:
                 until = q.until if q.until and q.until > self.clock() else self.clock() + UNKNOWN_RESET
                 self._emit(run_id, "TurnInterrupted", {"step": step.name, "attempt": attempt, "reason": "quota"})
@@ -614,6 +648,7 @@ class Conductor:
                              and not (after.get(p) == "dir" and any(p == d or p.startswith(d + "/") for d in own)))
             self._emit(run_id, "TurnFinished", {"step": step.name, "attempt": attempt, "files_changed": changed,
                                                 "tokens_in": turn.tokens_in, "tokens_out": turn.tokens_out,
+                                                "tokens_cached": turn.tokens_cached,
                                                 "model": turn.model, "seconds": round(time.monotonic() - t0, 3),
                                                 **({"web": list(turn.web)} if step.web else {}),
                                                 # the last commands, which hold the final test runs
@@ -645,7 +680,11 @@ class Conductor:
                 "these paths run later, outside any box, and change only at a stop a person answers; "
                 "leave them as they were: " + ", ".join(later[:10])], t0)
             return None
-        failures = self._check(step, value, needs)
+        try:
+            failures = self._check(step, value, needs)
+        except Blocked as err:
+            self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]]})
+            return None
         if failures:
             self._reject(run_id, step, attempt, "check", failures, t0)
             return None
@@ -653,12 +692,73 @@ class Conductor:
                                  "workspace": str(ws), **({"floor": later} if later else {})} if tracker else {}
         if kept:
             carry["files"] = kept
-        self._accept(run_id, step, s, value, source=step.executor, model=model, attempt=attempt, carry=carry)
+        rows = [self._witness(step, s, value, source=step.executor, model=model, attempt=attempt, carry=carry)]
+        found = self._back(step, value, needs, st)
+        if found:  # one write, so a crash cannot keep the output and lose that it was sent back
+            assert step.back is not None
+            names = [x.name for x in role.steps]
+            rows.append(("StepReturned", {"step": step.name, "to": step.back.to.name, "reasons": found[:30],
+                                          "reset": names[names.index(step.back.to.name):names.index(step.name) + 1],
+                                          "round": st.returns.get(step.name, 0) + 1}))
+        self.store.append_all([(kind, p, run_id, self.clock()) for kind, p in rows])
         return None
+
+    def _back(self, step: Step[Any], value: Any, needs: Witnesses, st: RunState) -> list[str]:
+        """What the step's output found that sends an earlier step back, while rounds remain; a broken
+        condition sends nothing back, and the later steps see the output as it is."""
+        if step.back is None or st.returns.get(step.name, 0) >= step.back.rounds:
+            return []
+        try:
+            return [str(r) for r in step.back.when(value, needs) if str(r).strip()]
+        except Exception:
+            return []
+
+    def _chosen(self, step: Step[Any], s: StepState, chosen: list[str]) -> BaseModel:
+        """The output with only the chosen items, in the person's order."""
+        if step.choose is None or step.output is None or s.checked is None:
+            raise AnswerRejected([f"{step.name!r} lets nobody choose among its items"])
+        value = step.output.model_validate_json(self._object(str(s.checked["output_hash"])))
+        ids = [i for i, _ in step.choose.items(value)]
+        if not chosen:
+            raise AnswerRejected([f"choose at least one of {', '.join(ids)}"])
+        reasons = [f"{c!r} is not one of {', '.join(ids)}" for c in chosen if c not in ids]
+        reasons += [f"{c!r} is chosen twice" for c in dict.fromkeys(c for c in chosen if chosen.count(c) > 1)]
+        if reasons:
+            raise AnswerRejected(reasons)
+        kept = step.choose.keep(value, chosen)
+        if not isinstance(kept, step.output):
+            raise AnswerRejected([f"the step made {type(kept).__name__} of the choice, not {step.output.__name__}"])
+        return kept
+
+    def _history(self, run_id: str) -> History:
+        """What people said and Jaynes sent back in the run, and what each step's turns cost."""
+        notes: list[Note] = []
+        cost: dict[str, list[float]] = {}
+        rounds: dict[str, int] = {}
+        for e in self.store.events(run_id=run_id):
+            p = e.payload
+            if e.type == "StopAnswered" and p.get("by") == "person" and (p.get("note") or p["answer"] == "change"):
+                about = str(p.get("to") or p["step"])
+                notes.append(Note(about, str(p["answer"]), str(p.get("note") or ""), "person",
+                                  rounds.get(about, 1)))
+            elif e.type == "StepReturned":
+                notes.append(Note(str(p["to"]), "back", f"sent back from {p['step']}", "jaynes",
+                                  rounds.get(str(p["to"]), 1), tuple(p["reasons"])))
+            elif e.type == "Checked":
+                rounds[str(p["step"])] = int(p.get("round", 1))
+            elif e.type == "TurnFinished":
+                c = cost.setdefault(str(p["step"]), [0, 0, 0, 0.0])
+                cached = int(p.get("tokens_cached", 0))
+                c[0] += 1
+                c[1] += max(0, int(p.get("tokens_in", 0)) - cached) + int(p.get("tokens_out", 0))
+                c[2] += cached
+                c[3] += float(p.get("seconds", 0.0))
+        return History(tuple(notes), tuple(Cost(k, int(v[0]), int(v[1]), int(v[2]), round(v[3], 3))
+                                           for k, v in cost.items()))
 
     def _decide_stop(self, run_id: str, step: Step[Any], s: StepState, st: RunState) -> None:
         assert step.stop is not None and s.checked is not None
-        fp = step.stop_fingerprint(str(s.checked["model"]))
+        fp = step.stop_fingerprint(str(s.checked["model"]), run_inputs.fingerprint(st.started or {}, step.inputs))
         w = self.window(fp)
         n, k = w.n, w.k
         sp = step.stop
@@ -719,10 +819,19 @@ class Conductor:
             return f"(the step's question failed: {type(err).__name__}: {err})"[:500]
 
     def prompt(self, role: Role, step: Step[Any], task: str, s: StepState,
-               files: Mapping[str, Mapping[str, str]] | None = None) -> str:
+               files: Mapping[str, Mapping[str, str]] | None = None,
+               started: Mapping[str, Any] | None = None) -> str:
         lines: list[str] = []
         if method := role.method_text():
             lines += [method.rstrip(), ""]
+        given = run_inputs.given(started or {})
+        for name in step.inputs:  # what the person's run started with, as this step is shown it
+            spec = given.get(name)
+            if spec and spec.get("kind") == "file":
+                lines += [f"# {name} (from the person's file, read when the run started)", "",
+                          str(spec["text"]).rstrip(), ""]
+            elif spec and spec.get("kind") == "text":
+                lines += [f"{name}: {spec['value']}", ""]
         lines += [f"# Step: {step.name}", ""]
         if step.instructions:
             lines += [step.instructions.rstrip(), ""]
@@ -732,7 +841,8 @@ class Conductor:
             lines += [f"- inputs/{n.name}.json: the checked output of step {n.name}" for n in step.needs]
             lines += [f"- inputs/{n}/{f}: a file from step {n}" for n, fs in (files or {}).items() for f in fs]
             if s.previous:
-                lines.append("- inputs/previous.json: your previous output for this step, which the person returned")
+                who = f"Jaynes sent back from {s.note_from}" if s.note_from else "the person returned"
+                lines.append(f"- inputs/previous.json: your previous output for this step, which {who}")
             lines.append("")
         if step.project:
             lines += ["The project is in project/: a copy of its repository at the last commit, with the changes of "
@@ -754,7 +864,10 @@ class Conductor:
         lines += [f"Write exactly one file, {OUTPUT}, in the current directory: one JSON document valid against "
                   "this JSON Schema:", "", json.dumps(step.schema(), indent=1), "",
                   f"Do not create, change or delete {other}. Nobody can answer questions during this turn."]
-        if s.note:
+        if s.note and s.note_from:
+            lines += ["", f"Jaynes sent the previous output back: step {s.note_from} found what follows. Fix it, "
+                      "or say in your output why it stays:", s.note]
+        elif s.note:
             lines += ["", "The person returned the previous output with this note, which outweighs your own "
                       "reading of the inputs:", s.note]
         if s.reasons:
@@ -803,6 +916,8 @@ class Conductor:
         for check in step.checks:
             try:
                 result = cast(object, check(value, needs))  # user code; its annotation is not a guarantee
+            except Blocked:
+                raise
             except Exception as err:
                 failures.append(f"check {getattr(check, '__name__', check)} raised {type(err).__name__}: {err}"[:500])
                 continue
@@ -811,10 +926,6 @@ class Conductor:
             elif not isinstance(result, Pass):
                 failures.append(f"check {getattr(check, '__name__', check)} returned {result!r}, not Pass or Fail")
         return failures
-
-    def _accept(self, run_id: str, step: Step[Any], s: StepState, value: BaseModel, *, source: str, model: str,
-                attempt: int = 0, carry: Mapping[str, Any] | None = None) -> None:
-        self._emit(run_id, *self._witness(step, s, value, source=source, model=model, attempt=attempt, carry=carry))
 
     def _witness(self, step: Step[Any], s: StepState, value: BaseModel, *, source: str, model: str,
                  attempt: int = 0, carry: Mapping[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
@@ -825,7 +936,7 @@ class Conductor:
         return "Checked", {"step": step.name, "round": s.round, "attempt": attempt, "output_hash": h,
                            "check_hash": step.check_hash(), "source": source, "model": model, **project_change}
 
-    def _keep_files(self, folder: Path) -> dict[str, str] | list[str]:
+    def _keep_files(self, folder: Path, limit: int) -> dict[str, str] | list[str]:
         """Store the regular files under ``folder``; each path maps to its object, or the reasons it can't."""
         if not folder.is_dir():
             return {}
@@ -834,20 +945,22 @@ class Conductor:
                    if p.is_symlink() or not p.is_file()]
         reasons += [f"{FILES}/{p.relative_to(folder)} is larger than {FILE_BYTES} bytes" for p in paths
                     if p.is_file() and p.stat().st_size > FILE_BYTES]
-        if len(paths) > MAX_FILES:
-            reasons.append(f"{len(paths)} files in {FILES}/; at most {MAX_FILES}")
+        if len(paths) > limit:
+            reasons.append(f"{len(paths)} files in {FILES}/; at most {limit}")
         if reasons:
             return reasons
         suffix = {p: p.suffix or ".bin" for p in paths}
         return {p.relative_to(folder).as_posix(): self._store(p.read_bytes(), suffix[p]) + suffix[p] for p in paths}
 
-    def _need_files(self, step: Step[Any], st: RunState) -> dict[str, dict[str, str]]:
-        """The files each needed step left, by step: path to object."""
+    def _need_files(self, step: Step[Any], st: RunState, private: bool = False) -> dict[str, dict[str, str]]:
+        """The files each needed step left, by step: path to object; private ones only when asked."""
         out: dict[str, dict[str, str]] = {}
         for need in step.needs:
             c = st.step(need.name).checked
             if c and c.get("files"):
-                out[need.name] = dict(c["files"])
+                fs = {k: v for k, v in dict(c["files"]).items() if private or not k.startswith(PRIVATE)}
+                if fs:
+                    out[need.name] = fs
         return out
 
     def _store(self, data: bytes, suffix: str) -> str:
@@ -885,7 +998,10 @@ class Conductor:
             h = c["output_hash"]
             value = None if need.output is None or h is None else need.output.model_validate_json(self._object(h))
             by_name[need.name] = Checked(need.name, value, str(h), str(c["check_hash"]))
-        return Witnesses(by_name, project, source, hidden=(self.home,) if project else ())
+        files = {n: {rel: self.home / "objects" / obj for rel, obj in fs.items()}
+                 for n, fs in self._need_files(step, st, private=True).items()}
+        return Witnesses(by_name, project, source, hidden=(self.home,) if project else (), started=st.started,
+                         files=files)
 
     def _object(self, h: str) -> bytes:
         return (self.home / "objects" / f"{h}.json").read_bytes()

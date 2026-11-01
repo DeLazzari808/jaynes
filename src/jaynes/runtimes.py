@@ -200,7 +200,7 @@ class ClaudeRuntime:
         tokens_in = sum(int(usage.get(k) or 0) for k in
                         ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         return TurnResult(tokens_in, int(usage.get("output_tokens") or 0), self._model(result), tuple(read),
-                          tuple(claude_commands(out)))
+                          tuple(claude_commands(out)), int(usage.get("cache_read_input_tokens") or 0))
 
     def _model(self, result: dict[str, Any]) -> str:
         per_model: dict[str, dict[str, Any]] = result.get("modelUsage") or {}
@@ -262,7 +262,8 @@ class CodexRuntime:
                 raise QuotaExhausted(_reset_epoch(text))
             raise RuntimeFailure(f"codex turn did not complete ({code}): {text.strip()[:300]}")
         tokens_in = int(usage.get("input_tokens") or 0)  # cached input is a subset of input for Codex
-        return TurnResult(tokens_in, int(usage.get("output_tokens") or 0), model, tuple(read), tuple(ran))
+        return TurnResult(tokens_in, int(usage.get("output_tokens") or 0), model, tuple(read), tuple(ran),
+                          int(usage.get("cached_input_tokens") or 0))
 
     @staticmethod
     def _default_model() -> str:

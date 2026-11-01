@@ -50,6 +50,7 @@ from jaynes import project as repo
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
                               continue_in_background, new_run_id, project, return_to, start_in_background)
 from jaynes.history import Report, past_calls, report
+from jaynes import inputs as run_inputs
 from jaynes.preview import Previews
 from jaynes.policy import find_policy, load_policy
 from jaynes.role import Role, Step
@@ -406,6 +407,8 @@ if (form) {
   const send = (a) => {
     if (!form.querySelector("[data-a=" + a + "]")) return;
     if ((a === "return" || a === "context") && !note.value.trim()) { hint.textContent = a + " needs a note for the agent"; note.focus(); return; }
+    const chosen = form.querySelector("[name=chosen]");
+    if (a === "choose" && !chosen.value.trim()) { hint.textContent = "type the items you choose, in order"; chosen.focus(); return; }
     if (a === "change" && editor.className === "hidden") { editor.className = ""; editor.querySelector("textarea").focus(); return; }
     form.querySelector("[name=answer]").value = a; form.submit();
   };
@@ -682,6 +685,7 @@ class Review:
                                    earlier=self._earlier(role, step),
                                    default_to=return_to(role, step) if pure and role else None,
                                    floor=bool(s.open_stop and s.open_stop[1].get("status") == "floor"),
+                                   items=self._items(target, s),
                                    evidence=str(s.open_stop[1].get("evidence") or "") if s.open_stop else ""))
         return page(f"Stop: {step}", self.sidebar((run_id, step)), main, self.seq())
 
@@ -768,6 +772,7 @@ class Review:
             folder.parent.mkdir(parents=True, exist_ok=True)
             repo.prepare(Path(info["root"]), str(info["base"]), patches, folder,
                          cache=self.c.home / "runs" / run_id / "base")
+            run_inputs.place(st.started or {}, folder)  # the run's frozen data, a clone each, never the live folder
             return folder
 
         try:
@@ -883,6 +888,10 @@ class Review:
                 f'<span class="m" style="margin-top:6px">Optional. The command that runs all the project\'s tests, '
                 f'for fix-bug, build-feature and small-change; Jaynes finds it when the project uses pytest, a test script, go, cargo or make.'
                 f'</span></label>'
+                f'<label><span class="label">Inputs</span>'
+                f'<textarea name="inputs" placeholder="method=~/design/method.md">{esc(f.get("inputs", ""))}</textarea>'
+                f'<span class="m" style="margin-top:6px">Only for roles that declare inputs, one name=value per line, '
+                f'such as screen-design\'s method, heuristics, theme and data.</span></label>'
                 + (f'<div class="err">{esc(error)}</div>' if error else '')
                 + '<button class="btn go" type="submit">Start the run</button></form></div>')
         return page("New run", self.sidebar(None), main, self.seq())
@@ -1150,6 +1159,7 @@ class Review:
         spent = round(max(0.0, time.time() - seen), 3) if seen else None  # from the first view, across reloads
         try:
             self.c.answer(role, run_id, step, answer, note=note, output=output, seconds_spent=spent,
+                          chosen=[x.strip() for x in fields.get("chosen", "").replace(",", " ").split()],
                           # the select goes with every answer; only return and context go back
                           to=(fields.get("to") or None) if answer in ("return", "context") else None,
                           by="person", evidence=fields.get("evidence") or None)
@@ -1188,10 +1198,17 @@ class Review:
         ports = fields.get("preview_ports", "").replace(",", " ").split()
         if not all(p.isdigit() and 0 < int(p) < 65536 for p in ports):
             return 400, self.new_page("local ports are numbers, such as 8789", fields)
+        lines = [x.strip() for x in fields.get("inputs", "").splitlines() if x.strip()]
+        if any("=" not in x for x in lines):
+            return 400, self.new_page("inputs are name=value, one per line", fields)
+        given = {k.strip(): v.strip() for k, v in (x.split("=", 1) for x in lines)}
+        if problems := run_inputs.missing(r, given):
+            return 400, self.new_page("; ".join(problems), fields)
         run_id = new_run_id()
         start_in_background(self.c.home, run_id, ref, task, self.known_roles().get(ref, {}),
                             str(Path(folder).expanduser()) if folder else "", preview,
-                            fields.get("preview_path", "").strip(), " ".join(ports), fields.get("suite", "").strip())
+                            fields.get("preview_path", "").strip(), " ".join(ports), fields.get("suite", "").strip(),
+                            given)
         return 303, f"/run/{q(run_id)}"
 
     # pieces -------------------------------------------------------------------
@@ -1322,10 +1339,27 @@ class Review:
         names = [x.name for x in role.steps] if role else []
         return [x.name for x in role.steps[:names.index(step)] if x.output is not None] if role and step in names else []
 
+    def _items(self, target: Step[Any] | None, s: StepState) -> list[tuple[str, str]]:
+        """The items a person may choose among at this stop, as (id, label); none where the step lets nobody."""
+        if target is None or target.choose is None or target.output is None or s.checked is None:
+            return []
+        try:
+            return [(str(i), str(label)) for i, label in target.choose.items(
+                target.output.model_validate_json(self.c.home.joinpath("objects", f"{s.checked['output_hash']}.json")
+                                                  .read_bytes()))]
+        except Exception:
+            return []
+
     def _answer_bar(self, run_id: str, step: str, value: Any, error: str, fields: dict[str, str] | None,
                     editable: bool = True, earlier: list[str] | None = None, evidence: str = "",
-                    default_to: str | None = None, floor: bool = False) -> str:
+                    default_to: str | None = None, floor: bool = False,
+                    items: list[tuple[str, str]] | None = None) -> str:
         fields = fields or {}
+        choose = ("" if not items else
+                  f'<input type="text" name="chosen" value="{esc(fields.get("chosen", ""))}" '
+                  f'placeholder="Choose in order: {esc(", ".join(i for i, _ in items[:3]))}" '
+                  f'title="{esc("; ".join(f"{i}: {label}" for i, label in items))}">'
+                  f'<button type="button" class="btn" data-a="choose">Choose</button>')
         chosen = fields.get("to", "") or (default_to or "")
         back = ("" if not earlier else
                 '<select name="to" title="Return and context go to this step; every step after it runs again">'
@@ -1342,7 +1376,7 @@ class Review:
                 f'<span>it is checked before it replaces the agent\'s</span></div>'
                 f'<textarea name="output" spellcheck="false">{esc(edited)}</textarea></div>'
                 f'<div class="row"><input type="text" name="note" value="{esc(fields.get("note", ""))}" '
-                f'placeholder="Note for the agent (needed for return and context)">{back}'
+                f'placeholder="Note for the agent (needed for return and context)">{back}{choose}'
                 f'<button type="button" class="btn" data-a="context">Context<kbd>X</kbd></button>'
                 f'<button type="button" class="btn" data-a="return">Return<kbd>R</kbd></button>'
                 + (f'<button type="button" class="btn" data-a="change">Change<kbd>C</kbd></button>' if editable else "") +

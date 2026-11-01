@@ -37,6 +37,7 @@ def verify(role: Role) -> list[str]:
     for i, step in enumerate(role.steps):
         named = [(f"check {getattr(c, '__name__', None) or type(c).__name__}", c) for c in step.checks]
         named += [("question", step.question)] if step.question else []
+        named += [("back condition", step.back.when)] if step.back else []
         for what, fn in named:
             problems += _reads(role, step, what, fn) + _takes(step, what, fn)
         if step.run_by is not None:
