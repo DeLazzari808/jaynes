@@ -362,10 +362,18 @@ details.others > summary span:first-child::before { content: "\\25B8  "; }
 details.others[open] > summary span:first-child::before { content: "\\25BE  "; }
 .cards { display: grid; gap: 12px; }
 .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
-.card .pics { display: flex; gap: 8px; padding: 10px 10px 0; }
-.card .pics a { position: relative; min-width: 0; display: block; }
-.card .pics img { width: 100%; display: block; border-radius: 4px; background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
-.card .pics span { position: absolute; left: 6px; top: 6px; font-family: var(--mono); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; background: rgba(7, 9, 13, .82); color: var(--ink); }
+.card .pics { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 10px 0; }
+.card .shot { position: relative; display: block; cursor: zoom-in; }
+.card .shot.wide { flex: 1 1 100%; }
+.card .shot.tall { flex: 1 1 calc(50% - 5px); }
+.card .shot .cut { overflow: hidden; border-radius: 4px; background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
+.card .shot img { display: block; max-width: none; }
+.card .shot > img { width: 100%; }
+.card .shot span { display: block; margin-bottom: 4px; font-family: var(--mono); font-size: 11px; color: var(--dim); }
+#zoom { position: fixed; inset: 0; z-index: 10; background: rgba(4, 6, 9, .94); overflow: auto; cursor: zoom-out; display: grid; place-items: start center; padding: 48px 24px; }
+#zoom.hidden { display: none; }
+#zoom img { max-width: none; box-shadow: 0 0 0 1px var(--line-2); }
+#zoom p { position: fixed; top: 12px; right: 18px; margin: 0; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 .card .txt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
 .card .txt b { font-weight: 500; }
 .card .txt p { margin: 2px 0 0; color: var(--dim); }
@@ -375,6 +383,10 @@ details.others[open] > summary span:first-child::before { content: "\\25BE  "; }
 .card.pick i.n { flex: none; width: 24px; height: 24px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-2); font-style: normal; font-family: var(--mono); font-size: 12px; display: grid; place-items: center; margin-top: 1px; }
 .card.pick.on { border-color: var(--green); }
 .card.pick.on i.n { background: var(--green); color: #04150c; box-shadow: none; }
+details.steps > summary { cursor: pointer; font-family: var(--mono); font-size: 11px; color: var(--dim); margin-top: 4px; }
+details.steps .foot { margin: 10px -18px -16px; }
+.item.on > a { display: grid; gap: 6px; }
+.item.on .m { flex-wrap: wrap; white-space: normal; }
 details.fold { border-top: 1px solid var(--line); padding-top: 14px; }
 details.fold > summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 details.fold > summary span { color: var(--faint); margin-left: 6px; }
@@ -456,6 +468,19 @@ if (ask && "Notification" in window && Notification.permission === "default") {
   ask.classList.remove("hidden");
   ask.addEventListener("click", () => Notification.requestPermission().then(() => ask.classList.add("hidden")));
 }
+// a picture enlarges here, whole and at its own size; Escape or a click closes it
+const zoom = document.createElement("div");
+zoom.id = "zoom"; zoom.className = "hidden"; zoom.innerHTML = "<p>Esc closes</p><img alt=''>";
+document.body.appendChild(zoom);
+const unzoom = () => { zoom.className = "hidden"; zoom.querySelector("img").removeAttribute("src"); };
+zoom.addEventListener("click", unzoom);
+document.querySelectorAll("[data-zoom]").forEach(a => a.addEventListener("click", (ev) => {
+  ev.preventDefault(); ev.stopPropagation();
+  zoom.querySelector("img").src = a.dataset.zoom; zoom.className = ""; zoom.scrollTo(0, 0);
+}));
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && zoom.className !== "hidden") { ev.preventDefault(); ev.stopImmediatePropagation(); unzoom(); }
+}, true);
 const form = document.querySelector("#answer");
 if (form) {
   const note = form.querySelector("[name=note]"), hint = form.querySelector("#hint"), editor = form.querySelector("#editor");
@@ -490,7 +515,7 @@ if (form) {
   form.querySelectorAll("[data-a]").forEach(b => b.addEventListener("click", () => send(b.dataset.a)));
   let armed = null;
   document.addEventListener("keydown", (ev) => {
-    if (busy() || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+    if (busy() || ev.metaKey || ev.ctrlKey || ev.altKey || zoom.className !== "hidden") return;
     const a = {a: "accept", c: "change", r: "return", x: "context"}[ev.key.toLowerCase()];
     if (!a) return;
     ev.preventDefault();
@@ -556,17 +581,17 @@ def _cell(v: Any, first: bool) -> str:
     return f"<td>{render_value(v)}</td>"
 
 
-def _ratio(picture: Path) -> float:
-    """A picture's width over its height, read from a PNG's header; 1 for anything else."""
+def _size(picture: Path) -> tuple[int, int] | None:
+    """A picture's width and height, read from a PNG's header; None for anything else."""
     try:
         with picture.open("rb") as f:
             head = f.read(24)
     except OSError:
-        return 1.0
+        return None
     if head[:8] != b"\x89PNG\r\n\x1a\n":
-        return 1.0
+        return None
     width, height = int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big")
-    return width / height if width and height else 1.0
+    return (width, height) if width and height else None
 
 
 def stage_list(items: list[Stage]) -> str:
@@ -655,11 +680,12 @@ class Review:
         tasks = [w.task for w in items]
         waiting: list[str] = []
         others: list[str] = []
-        foot, unfold = "", False
+        unfold = False
         for w in items:
             on = selected == (w.run_id, w.step) or selected == (w.run_id, "")
             events = list(self.c.store.events(run_id=w.run_id))
-            run_stages = stages(self.names(self.role_of(w.run_id), events), events, project(events), now)
+            names = self.names(self.role_of(w.run_id), events)
+            run_stages = stages(names, events, project(events), now)
             chip = {"stop": '<span class="chip amber">stop</span>', "blocked": '<span class="chip red">blocked</span>',
                     "idle": '<span class="chip blue">idle</span>', "running": '<span class="chip blue">running</span>',
                     "paused": '<span class="chip amber">paused</span>'}[w.kind]
@@ -672,19 +698,24 @@ class Review:
                 at = time.localtime(starts[w.run_id])
                 same_day = time.strftime("%Y%m%d", at) == time.strftime("%Y%m%d", time.localtime(now))
                 started = f'<span>started {time.strftime("%H:%M" if same_day else "%b %d %H:%M", at)}</span>'
-            row = (f'<a class="item{" on" if on else ""} {w.kind}" href="{href}">'
-                   f'<div class="t">{esc(w.task)}</div>'
-                   f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}'
-                   f'<span>{when}</span></div>'
-                   f'{stage_list(run_stages) if on else stage_strip(run_stages)}</a>')
+            if on:  # where the run is, in a line; its steps and their cost a click away
+                where = names.index(w.step) + 1 if w.step in names else 0
+                state = {"stop": "waiting for you", "blocked": "blocked", "idle": "not running",
+                         "running": "working", "paused": "paused for quota"}[w.kind]
+                t = totals(events)
+                row = (f'<div class="item on {w.kind}"><a href="{href}"><div class="t">{esc(w.task)}</div>'
+                       f'<div class="m">{chip}<span class="s">Step {where} of {len(names)}, {state}</span>{started}'
+                       f'</div></a><details class="steps"><summary>Steps</summary>{stage_list(run_stages)}'
+                       f'<div class="foot"><span>started</span><b>{age(now - events[0].ts)} ago</b>'
+                       f'<span>turns</span><b>{t.turns}</b>'
+                       f'<span>tokens</span><b>{tokens(t.tokens_in)} in, {tokens(t.tokens_out)} out</b>'
+                       f'<span>you answered</span><b>{t.answered} of {t.stops} stops</b></div></details></div>')
+            else:
+                row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{esc(w.task)}</div>'
+                       f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
+                       f'{stage_strip(run_stages)}</a>')
             (waiting if w.kind == "stop" else others).append(row)
             unfold = unfold or (on and w.kind != "stop")
-            if on:
-                t = totals(events)
-                foot = (f'<div class="foot"><span>started</span><b>{age(now - events[0].ts)} ago</b>'
-                        f'<span>turns</span><b>{t.turns}</b>'
-                        f'<span>tokens</span><b>{tokens(t.tokens_in)} in, {tokens(t.tokens_out)} out</b>'
-                        f'<span>you answered</span><b>{t.answered} of {t.stops} stops</b></div>')
         body = "".join(waiting) or '<div class="empty-q">Nothing is waiting for you.</div>'
         if others:
             body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
@@ -694,7 +725,7 @@ class Review:
                 f'<div class="qhead" data-waiting="{len(waiting)}"><span>Waiting for you</span>'
                 '<button id="notify" class="hidden" type="button">Notify me</button>'
                 f'<span>{len(waiting)}</span></div>'
-                f'{body}{foot}</aside>')
+                f'{body}</aside>')
 
     # pages ------------------------------------------------------------------
 
@@ -861,27 +892,21 @@ class Review:
         return out
 
     def _shown(self, run_id: str, st: RunState, shown: list[dict[str, Any]], items: list[tuple[str, str]]) -> str:
-        """The stop's items as cards: pictures side by side at one height, a title and a sentence. An item the
-        person may choose is picked by clicking it, in order."""
+        """The stop's items as cards: their pictures, a title and a sentence. An item the person may choose is picked
+        by clicking it, in order."""
         choosable = {i for i, _ in items}
         cards: list[str] = []
         for x in shown:
             pics: list[str] = []
-            ratios: list[float] = []
-            for pic in cast(list[dict[str, str]], x.get("pictures") or []):
+            for pic in cast(list[dict[str, Any]], x.get("pictures") or []):
                 step, rel = str(pic["step"]), str(pic["file"])
                 obj = self._files(st, step).get(rel)
                 if obj is None:
                     continue
-                ratio = _ratio(self.c.home / "objects" / obj)
-                ratios.append(ratio)
-                link = f"/file/{q(run_id)}/{q(step)}/{q(rel)}"
-                caption = f"<span>{esc(str(pic.get('caption') or ''))}</span>" if pic.get("caption") else ""
-                pics.append(f'<a href="{link}" target="_blank" style="flex:{ratio:.3f} 1 0"><img src="{link}" '
-                            f'alt="{esc(str(pic.get("caption") or rel))}" loading="lazy">{caption}</a>')
-            # one height for the row, at most 280 px: the width it takes is that height times the ratios
-            row = (f'<div class="pics" style="max-width:{max(240, 280 * sum(ratios)):.0f}px">{"".join(pics)}</div>'
-                   if pics else "")
+                pics.append(self._picture(f"/file/{q(run_id)}/{q(step)}/{q(rel)}", self.c.home / "objects" / obj,
+                                          str(pic.get("caption") or ""),
+                                          [int(v) for v in cast(list[Any], pic.get("region") or [])]))
+            row = f'<div class="pics">{"".join(pics)}</div>' if pics else ""
             ident = str(x.get("id") or "")
             pick = ident in choosable
             text = f"<p>{esc(str(x['text']))}</p>" if x.get("text") else ""
@@ -889,6 +914,23 @@ class Review:
                          + f'>{row}<div class="txt">' + ('<i class="n"></i>' if pick else "")
                          + f'<div><b>{esc(str(x["title"]))}</b>{text}</div></div></div>')
         return f'<div class="cards">{"".join(cards)}</div>'
+
+    @staticmethod
+    def _picture(link: str, path: Path, caption: str, region: list[int]) -> str:
+        """A picture at a size its text can be read at: the part named by ``region``, never wider than its own
+        pixels, a computer's across the column and a phone's two to a row. A click enlarges the whole of it here."""
+        size = _size(path)
+        if size is None:
+            return (f'<a class="shot wide" href="{link}" data-zoom="{link}"><img src="{link}" alt="{esc(caption)}" '
+                    f'loading="lazy">' + (f"<span>{esc(caption)}</span>" if caption else "") + "</a>")
+        width, height = size
+        x, y, w, h = region if len(region) == 4 and region[2] > 0 and region[3] > 0 else (0, 0, width, height)
+        w, h = min(w, width - x), min(h, height - y)
+        img = (f'<img src="{link}" alt="{esc(caption)}" loading="lazy" style="width:{width / w * 100:.3f}%;'
+               f'margin-left:{-x / w * 100:.3f}%;margin-top:{-y / w * 100:.3f}%">')
+        return (f'<a class="shot {"wide" if width >= height else "tall"}" href="{link}" data-zoom="{link}" '
+                f'style="max-width:{w}px">' + (f"<span>{esc(caption)}</span>" if caption else "")
+                + f'<div class="cut" style="aspect-ratio:{w}/{h}">{img}</div></a>')
 
     @staticmethod
     def _files(st: RunState, step: str) -> dict[str, str]:
@@ -983,12 +1025,15 @@ class Review:
         made = (f'<div class="box"><table class="kv"><tr><td>branch</td><td class="m">{esc(str(st.branch["branch"]))} '
                 f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr></table></div>'
                 if st.branch else "")
-        body = (call + stage_list(stages(names, events, st, self.c.clock())) + made
-                + f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
+        body = (call + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
+                f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
+                + f'<details class="fold"><summary>Details <span>turns, tokens and events</span></summary>'
+                f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
                 f'<div><div class="n">{t.turns}<small>turns</small></div><p>{tokens(t.tokens_in)} tokens in, {tokens(t.tokens_out)} out</p></div>'
                 f'<div><div class="n">{age(t.seconds)}</div><p>from start to last event</p></div></div>'
                 f'<div><div class="label">Events <span><a href="/log?run={q(run_id)}">raw log</a></span></div>'
-                f'<div class="box"><table><tr><th>time</th><th>event</th><th>step</th><th>detail</th></tr>{rows}</table></div></div>')
+                f'<div class="box"><table><tr><th>time</th><th>event</th><th>step</th><th>detail</th></tr>{rows}</table></div></div>'
+                '</details>')
         main = crumbs + f'<div class="body">{body}</div>'
         return page(f"Run {run_id}", self.sidebar((run_id, w.step) if w else (run_id, "")), main, self.seq())
 

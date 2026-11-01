@@ -569,7 +569,11 @@ def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_deta
         server.shutdown()
     front, _, details = page.partition('<details class="fold"><summary>Details')
     assert "<h1>Make this change?</h1>" in front
-    assert f'<img src="/file/{run}/look/screen.png" alt="before"' in front and 'style="flex:1.600 1 0"' in front
+    link = f"/file/{run}/look/screen.png"  # enlarged in the page with a click, never in another tab
+    assert f'<a class="shot wide" href="{link}" data-zoom="{link}" style="max-width:1440px">' in front
+    assert f'<img src="{link}" alt="before"' in front and 'target="_blank"' not in front.split("<main>")[1]
+    assert "Step 2 of 2, waiting for you" in front  # where the run is; its steps a click away
+    assert '<details class="steps"><summary>Steps</summary><ul class="stages">' in front
     assert "<b>The list hides the status</b><p>Say it: the status goes beside the name.</p>" in front
     assert '<details class="fold"><summary>More <span>1</span></summary>' in front  # the cost, folded
     assert "Output" not in front and ">Turns" not in front and 'class="label">Output' in details

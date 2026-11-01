@@ -28,7 +28,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
 from jaynes.roles.references import chrome
@@ -120,6 +120,7 @@ class Shot:
     text: str
     controls: list[dict[str, Any]]
     error: str = ""
+    region: list[int] = field(default_factory=list[int])  # x, y, width, height: what the last action changed
 
 
 @dataclass
@@ -325,7 +326,14 @@ class Page:
 
     def shot(self, path: Path) -> Shot:
         self.screenshot(path)
-        return Shot(path.name, self.location(), self.text(), self.controls())
+        return Shot(path.name, self.location(), self.text(), self.controls(), region=self.region())
+
+    def region(self) -> list[int]:
+        """Where to look in the screenshot, as x, y, width and height in its pixels: what the last action changed,
+        else where the page has content, padded, at least 480 by 270."""
+        found = self.evaluate(_REGION)
+        box = cast(list[Any], found) if isinstance(found, list) else []
+        return [int(x) for x in box] if len(box) == 4 else []
 
     def click_at(self, x: float, y: float) -> None:
         for kind in ("mouseMoved", "mousePressed", "mouseReleased"):
@@ -336,6 +344,7 @@ class Page:
         after a click, so a transition can be captured while it runs."""
         kind = str(action.get("action"))
         try:
+            self.evaluate(_WATCH)  # what the action changes, for region()
             if kind == "open":
                 self.goto(str(action["to"]))
                 return ""
@@ -388,6 +397,59 @@ def route_matches(route: str, where: str) -> bool:
 def open_page(origin: str, deny: Sequence[str] = (), record: bool = False) -> Page:
     return Page(origin.rstrip("/"), tuple(deny), record)
 
+
+_WATCH = """(() => {
+  const changed = window.__jaynesChanged = [];
+  if (window.__jaynesWatch) window.__jaynesWatch.disconnect();
+  window.__jaynesWatch = new MutationObserver(records => records.forEach(r => {
+    const el = r.type === "childList" ? null : (r.target.nodeType === 1 ? r.target : r.target.parentElement);
+    if (el) changed.push(el);
+    r.addedNodes.forEach(n => changed.push(n.nodeType === 1 ? n : n.parentElement));
+  }));
+  window.__jaynesWatch.observe(document.documentElement, {subtree: true, childList: true, attributes: true,
+                                                          characterData: true});
+})()"""
+
+_REGION = """(() => {
+  const vw = innerWidth, vh = innerHeight, pad = 24;
+  // a page with no viewport tag is shown zoomed out on a phone: the picture's pixels are its pixels times this
+  const k = (window.visualViewport && visualViewport.scale) || 1, pw = Math.round(vw * k), ph = Math.round(vh * k);
+  const shown = r => r.width > 0 && r.height > 0 && r.bottom > 0 && r.right > 0 && r.top < vh && r.left < vw;
+  const visible = el => { const s = getComputedStyle(el); return s.visibility !== "hidden" && s.display !== "none"; };
+  const SOLID = "img, svg, canvas, video, input, button, select, textarea";
+  // where an element has ink: its text, as laid out, and its pictures and controls; not the empty width of a block
+  const inked = el => {
+    const out = [];
+    if (!el || el.nodeType !== 1) return out;
+    if (el.matches(SOLID)) { if (visible(el)) out.push(el.getBoundingClientRect()); return out; }
+    const walk = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+      if (!n.textContent.trim() || !n.parentElement || !visible(n.parentElement)) continue;
+      const range = document.createRange(); range.selectNodeContents(n); out.push(range.getBoundingClientRect());
+    }
+    el.querySelectorAll(SOLID).forEach(x => { if (visible(x)) out.push(x.getBoundingClientRect()); });
+    return out;
+  };
+  const changed = (window.__jaynesChanged || []).filter(el => el && el !== document.body && el !== document.documentElement);
+  let boxes = changed.flatMap(inked).filter(shown);
+  if (!boxes.length) boxes = inked(document.body).filter(shown);
+  if (!boxes.length) return [0, 0, pw, ph];
+  // never cut through a line or a control: take in whole any the box reaches into
+  const all = inked(document.body).filter(shown);
+  for (let i = 0; i < 3; i++) {
+    const [l, t, r, b] = [Math.min(...boxes.map(x => x.left)) - pad / k, Math.min(...boxes.map(x => x.top)) - pad / k,
+                          Math.max(...boxes.map(x => x.right)) + pad / k, Math.max(...boxes.map(x => x.bottom)) + pad / k];
+    const more = all.filter(x => !boxes.includes(x) && x.left < r && x.right > l && x.top < b && x.bottom > t);
+    if (!more.length) break;
+    boxes = boxes.concat(more);
+  }
+  let x0 = Math.min(...boxes.map(r => r.left)) * k - pad, y0 = Math.min(...boxes.map(r => r.top)) * k - pad;
+  let x1 = Math.max(...boxes.map(r => r.right)) * k + pad, y1 = Math.max(...boxes.map(r => r.bottom)) * k + pad;
+  const grow = (a, b, least, most) => { const more = least - (b - a); if (more > 0) { a -= more / 2; b += more / 2; }
+    if (a < 0) { b -= a; a = 0; } if (b > most) { a -= b - most; b = most; } return [Math.max(0, a), Math.min(most, b)]; };
+  [x0, x1] = grow(x0, x1, Math.min(480, pw), pw); [y0, y1] = grow(y0, y1, Math.min(270, ph), ph);
+  return [Math.round(x0), Math.round(y0), Math.round(x1 - x0), Math.round(y1 - y0)];
+})()"""
 
 _CONTROLS = """(() => {
   const shown = el => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el);

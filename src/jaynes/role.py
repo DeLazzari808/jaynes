@@ -187,11 +187,13 @@ class Choice:
 
 @dataclass(frozen=True)
 class Picture:
-    """A picture a step of the run left, by the step's name and the file's path among its files."""
+    """A picture a step of the run left, by the step's name and the file's path among its files. ``region`` is the
+    part to show, as x, y, width and height in its pixels; the whole picture is a click away."""
 
     step: str
     file: str
     caption: str = ""
+    region: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

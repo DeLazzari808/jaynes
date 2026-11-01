@@ -320,7 +320,7 @@ def test_a_measured_violation_goes_back_to_implement_and_stays_in_sight(lantern:
     assert "measure spacing: 13px is off the spacing scale" in agent.prompts["implement"][1]
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "accept"]
     assert "Before you do: 1 measure failing, under More." in opened["question"]
-    assert {"title": "Measure failing: spacing", "text": "13px is off the spacing scale.", "pictures": [], "id": "",
+    assert {"title": "A measure fails", "text": "13px is off the spacing scale.", "pictures": [], "id": "",
             "more": True} in opened["shown"]
 
 
@@ -399,14 +399,19 @@ def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lanter
 
     moments = shown("moments")
     assert [p["file"] for p in moments[0]["pictures"]] == ["screen-desktop.png", "screen-phone.png"]
+    x, y, w, h = moments[0]["pictures"][0]["region"]  # where the list is, not the empty rest of the screen
+    assert (x, y) == (0, 0) and 480 <= w < 1440 and 270 <= h < 900
     assert [(m["id"], m["title"]) for m in moments[1:]] == [
         ("M1", "I cannot tell whether a book is finished without opening it."),
         ("M2", "I do not know who suggested a book."), ("M3", "I search for the next book by its name.")]
     to_requirements(c, run)
-    [req] = shown("requirements")  # one break, beside the capture where it happens
+    [req] = shown("requirements")  # one break, beside the part of the capture where it happens
     assert req["title"] == "The book opens without saying whether the club read it."
-    assert req["text"] == "R1: A book's place says whether the club read it. Built first."
-    assert req["pictures"] == [{"step": "walkthrough", "file": "M1-s02.png", "caption": "M1-s02"}]
+    assert req["text"] == "A book's place says whether the club read it. Built now."
+    [pic] = req["pictures"]
+    assert (pic["file"], pic["caption"]) == ("M1-s02.png", "on the screen today") and pic["region"][2] < 1440
+    [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "requirements"]
+    assert opened["question"] == "Approve these changes? The one marked built now is made first; the rest wait."
     go(c, run, "requirements")
     accept = shown("accept")
     front = [x for x in accept if not x["more"]]
@@ -414,5 +419,16 @@ def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lanter
         ("On a computer", [("snapshot", "before"), ("proof", "after")]),
         ("On a phone", [("snapshot", "before"), ("proof", "after")]),
         ("A book's page shows its status beside who picked it.", [])]
+    assert front[0]["pictures"][0]["region"] == front[0]["pictures"][1]["region"]  # cut alike
     folded = [x["title"] for x in accept if x["more"]]
     assert folded[:2] == ["In the light theme", "Cost"] and "Not verified" in folded
+
+
+def test_no_question_names_a_slice_a_route_or_a_capture(lantern: Lantern) -> None:
+    c, run, _ = lantern.start(Agent())
+    to_requirements(c, run)
+    go(c, run, "requirements")
+    questions = [e.payload["question"] for e in c.store.events("StopOpened", run_id=run)]
+    assert questions[-1].startswith("Keep this change? ")
+    for q in questions:
+        assert "slice" not in q.lower() and "/" not in q and "M1" not in q and "R1" not in q, q

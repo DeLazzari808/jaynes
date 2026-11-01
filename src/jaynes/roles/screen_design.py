@@ -64,6 +64,8 @@ class Snapshot(BaseModel):
     endpoints: list[Endpoint]
     facts: list[sc.Fact] = Field(description="numbers Jaynes computed; a count may copy one's query")
     blocked: list[dict[str, str]] = Field(default_factory=list[dict[str, str]])
+    regions: dict[str, list[int]] = Field(default_factory=dict[str, list[int]],
+                                          description="where each screen picture has content: x, y, width and height")
 
 
 class Case(BaseModel):
@@ -129,6 +131,7 @@ class Capture(BaseModel):
     filled: int = Field(description="filled buttons visible: primary actions")
     file: str
     text: str = Field(description="the capture's text and what Jaynes saw, beside the picture")
+    region: list[int] = Field(default_factory=list[int], description="what the action changed in the picture: x, y, width and height")
 
 
 class Walk(BaseModel):
@@ -224,6 +227,7 @@ class ProofShot(BaseModel):
     theme: str
     size: str
     kind: str = Field(description="screen, or before, 90ms or settled around an action of the slice")
+    region: list[int] = Field(default_factory=list[int], description="where to look in it: x, y, width and height")
 
 
 class Proof(BaseModel):
@@ -315,6 +319,7 @@ def take_snapshot(ctx: StepContext) -> Snapshot:
             page.view(owner, PHONE)
             page.goto(path)
             page.screenshot(files / "screen-phone.png")
+            regions = {"screen-desktop.png": shot.region, "screen-phone.png": page.region()}
     except BrowserError as err:
         raise Blocked(f"Jaynes's Chrome could not look at the product: {err}") from None
     if not shot.text.strip():
@@ -341,7 +346,7 @@ def take_snapshot(ctx: StepContext) -> Snapshot:
                    and not p.relative_to(files).as_posix().startswith("private/"))
     return Snapshot(path=path, theme=owner, url=shot.url, files=shown, endpoints=endpoints,
                     facts=[f.model_copy(update={"id": f"F{i}"}) for i, f in enumerate(facts[:sc.MAX_FACTS], 1)],
-                    blocked=page.blocked)
+                    blocked=page.blocked, regions=regions)
 
 
 def walk_paths(ctx: StepContext) -> Walk:
@@ -366,7 +371,7 @@ def walk_paths(ctx: StepContext) -> Walk:
                         captures.append(Capture(id=cid, moment=p.moment, step=i, action=action.action, url=shot.url,
                                                 error=err, controls=len(shot.controls),
                                                 filled=sum(1 for c in shot.controls if c.get("filled")),
-                                                file=f"{cid}.png", text=f"{cid}.txt"))
+                                                file=f"{cid}.png", text=f"{cid}.txt", region=shot.region))
                     blocked += page.blocked
     except BrowserError as err:
         raise Blocked(f"Jaynes's Chrome could not look at the product: {err}") from None
@@ -445,7 +450,8 @@ def prove(ctx: StepContext) -> Proof:
                     page.goto(path)
                     cid = f"P-{t}-{size}"
                     page.screenshot(files / f"{cid}.png")
-                    shots.append(ProofShot(id=cid, file=f"{cid}.png", theme=t, size=size, kind="screen"))
+                    shots.append(ProofShot(id=cid, file=f"{cid}.png", theme=t, size=size, kind="screen",
+                                           region=page.region()))
             page.view(owner, DESKTOP)
             for i, action in enumerate(test.path, 1):
                 a = action.model_dump()
@@ -708,32 +714,49 @@ def _accept_question(_: Any, needs: Witnesses) -> str:
         [f"{len(r.unexplained)} worse than approved"] if r.unexplained else []) + (
         [f"{len(r.defects)} defect{'s' * (len(r.defects) > 1)} left"] if r.defects else []) + (
         ["over budget"] if r.over else [])
-    return f"Merge this slice? {_sentence(r.summary)}" + (f" Before you do: {', '.join(problems)}, under More."
+    return f"Keep this change? {_sentence(r.summary)}" + (f" Before you do: {', '.join(problems)}, under More."
                                                          if problems else "")
 
 
-def _show_moments(out: Moments, _: Witnesses) -> list[Shown]:
+def _requirements_question(out: Requirements, _: Witnesses) -> str:
+    first = len(out.slice.requirements)
+    return ("Approve these changes? " + ("The one marked built now is made first; the rest wait." if first == 1 else
+                                         f"The {first} marked built now are made first; the rest wait."))
+
+
+def _region(*boxes: list[int]) -> tuple[int, ...]:
+    """The smallest box holding every given one, so a before and an after are cut alike."""
+    boxes = tuple(b for b in boxes if len(b) == 4)
+    if not boxes:
+        return ()
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    return (x0, y0, max(b[0] + b[2] for b in boxes) - x0, max(b[1] + b[3] for b in boxes) - y0)
+
+
+def _show_moments(out: Moments, needs: Witnesses) -> list[Shown]:
+    regions = needs[SNAPSHOT].value.regions
     screen = Shown("The screen as it is", "In your theme, on a computer and on a phone.",
-                   (Picture(SNAPSHOT.name, "screen-desktop.png", "computer"),
-                    Picture(SNAPSHOT.name, "screen-phone.png", "phone")))
+                   tuple(Picture(SNAPSHOT.name, f"screen-{size}.png", label, _region(regions.get(f"screen-{size}.png", [])))
+                         for size, label in (("desktop", "computer"), ("phone", "phone"))))
     return [screen, *(Shown(_sentence(m.statement), _sentence(m.case.text), id=m.id) for m in out.moments)]
 
 
 def _show_requirements(out: Requirements, needs: Witnesses) -> list[Shown]:
-    """Each requirement beside the capture where its break happens: the problem, then what changes."""
+    """Each change beside the part of the capture where its break happens: the problem, then what changes."""
     breaks = {b.id: b for m in needs[BREAKS].value.moments for b in m.breaks}
-    shots = {c.id: c.file for c in needs[WALK].value.captures}
+    shots = {c.id: c for c in needs[WALK].value.captures}
 
     def where(break_id: str) -> tuple[str, tuple[Picture, ...]]:
         b = breaks.get(break_id)
-        last = b.captures[-1] if b else ""
-        return (_sentence(b.where) if b else break_id), ((Picture(WALK.name, shots[last], last),) if last in shots else ())
+        last = shots.get(b.captures[-1]) if b else None
+        return (_sentence(b.where) if b else ""), (
+            (Picture(WALK.name, last.file, "on the screen today", _region(last.region)),) if last else ())
 
     items: list[Shown] = []
     for r in out.requirements:
         title, pictures = where(r.break_id)
-        first = " Built first." if r.id in out.slice.requirements else ""
-        items.append(Shown(title, f"{r.id}: {_sentence(r.need)}{first}", pictures))
+        now = " Built now." if r.id in out.slice.requirements else ""
+        items.append(Shown(title, f"{_sentence(r.need)}{now}", pictures))
     for d in out.deferred:
         title, pictures = where(d.break_id)
         items.append(Shown(title, f"Not now: {_sentence(d.reason)}", pictures))
@@ -741,16 +764,19 @@ def _show_requirements(out: Requirements, needs: Witnesses) -> list[Shown]:
 
 
 def _show_accept(_: Any, needs: Witnesses) -> list[Shown]:
-    """The screen before and after, side by side, a line per change; measures, costs and the rest folded below."""
-    owner, r, built = needs[SNAPSHOT].value.theme, needs[REPORT].value, needs[IMPLEMENT].value
-    shots = {x.id: x.file for x in needs[PROOF].value.captures}
+    """The screen before and after, cut alike, a line per change; measures, costs and the rest folded below."""
+    snap, r, built = needs[SNAPSHOT].value, needs[REPORT].value, needs[IMPLEMENT].value
+    owner = snap.theme
+    shots = {x.id: x for x in needs[PROOF].value.captures}
 
     def side(size: str, theme: str) -> tuple[Picture, ...]:
         after = shots.get(f"P-{theme}-{size}")
-        return ((Picture(SNAPSHOT.name, f"screen-{size}.png", "before"),) if theme == owner else ()) + (
-            (Picture(PROOF.name, after, "after"),) if after else ())
+        before = snap.regions.get(f"screen-{size}.png", []) if theme == owner else []
+        cut = _region(before, after.region if after else [])
+        return ((Picture(SNAPSHOT.name, f"screen-{size}.png", "before", cut),) if theme == owner else ()) + (
+            (Picture(PROOF.name, after.file, "after", cut),) if after else ())
 
-    items = [Shown("On a computer", "Before and after, in your theme.", side("desktop", owner)),
+    items = [Shown("On a computer", "Before, then after, in your theme.", side("desktop", owner)),
              Shown("On a phone", "Before and after, in your theme.", side("phone", owner))]
     items += [Shown(_sentence(c)) for c in built.changes]
     other = sc.other(owner)
@@ -759,13 +785,13 @@ def _show_accept(_: Any, needs: Witnesses) -> list[Shown]:
     items.append(Shown("Cost", f"{r.tokens_new} new tokens of {r.budget_tokens}, {r.tokens_cached} read from the "
                                f"cache, {r.minutes} of {r.budget_minutes:g} minutes.", more=True))
     items += [Shown("Over budget", _sentence(o), more=True) for o in r.over]
-    items += [Shown(f"Measure failing: {f.id}", _sentence(f.what), more=True) for f in r.measure]
+    items += [Shown("A measure fails", _sentence(f.what), more=True) for f in r.measure]
     unexplained = {f.id for f in r.unexplained}
-    items += [Shown(f"{'Worse than approved' if f.id in unexplained else 'Kept on purpose'}: {f.id}",
+    items += [Shown("Worse than the approved version" if f.id in unexplained else "Kept on purpose",
                     _sentence(f.what), more=True) for f in r.compare]
-    items += [Shown(f"Defect left: {d.id}", _sentence(d.what),
-                    (Picture(PROOF.name, shots[d.capture], d.capture),) if d.capture in shots else (), more=True)
-              for d in r.defects]
+    items += [Shown("Still wrong", _sentence(d.what),
+                    (Picture(PROOF.name, shots[d.capture].file, "where it shows", _region(shots[d.capture].region)),)
+                    if d.capture in shots else (), more=True) for d in r.defects]
     items += [Shown("Not verified", _sentence(u), more=True) for u in r.unverified]
     return items
 
@@ -838,8 +864,7 @@ BREAKS = ROLE.step(
 REQUIREMENTS = ROLE.step(
     "requirements", output=Requirements, needs=[MOMENTS, OBJECTS, BREAKS, WALK], check=requirements_follow,
     stop=stop(0.2, sampled=False), inputs=["method", "heuristics"],
-    question=lambda out, _: (f"Approve these requirements? The first slice ends at {out.slice.end.route}, showing "
-                             f"{out.slice.end.text!r}."), shows=_show_requirements,
+    question=_requirements_question, shows=_show_requirements,
     instructions="Write one requirement per break, in terms of objects and routes (a thing becomes a place with an "
                  "address; every name is a link), not components, in the order of the chosen moments, each with your "
                  "recommendation and why. Defer a break only with a reason. Mark the first slice: the smallest path "
