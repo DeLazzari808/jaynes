@@ -90,5 +90,7 @@ def environment(tmp: Path) -> dict[str, str]:
     """Variables that keep temporary files and package caches inside the box's temporary folder."""
     (tmp / "npm").mkdir(parents=True, exist_ok=True)
     (tmp / "npmrc").touch()
+    # Go ignores XDG_CACHE_HOME on macOS and writes its build cache to ~/Library/Caches unless told
     return {"TMPDIR": str(tmp), "XDG_CACHE_HOME": str(tmp / "cache"), "npm_config_cache": str(tmp / "npm"),
-            "npm_config_userconfig": str(tmp / "npmrc"), "npm_config_update_notifier": "false"}
+            "npm_config_userconfig": str(tmp / "npmrc"), "npm_config_update_notifier": "false",
+            "GOCACHE": str(tmp / "go"), "GOPROXY": "off", "GOTOOLCHAIN": "local"}

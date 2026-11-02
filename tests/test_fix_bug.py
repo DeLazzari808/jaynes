@@ -140,6 +140,41 @@ def test_the_role_finds_the_bug_with_a_test_and_then_fixes_it_without_touching_t
     assert git(repo, "show", f"{branch}:tests/test_add.py") == TEST.strip()
 
 
+def test_a_failure_the_box_caused_is_not_the_bug(repo: Path, tmp_path: Path) -> None:
+    outside = tmp_path / "outside"
+    blocked = f"touch {outside}; echo FAIL; exit 1; :"
+    needs = Witnesses(ran_by(Runner(kind="given", suite=blocked, each=blocked, found="the test")),
+                      copy(repo, tmp_path, {"tests/test_add.py": TEST}), source=repo)
+    refused = fb.fails_for_the_bug(reproduction(failure="FAIL"), needs)
+    assert isinstance(refused, Fail) and "the box refused" in refused.reasons[0] and str(outside) in refused.reasons[0]
+
+
+def test_a_bare_status_word_is_not_a_quote_of_the_failure(repo: Path, tmp_path: Path) -> None:
+    needs = Witnesses(ran_by(), copy(repo, tmp_path, {"tests/test_add.py": TEST}), source=repo)
+    for word in ("FAIL", "failed", "Error", "1 failed"):
+        bare = fb.fails_for_the_bug(reproduction(failure=word), needs)
+        assert isinstance(bare, Fail) and "names no reason" in bare.reasons[0], word
+
+
+GO_TEST = 'package calc\n\nimport "testing"\n\nfunc TestDouble(t *testing.T) {\n\tif Double(2) != 4 {\n\t\tt.Fatal("no")\n\t}\n}\n'
+
+
+@pytest.mark.skipif(shutil.which("go") is None, reason="needs Go")
+def test_go_tests_run_in_the_box_with_their_build_cache_inside_it(tmp_path: Path,
+                                                                  monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))  # a cold cache, so Go must write one
+    project = tmp_path / "go"
+    project.mkdir()
+    (project / "go.mod").write_text("module calc\n\ngo 1.21\n")
+    (project / "calc.go").write_text("package calc\n")
+    (project / "calc_test.go").write_text(GO_TEST)
+    ran = suite.run(Witnesses({}, project, source=project), "go test ./...")
+    assert "undefined: Double" in ran.printed and "operation not permitted" not in ran.printed, ran.output
+    (project / "calc.go").write_text("package calc\n\nfunc Double(n int) int { return 2 * n }\n")
+    passed = suite.run(Witnesses({}, project, source=project), "go test ./...")
+    assert passed.code == 0, passed.output
+
+
 def test_project_commands_commit_with_git_even_when_the_person_signs_commits_with_a_hidden_key(
         repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = tmp_path / "gitconfig"

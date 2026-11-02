@@ -49,10 +49,7 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
     if ran.code == 0:
         return Fail(f"the tests pass before the feature exists; they must fail until it is built. {command} "
                     "printed:\n" + ran.output)
-    if out.failure.strip() not in ran.printed:
-        return Fail(f"{out.failure.strip()} is not in what the command printed; quote a line it prints because the "
-                    f"feature does not exist yet. The end of what it printed (exit {ran.code}):\n{ran.output}")
-    return Pass()
+    return fb._quoted(out.failure, ran, "because the feature does not exist yet") or Pass()  # pyright: ignore[reportPrivateUsage]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:

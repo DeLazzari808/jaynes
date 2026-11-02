@@ -14,6 +14,8 @@ tests open a macOS box cannot run inside Jaynes's: macOS allows no box inside an
 
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field
 
 from jaynes import project, runners, sandbox, suite
@@ -55,11 +57,35 @@ def find_runner(ctx: StepContext) -> Runner:
     return found
 
 
+STATUS = {"fail", "failed", "failure", "failures", "error", "errors", "not", "ok", "exit", "status", "code", "test",
+          "tests", "setup", "build"}  # words every failing run prints, whatever made it fail
+
+
 def _ran(needs: Witnesses, command: str) -> suite.Ran | Fail:
+    """The command's result, or why it says nothing about the project: no box, or the box refused what it tried."""
     try:
-        return suite.run(needs, command)
+        ran = suite.run(needs, command)
     except sandbox.Unavailable as err:
         return Fail(str(err))
+    refused = [line.strip() for line in ran.printed.splitlines() if "operation not permitted" in line.lower()]
+    if ran.code != 0 and refused:
+        return Fail(f"the box refused what {command} tried to do, so its failure says nothing about the project. "
+                    "This is Jaynes's to fix, not yours; tell the person. What the box refused:\n"
+                    + "\n".join(refused[:5]))
+    return ran
+
+
+def _quoted(failure: str, ran: suite.Ran, why: str) -> Fail | None:
+    """None when ``failure`` is a line ``ran`` printed that says why it failed, not only that it did."""
+    quote = failure.strip()
+    if all(w in STATUS for w in re.findall(r"[a-z]+", quote.lower())):
+        return Fail(f"{quote} names no reason; quote the line that says why the tests fail {why}, such as the "
+                    f"assertion message or the missing name. The end of what it printed (exit {ran.code}):\n"
+                    f"{ran.output}")
+    if quote not in ran.printed:
+        return Fail(f"{quote} is not in what the command printed; quote a line it prints {why}. The end of what "
+                    f"it printed (exit {ran.code}):\n{ran.output}")
+    return None
 
 
 def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
@@ -85,10 +111,7 @@ def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
     if ran.code == 0:
         return Fail(f"the tests pass before any fix; they must fail because of the bug. {command} printed:\n"
                     + ran.output)
-    if out.failure.strip() not in ran.printed:
-        return Fail(f"{out.failure.strip()} is not in what the command printed; quote a line it prints because of "
-                    f"the bug. The end of what it printed (exit {ran.code}):\n{ran.output}")
-    return Pass()
+    return _quoted(out.failure, ran, "because of the bug") or Pass()
 
 
 def fixed(out: Fix, needs: Witnesses) -> Pass | Fail:
