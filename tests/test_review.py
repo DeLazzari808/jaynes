@@ -602,6 +602,21 @@ def test_only_stops_wait_for_the_person_and_the_same_task_twice_is_told_apart(se
             f'<a class="btn go" href="/stop/{run}/draft">Open the stop</a>') in call
 
 
+def test_a_new_start_keeps_the_key_so_the_browser_that_answered_still_answers_after_the_mac_restarts(
+        tmp_path: Path) -> None:
+    first = make_server(tmp_path, port=0)
+    first.server_close()
+    again = make_server(tmp_path, port=0)  # a start from nothing, as after a reboot: no restart hands the key over
+    again.server_close()
+    assert again.key == first.key
+    assert (tmp_path / "review.key").stat().st_mode & 0o777 == 0o600  # only the person's user reads it
+    restarted = make_server(tmp_path, port=0, key="held-by-the-open-tab")  # a restart keeps the tab's key
+    restarted.server_close()
+    cold = make_server(tmp_path, port=0)
+    cold.server_close()
+    assert cold.key == "held-by-the-open-tab"
+
+
 def test_a_restart_keeps_the_key_so_the_open_tab_still_answers_and_no_tab_opens(
         served: tuple[str, Path, str], monkeypatch: pytest.MonkeyPatch) -> None:
     from jaynes import review

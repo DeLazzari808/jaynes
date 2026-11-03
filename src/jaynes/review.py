@@ -1633,6 +1633,25 @@ class Review:
 
 # --- HTTP ------------------------------------------------------------------------------
 
+def kept_key(home: Path, key: str | None = None) -> str:
+    """The key that lets a browser answer as the person, kept in ``home`` so the browser that held it still answers
+    after the page starts again from nothing, as after a reboot. ``key``, the one a restart hands over, replaces
+    the kept one, since the open tab holds it. Only the person's user may read the file."""
+    path = home / "review.key"
+    if key is None:
+        try:
+            return path.read_text().strip()
+        except FileNotFoundError:
+            key = secrets.token_urlsafe(24)
+    elif path.is_file() and path.read_text().strip() == key:
+        return key
+    home.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(key)
+    return key
+
+
 def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_every: float = 15.0,
                 call: bool = False, key: str | None = None) -> ReviewServer:
     """A review server for ``home`` on 127.0.0.1; ``port=0`` picks a free one. Every ``wake_every`` seconds it
@@ -1641,7 +1660,7 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
     restart keeps, so the browser that held it still answers."""
     if str(Path.cwd()) not in sys.path:
         sys.path.insert(0, str(Path.cwd()))  # role modules are imported from the project, as `jaynes run` does
-    shared = Shared(secrets.token_urlsafe(16), key or secrets.token_urlsafe(24), idle_after)
+    shared = Shared(secrets.token_urlsafe(16), kept_key(home, key), idle_after)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, format: str, *args: Any) -> None:

@@ -56,6 +56,7 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
         accept = "All of them are right, in the order shown: the run goes on."
     if shown:  # Claude Code hides a preview it cannot show in full; the question always shows
         question += "\n\n" + _sentences(shown, chosen_apart=target.choose is not None, front_only=True)
+    question += f"\n\nOr answer on the page: {page(c.home)}/stop/{run_id}/{w.step}"
     return {"questions": [{
         "question": f"{question}\n\n[run {run_id}, step {w.step}]",
         "header": HEADER,
@@ -66,6 +67,15 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
                                              "with it.", "preview": evidence},
         ],
     }]}
+
+
+def page(home: Path) -> str:
+    """The review page's address: the port the running page wrote down, or the one it starts on."""
+    try:
+        port = int(json.loads((home / "review.json").read_text())["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        port = 8740
+    return f"http://127.0.0.1:{port}"
 
 
 def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step[Any],

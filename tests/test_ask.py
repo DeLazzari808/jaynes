@@ -57,7 +57,8 @@ def test_an_accept_in_the_dialog_is_the_persons_and_the_run_goes_on(
     run = started(home, "tests.stopped:ROLE", "quick=tests.stopped:Agent", "--here")
     shown = asked(home, run, capsys)
     [q] = shown["questions"]
-    assert q["header"] == "Jaynes" and q["question"] == f"Ship 'draft one'?\n\n[run {run}, step draft]"
+    assert q["header"] == "Jaynes" and q["question"] == (f"Ship 'draft one'?\n\nOr answer on the page: "
+                                                        f"http://127.0.0.1:8740/stop/{run}/draft\n\n[run {run}, step draft]")
     assert [o["label"] for o in q["options"]] == ["Accept", "Return"]
     assert "text: draft one" in q["options"][0]["preview"]
     said = hook(shown, "Accept")
@@ -213,5 +214,6 @@ def test_a_stop_that_says_how_it_shows_its_output_is_asked_in_sentences_with_the
     assert "{" not in preview  # no JSON in front of the person
     # Claude Code hides a preview it cannot show in full, so the sentences go in the question, which always shows
     assert shown["questions"][0]["question"] == ("Make this change?\n\nThe list hides the status: Say it: the status "
-                                                 f"goes beside the name.\n\n[run {run}, step change]")
+                                                 f"goes beside the name.\n\nOr answer on the page: "
+                                                 f"http://127.0.0.1:8740/stop/{run}/change\n\n[run {run}, step change]")
     assert "recorded the person's answer at change: accept" in str(hook(shown, "Accept"))
