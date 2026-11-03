@@ -51,6 +51,21 @@ def test_claude_may_read_the_python_folder_through_the_link_the_virtualenv_names
     assert {str(alias), str(real.resolve())} <= reads
 
 
+def test_claude_may_read_the_toolchain_that_runs_the_projects_tests_even_when_it_is_installed_at_home(
+        tmp_path: Path, monkeypatch: Any) -> None:
+    # Go installed by mise lives under ~/.local, which the box hides: without it the agent cannot run go test
+    go = tmp_path / "home" / ".local" / "share" / "mise" / "installs" / "go" / "1.27.1"
+    (go / "bin").mkdir(parents=True)
+    (go / "bin" / "go").write_text("#!/bin/sh\n")
+    (go / "bin" / "go").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{go / 'bin'}:/usr/bin:/bin")
+    ws, scratch, _, _ = project_step(tmp_path)
+    (ws / "inputs").mkdir()
+    (ws / "inputs" / "runner.json").write_text(json.dumps({"kind": "go", "suite": "go test ./...", "each": "go test",
+                                                           "found": "go.mod"}))
+    assert str(go.resolve()) in claude_settings(ws, scratch=scratch)["sandbox"]["filesystem"]["allowRead"]
+
+
 def test_a_step_without_a_project_gets_no_local_ports_and_reads_only_its_workspace(tmp_path: Path) -> None:
     box = claude_settings(tmp_path, scratch=tmp_path / "scratch")["sandbox"]
     assert box["filesystem"]["allowRead"] == [str(tmp_path)] and "allowLocalBinding" not in box["network"]

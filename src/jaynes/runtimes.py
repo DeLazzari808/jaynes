@@ -84,10 +84,28 @@ def _reset_epoch(text: str) -> float | None:
 WEB_TOOLS = ["WebFetch", "WebSearch"]
 
 
+def toolchains(workspace: Path) -> list[Path]:
+    """The install folders of the programs that run the project's tests, as inputs/runner.json names them: the box
+    hides the home folder, where version managers such as mise or nvm put them, and a tool cannot run without its
+    own files (go test needs Go's vet). Both the folder on PATH and the one it links to, as for Python."""
+    try:
+        runner = json.loads((workspace / "inputs" / "runner.json").read_text())
+    except (OSError, ValueError):
+        return []
+    found: set[Path] = set()
+    for command in (runner.get("suite"), runner.get("each")):
+        words = [w for w in str(command or "").split() if "=" not in w]
+        program = shutil.which(words[0]) if words else None
+        if program:
+            found |= {Path(program).parent.parent, Path(program).resolve().parent.parent}
+    return sorted(found)
+
+
 def claude_settings(workspace: Path, web: bool = False, scratch: Path | None = None) -> dict[str, Any]:
     """On a project step the box also opens the installed dependencies and local ports, for the project's tests."""
     project = workspace / "project"
-    reads = [str(workspace), *(str(p) for p in suite.reads(project))] if project.is_dir() else [str(workspace)]
+    reads = [str(workspace), *(str(p) for p in suite.reads(project) + toolchains(workspace))] if project.is_dir() \
+        else [str(workspace)]
     return {
         "permissions": {"defaultMode": "dontAsk",
                         "allow": ["Read(./**)", "Edit(./**)", "Write(./**)", "Bash"] + (WEB_TOOLS if web else []),
