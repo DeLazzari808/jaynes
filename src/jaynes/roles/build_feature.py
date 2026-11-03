@@ -13,12 +13,21 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from jaynes import project, runners
-from jaynes.role import Fail, Pass, Witnesses, role, stop
+from jaynes.role import Fail, Pass, Shown, Witnesses, role, stop
 from jaynes.roles import fix_bug as fb
 from jaynes.runners import Runner
 
 
+class Example(BaseModel):
+    case: str = Field(description="a situation the person knows, in their words and with real values, such as "
+                                  "'The event is on 15 Nov and today is 2 Nov'; no code or names from the code")
+    result: str = Field(description="what the person sees then, such as 'it shows 13 days left'")
+    test: str = Field(description="the name of the test that checks this, as written in the test file")
+
+
 class Spec(BaseModel):
+    examples: list[Example] = Field(description="one to five examples of what the tests check, the ones the person "
+                                                "would look at to tell whether this is what they asked for")
     feature: str = Field(description="what the tests show the feature does, in one or two sentences, in the "
                                      "person's words from the plan")
     tests: list[str] = Field(description="the test files you added or changed, relative to the project folder")
@@ -49,7 +58,27 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
     if ran.code == 0:
         return Fail(f"the tests pass before the feature exists; they must fail until it is built. {command} "
                     "printed:\n" + ran.output)
-    return fb._quoted(out.failure, ran, "because the feature does not exist yet") or Pass()  # pyright: ignore[reportPrivateUsage]
+    quoted = fb._quoted(out.failure, ran, "because the feature does not exist yet")  # pyright: ignore[reportPrivateUsage]
+    if quoted:
+        return quoted
+    if not 1 <= len(out.examples) <= 5:
+        return Fail(f"give one to five examples of what the tests check, not {len(out.examples)}: the person "
+                    "decides from them")
+    text = "\n".join((needs.project / t).read_text(errors="replace") for t in out.tests)
+    reasons = [f"{e.test} is not in {', '.join(out.tests)}; name the test that checks {e.case!r}"
+               for e in out.examples if not e.test.strip() or e.test.strip() not in text]
+    if reasons:
+        return Fail(*reasons)
+    return Pass()
+
+
+def show_examples(out: Spec, _: Witnesses) -> list[Shown]:
+    """The examples in front, as the person judges them; what the agent says the tests cover, below."""
+    def sentence(text: str) -> str:
+        text = text.strip()
+        return text if text.endswith((".", "!", "?")) else f"{text}."
+    return [*(Shown(e.case.strip(), sentence(e.result)) for e in out.examples),
+            Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True)]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
@@ -70,7 +99,7 @@ ROLE = role("build-feature")
 RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read", max_turns=1)
 SPECIFY = ROLE.step(
     "specify", output=Spec, needs=[RUNNER], project="write", may_change=fb.TESTS, check=fails_first,
-    stop=stop(0.2), question=lambda out, _: f"Do these tests describe what we agreed? {out.feature}",
+    stop=stop(0.2), question=lambda _out, _needs: "Do these examples show what you asked for?", shows=show_examples,
     instructions="The task is the plan the person agreed on. Write the smallest tests that show the feature does "
                  "what the plan says, next to the project's other tests and in their style. They must fail now, "
                  "because the feature does not exist yet. Change test files only; do not build the feature yet. "
@@ -78,7 +107,9 @@ SPECIFY = ROLE.step(
                  "only them, suite runs them all, and when each is empty the suite runs. Run your tests that way "
                  "yourself before you answer. Jaynes runs them again from the project folder in a box without "
                  "internet, with the dependencies already installed, and requires them to fail, printing the line "
-                 "you quote. If the person returned an earlier attempt, follow their note.")
+                 "you quote. Then give one to five examples of what they check, in the person's words with real "
+                 "values and no code, each naming its test: the person decides from them. If the person returned "
+                 "an earlier attempt, follow their note.")
 BUILD = ROLE.step(
     "build", output=Built, needs=[RUNNER, SPECIFY], project="write", may_change=("**", *(f"!{t}" for t in fb.TESTS)),
     check=built, deadline=3600.0,

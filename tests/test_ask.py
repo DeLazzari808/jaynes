@@ -211,4 +211,7 @@ def test_a_stop_that_says_how_it_shows_its_output_is_asked_in_sentences_with_the
                        "tokens.\n\n1 picture of this stop is in the review page (jaynes review --open), with the full "
                        "output under Details.")
     assert "{" not in preview  # no JSON in front of the person
+    # Claude Code hides a preview it cannot show in full, so the sentences go in the question, which always shows
+    assert shown["questions"][0]["question"] == ("Make this change?\n\nThe list hides the status: Say it: the status "
+                                                 f"goes beside the name.\n\n[run {run}, step change]")
     assert "recorded the person's answer at change: accept" in str(hook(shown, "Accept"))

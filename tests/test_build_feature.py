@@ -19,7 +19,9 @@ MUL = "def add(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a * b\n"
 
 def spec(**overrides: Any) -> bf.Spec:
     base: dict[str, Any] = {"feature": "mul multiplies two numbers", "tests": ["tests/test_mul.py"],
-                            "failure": "cannot import name 'mul'"}
+                            "failure": "cannot import name 'mul'",
+                            "examples": [{"case": "Multiplying 2 by 3", "result": "gives 6",
+                                          "test": "test_mul_multiplies"}]}
     return bf.Spec(**{**base, **overrides})
 
 
@@ -32,6 +34,22 @@ def test_the_tests_must_fail_before_the_feature_exists(repo: Path, tmp_path: Pat
     assert isinstance(elsewhere, Fail) and "calc.py is not a test file" in elsewhere.reasons[0]
     quoted = bf.fails_first(spec(failure="ZeroDivisionError"), needs)
     assert isinstance(quoted, Fail) and "is not in what the command printed" in quoted.reasons[0]
+
+
+def test_each_example_names_a_test_that_is_in_the_tests(repo: Path, tmp_path: Path) -> None:
+    needs = Witnesses(ran_by(), copy(repo, tmp_path, {"tests/test_mul.py": TEST}), source=repo)
+    made_up = bf.fails_first(spec(examples=[{"case": "Multiplying by 0", "result": "gives 0",
+                                            "test": "test_mul_by_zero"}]), needs)
+    assert isinstance(made_up, Fail) and "test_mul_by_zero is not in tests/test_mul.py" in made_up.reasons[0]
+    none = bf.fails_first(spec(examples=[]), needs)
+    assert isinstance(none, Fail) and "examples" in none.reasons[0]
+
+
+def test_the_tests_stop_shows_the_examples_in_front_and_the_agents_summary_below() -> None:
+    shown = bf.show_examples(spec(), Witnesses({}))
+    assert [(x.title, x.text, x.more) for x in shown] == [
+        ("Multiplying 2 by 3", "gives 6.", False),
+        ("What the tests cover", "mul multiplies two numbers. In tests/test_mul.py.", True)]
 
 
 def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_path: Path) -> None:
@@ -54,7 +72,7 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     first = c.run(bf.ROLE, "add mul(a, b)", run_id="r1", project=repo)
     assert (first.status, first.step) == ("waiting", "specify")
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
-    assert opened["question"] == "Do these tests describe what we agreed? mul multiplies two numbers"
+    assert opened["question"] == "Do these examples show what you asked for?"
 
     c.answer(bf.ROLE, "r1", "specify", "accept", by="person")
     last = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
