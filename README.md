@@ -101,6 +101,21 @@ Missing, roughly in order:
 
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
+- **Stops a person can judge in build-feature and fix-bug.** The tests stop
+  shows one technical sentence the agent wrote. It should show plain
+  examples of what the tests check ("the event is on 15 Nov and today is
+  2 Nov: it shows 13 days"), each tied to a test that exists.
+- **A short title for each run.** The queue and the stop header show the
+  whole task, about 2,000 characters for a build-feature run. They should
+  show a line, with the task one click away.
+- **A short question.** The stop's question is a heading four lines tall;
+  the question should fit in one, with what it is about below it.
+- **Old runs leave the queue.** A run waiting for two days from a test that
+  was dropped sits next to today's with the same weight.
+- **The page as the place to answer, the terminal only telling you.**
+  Claude Code's question dialog cannot show long evidence ("preview cannot
+  be shown in full"), so a terminal stop shows the question alone. Next, the
+  page installed as an app (a PWA) with macOS notifications.
 - **More built-in roles** that need no design taste to check, such as
   upgrading dependencies.
 - **Two or three directions to choose from** in redesign. Stops can let you
