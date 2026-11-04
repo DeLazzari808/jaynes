@@ -448,7 +448,7 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
-const posted = ["/answer", "/continue", "/dismiss", "/start", "/setup", "/update", "/restart"];  // no page to GET
+const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/start", "/setup", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
@@ -786,7 +786,10 @@ class Review:
                 f'<tr><td class="m" style="color:var(--red)">rejected</td><td>{esc(r)}</td></tr>' for r in w.reasons)
                 + "</table></div>")
             parts.append(self._turns(events, step, s.round))
-            main = crumbs + f'<div class="body">{"".join(parts)}</div>' + self._run_bar(run_id, cont=False)
+            at_branch = (st.blocked or {}).get("at") == "branch"
+            bar = (self._run_bar(run_id, cont=False) if at_branch or role is None
+                   else self._send_back_bar(run_id, role, st, step))
+            main = crumbs + f'<div class="body">{"".join(parts)}</div>' + bar
             return page(f"Blocked: {step}", self.sidebar((run_id, step)), main, self.seq())
 
         value = self._value(s, target)
@@ -994,6 +997,22 @@ class Review:
         return 200, (f'<!doctype html><html><head><meta charset="utf-8">{refresh}<style>body{{margin:0;padding:20px;'
                      f'font:13px/1.5 ui-monospace,Menlo,monospace;color:#5d6a7c;background:#fff}}pre{{white-space:pre-wrap}}'
                      f'</style></head><body><b>{head}</b><pre>{esc(text)}</pre></body></html>')
+
+    def _send_back_bar(self, run_id: str, role: Role, st: RunState, step: str) -> str:
+        """Send a blocked run back to a step with a note, or dismiss it. The step offered first is the last one
+        before it that a person accepted: what they accepted is what most often blocks the steps after it."""
+        names = [x.name for x in role.steps]
+        upto = [x for x in role.steps[:names.index(step) + 1] if x.output is not None] if step in names else []
+        accepted = [x.name for x in upto[:-1] if (st.step(x.name).released or {}).get("label") == "correct"]
+        chosen = accepted[-1] if accepted else step
+        options = "".join(f'<option value="{esc(x.name)}"{" selected" if x.name == chosen else ""}>{esc(x.name)}'
+                          '</option>' for x in upto)
+        return (f'<form class="bar" method="post" action="/send-back"><input type="hidden" name="token" '
+                f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
+                f'<div class="row"><input type="text" name="note" required placeholder="What was wrong? (needed to '
+                f'send back)"><div class="acts"><select name="to" title="It and every step after it run again">'
+                f'{options}</select><button class="btn" formaction="/dismiss" formnovalidate>Dismiss</button>'
+                f'<button class="btn solid">Send back</button></div></div></form>')
 
     def _run_bar(self, run_id: str, cont: bool) -> str:
         """Dismiss, and Continue for a run whose process is gone: each button posts the same hidden fields."""
@@ -1450,6 +1469,20 @@ class Review:
         continue_in_background(self.c.home, run_id)
         return 303, f"/run/{q(run_id)}"
 
+    def send_back(self, fields: dict[str, str]) -> tuple[int, str]:
+        run_id = fields.get("run", "")
+        role = self.role_of(run_id)
+        if role is None:
+            return 404, self.not_found(f"No role to send run {run_id} back with")
+        try:
+            self.c.send_back(role, run_id, fields.get("to", ""), fields.get("note", ""), by="person")
+        except AnswerRejected as err:
+            return 400, self.not_found("; ".join(err.reasons))
+        except RunBusy:
+            return 409, self.run_page(run_id)
+        continue_in_background(self.c.home, run_id)
+        return 303, f"/run/{q(run_id)}"
+
     def dismiss(self, fields: dict[str, str]) -> tuple[int, str]:
         run_id = fields.get("run", "")
         try:
@@ -1633,6 +1666,7 @@ class Review:
                                     + (f": {p['note']}" if p.get("note") else ""),
             "RunPaused": lambda: f"quota until {datetime.fromtimestamp(float(p['until'])).strftime('%H:%M')}",
             "RunBlocked": lambda: "; ".join(str(x) for x in p.get("reasons", [])[:2]),
+            "RunSentBack": lambda: f"from {p['step']} to {p['to']}, by {p['by']}: {p['note']}",
             "RunFinished": lambda: (f"ended at {p['step']}; nothing was delivered" if p.get("outcome") == "ended"
                                     else "dismissed; nothing was delivered" if p.get("outcome") == "dismissed"
                                     else "finished"),
@@ -1805,6 +1839,7 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                     shared.polled = 0.0
                 return self._send(204, b"", "text/plain")
             handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
+                        "/send-back": Review.send_back,
                         "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
                         "/restart": Review.restart}
             if path not in handlers:

@@ -119,3 +119,47 @@ def test_only_an_earlier_step_with_an_output_can_be_returned(repo: Path, tmp_pat
             c.answer(r, "r1", "apply", "return", note="x", to=to, by="person")
     with pytest.raises(AnswerRejected, match="return or context"):
         c.answer(r, "r1", "apply", "accept", to="direction", by="person")
+
+
+def spec_then_make():  # noqa: ANN201
+    from jaynes.role import Fail, Pass
+    r = role("build", agent="fake")
+    spec = r.step("spec", output=Note, stop=stop(0.2))
+    r.step("make", output=Note, needs=[spec], max_turns=2,
+           check=lambda out, needs: Fail("the agreed test expects 4 of 4") if "4 of 4" in needs["spec"].value.text
+           else Pass())
+    return r
+
+
+def test_a_run_blocked_by_an_earlier_steps_mistake_goes_back_to_that_step_with_the_persons_note(
+        tmp_path: Path) -> None:
+    r = spec_then_make()
+    seen: dict[str, object] = {}
+
+    def second_spec(ws: Path) -> None:
+        seen["previous"] = json.loads((ws / "inputs" / "previous.json").read_text())
+        write({"text": "bob ranks 3 of 4"})(ws)
+
+    agent = Scripted({("spec", 1): write({"text": "bob ranks 4 of 4"}), ("spec", 2): second_spec},
+                     default=lambda _: {"text": "built"})
+    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent})
+    c.run(r, "t", "r1")
+    c.answer(r, "r1", "spec", "accept", by="person")
+    assert c.run(r, "t", "r1").status == "blocked"
+    spec_fp = next(iter(c.store.events("StopOpened", run_id="r1"))).payload["fingerprint"]
+
+    with pytest.raises(AnswerRejected):
+        c.send_back(r, "r1", "spec", note="", by="person")  # a note says what was wrong
+    with pytest.raises(AnswerRejected):
+        c.send_back(r, "r1", "nowhere", note="x", by="person")
+    c.send_back(r, "r1", "spec", note="bob closed 1 ticket: he ranks 3 of 4", by="person")
+
+    result = c.run(r, "t", "r1")
+    assert (result.status, result.step) == ("waiting", "spec")
+    assert seen["previous"] == {"text": "bob ranks 4 of 4"}
+    assert "he ranks 3 of 4" in agent.prompts[-1]
+    assert (c.window(spec_fp).n, c.window(spec_fp).k) == (1, 1)  # the accept turned out wrong
+    c.answer(r, "r1", "spec", "accept", by="person")
+    assert c.run(r, "t", "r1").status == "finished"
+    with pytest.raises(AnswerRejected):
+        c.send_back(r, "r1", "spec", note="x", by="person")  # only a blocked run goes back this way

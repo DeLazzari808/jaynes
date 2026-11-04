@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
-from jaynes.role import role, stop
+from jaynes.role import Fail, Pass, role, stop
 from jaynes.runtime import QuotaExhausted, Ran, TurnResult
 from tests import fakes
 
@@ -67,3 +68,23 @@ class Exhausted:
             once.write_text("1")
             raise QuotaExhausted(time.time() + 2)
         return Agent().turn(workspace, scratch, prompt, deadline)
+
+
+def _built(out: Note, needs: Any) -> Pass | Fail:
+    return Fail("the agreed draft expects 4 of 4") if "4 of 4" in needs[DRAFTED.name].value.text else Pass()
+
+
+BLOCKS = role("blocks", agent="quick")  # the step after an accepted stop fails until the stop's output changes
+DRAFTED = BLOCKS.step("draft", output=Note, stop=stop(0.2), question=lambda out, _: f"Ship {out.text!r}?")
+BLOCKS.step("build", output=Note, needs=[DRAFTED], max_turns=1, check=_built)
+
+
+class Drafts:
+    """Drafts '4 of 4' until a note says otherwise; builds anything."""
+    name = "quick"
+
+    def turn(self, workspace: Path, scratch: Path, prompt: str, deadline: float) -> TurnResult:
+        draft = "3 of 4" if "3 of 4" in prompt else "4 of 4"
+        fakes.write({"text": draft if (workspace / "step.json").read_text().find('"draft"') >= 0 else "built"})(
+            workspace)
+        return TurnResult(10, 1, "quick-1")

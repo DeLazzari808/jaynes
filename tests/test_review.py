@@ -683,3 +683,35 @@ def test_a_run_is_titled_by_a_line_and_its_whole_task_is_one_click_away(tmp_path
         assert f"<b>{title}</b>" in whole and f'<summary>The whole task</summary><div class="task">{LONG_TASK}' in whole
     finally:
         server.shutdown()
+
+
+def test_a_blocked_run_goes_back_from_its_page_to_the_step_the_person_names_with_their_note(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from jaynes import review
+    from tests import stopped
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:BLOCKS", "--task", "rank people",
+              "--runtime", "quick=tests.stopped:Drafts"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    c = Conductor(tmp_path, runtimes={"quick": stopped.Drafts})
+    c.answer(stopped.BLOCKS, run, "draft", "accept", by="person")
+    assert c.run(stopped.BLOCKS, "rank people", run).status == "blocked"
+    continued: list[str] = []
+    def background(home: Path, run_id: str) -> None:
+        continued.append(run_id)
+
+    monkeypatch.setattr(review, "continue_in_background", background)
+    base, server = serving(tmp_path)
+    try:
+        page = get(f"{base}/stop/{run}/build")
+        assert 'action="/send-back"' in page and '<option value="draft" selected>draft</option>' in page
+        token = re.search(r'name="token" value="([^"]+)"', page)
+        assert token is not None
+        status, _ = post(f"{base}/send-back", {"token": token.group(1), "run": run, "to": "draft",
+                                               "note": "bob closed 1 ticket: he ranks 3 of 4"})
+        assert status == 303 and continued == [run]
+        [back] = [e.payload for e in Store(tmp_path / "jaynes.sqlite3").events("RunSentBack", run_id=run)]
+        assert (back["to"], back["note"], back["by"]) == ("draft", "bob closed 1 ticket: he ranks 3 of 4", "person")
+        assert c.run(stopped.BLOCKS, "rank people", run).step == "draft"  # the draft runs again with the note
+        assert "3 of 4" in str(c.output(run, stopped.DRAFTED))
+    finally:
+        server.shutdown()

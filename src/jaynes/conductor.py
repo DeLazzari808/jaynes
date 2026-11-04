@@ -20,6 +20,7 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import inspect
+import itertools
 import json
 import os
 import secrets
@@ -187,6 +188,9 @@ def project(events: Iterable[Event]) -> RunState:
                 st.paused_until = float(p["until"])
             case "RunBlocked":
                 st.blocked = p
+            case "RunSentBack":  # a person sent a blocked run back to an earlier step, with what was wrong
+                st.blocked = None
+                _reset(st, p["to"], p["reset"], p.get("note"))
             case "RunFinished":
                 st.finished, st.outcome = True, str(p.get("outcome", "delivered"))
             case "BranchCreated":
@@ -417,6 +421,31 @@ class Conductor:
                                           carry=s.checked))
             self.store.append_all([(kind, p, run_id, self.clock()) for kind, p in rows])
 
+    def send_back(self, role: Role, run_id: str, to: str, note: str, by: By) -> None:
+        """A blocked run goes back to ``to``, an earlier step or the blocked one, with the note saying what was wrong:
+        it and every step after it run again, as a return from a stop does. A person's send-back turns the label
+        ``to``'s stop was released with into an error, since what they accepted there is what blocked the run."""
+        if by not in get_args(By):
+            raise ValueError(f"by is person or agent, not {by!r}")
+        if not note.strip():
+            raise AnswerRejected(["sending a run back needs a note saying what was wrong"])
+        names = [x.name for x in role.steps]
+        with self._lock(run_id):
+            st = project(self.store.events(run_id=run_id))
+            if st.started is None:
+                raise AnswerRejected([f"no run {run_id}"])
+            if st.finished or st.blocked is None:
+                raise AnswerRejected([f"run {run_id} is not blocked; at a stop, return it from the stop"])
+            at = str(st.blocked["step"])
+            if to not in names or at not in names or names.index(to) > names.index(at) \
+                    or role.steps[names.index(to)].output is None:
+                raise AnswerRejected([f"{to!r} is not {at!r} or an earlier step of {role.name} with an output"])
+            was = st.step(to).released
+            revises = was and by == "person" and {"fingerprint": was["fingerprint"], "was": was["label"],
+                                                  "label": "error"}
+            self._emit(run_id, "RunSentBack", {"step": at, "to": to, "reset": names[names.index(to):names.index(at) + 1],
+                                               "note": note, "by": by, **({"revises": revises} if revises else {})})
+
     def dismiss(self, run_id: str) -> None:
         """A person drops an unfinished run: it finishes with nothing delivered and leaves the queue.
         A run that a process holds right now is refused with ``RunBusy``."""
@@ -493,11 +522,12 @@ class Conductor:
         """Labels a person recorded under a stop fingerprint, across all runs, with later revisions of earlier ones."""
         weight = {"correct": (1, 0), "error": (1, 1)}  # context, none and skipped count nothing
         n = k = 0
-        for e in self.store.events("StopAnswered"):
+        # sums, so the order of the two kinds does not matter
+        for e in itertools.chain(self.store.events("StopAnswered"), self.store.events("RunSentBack")):
             p = e.payload
             if p.get("by") == "agent":
                 continue
-            if p.get("fingerprint") == fingerprint:
+            if e.type == "StopAnswered" and p.get("fingerprint") == fingerprint:
                 dn, dk = weight.get(p["label"], (0, 0))
                 n, k = n + dn, k + dk
             r = p.get("revises")
