@@ -57,6 +57,12 @@ from jaynes.role import Role, Step
 from jaynes.store import Event
 
 esc = html.escape
+CODE = re.compile(r"`([^`\n]+)`")
+
+
+def marked(text: str) -> str:
+    """Text an agent or a person wrote, escaped, with what they put between backticks shown as code."""
+    return CODE.sub(r"<code>\1</code>", esc(text))
 CHIP = {"certified": "green", "refuted": "red", "floor": "blue"}  # any other status is amber
 DEMO = "jaynes.demo:ROLE"
 BUILT_IN = {DEMO: {"scripted": "jaynes.demo:Agent"}, **{ref: {} for ref in roles.BUILT_IN.values()}}
@@ -307,6 +313,7 @@ main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.2; margin: 0; text-wrap: balance; }
 h2 { font-size: 18px; font-weight: 500; margin: 0; }
 .sub { color: var(--dim); margin-top: 8px; }
+code { font-family: var(--mono); font-size: .92em; background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
 .ask { margin: 8px 0 0; max-width: 72ch; white-space: pre-wrap; }
 .label { font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; display: flex; justify-content: space-between; gap: 12px; }
 .label span { text-transform: none; letter-spacing: 0; color: var(--faint); }
@@ -729,7 +736,7 @@ class Review:
                 state = {"stop": "waiting for you", "blocked": "blocked", "idle": "not running",
                          "running": "working", "paused": "paused for quota"}[w.kind]
                 t = totals(events)
-                row = (f'<div class="item on {w.kind}"><a href="{href}"><div class="t">{esc(headline(w.task))}</div>'
+                row = (f'<div class="item on {w.kind}"><a href="{href}"><div class="t">{marked(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">Step {where} of {len(names)}, {state}</span>{started}'
                        f'</div></a><details class="steps"><summary>Steps</summary>{stage_list(run_stages)}'
                        f'<div class="foot"><span>started</span><b>{age(now - events[0].ts)} ago</b>'
@@ -737,7 +744,7 @@ class Review:
                        f'<span>tokens</span><b>{tokens(t.tokens_in)} in, {tokens(t.tokens_out)} out</b>'
                        f'<span>you answered</span><b>{t.answered} of {t.stops} stops</b></div></details></div>')
             else:
-                row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{esc(headline(w.task))}</div>'
+                row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{marked(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
                        f'{stage_strip(run_stages)}</a>')
             (waiting if w.kind == "stop" else others).append(row)
@@ -773,7 +780,7 @@ class Review:
         role = self.role_of(run_id)
         target = next((s for s in role.steps if s.name == step), None) if role else None
         s = st.steps.get(step, StepState())
-        crumbs = (f'<div class="crumbs"><span>{esc(w.role)}</span>/<a href="/run/{q(run_id)}">{esc(headline(w.task))}</a>/'
+        crumbs = (f'<div class="crumbs"><span>{esc(w.role)}</span>/<a href="/run/{q(run_id)}">{marked(headline(w.task))}</a>/'
                   f'<b>{esc(step)}</b><span class="r">{esc(self._where(s))}</span></div>')
         parts: list[str] = []
         if w.kind == "idle":
@@ -817,7 +824,7 @@ class Review:
             sub += ('<div class="sub">Accepting ends the run here, with nothing delivered; return it with a note '
                     'to have the agent look again.</div>')
         if s.note:
-            sub += f'<div class="sub">You returned round {s.round - 1} with: {esc(s.note)}</div>'
+            sub += f'<div class="sub">You returned round {s.round - 1} with: {marked(s.note)}</div>'
         shown = cast(list[dict[str, Any]] | None, s.open_stop[1].get("shown")) if s.open_stop else None
         items = self._items(target, s)
         if items:
@@ -826,10 +833,10 @@ class Review:
         if shown is None and target is not None and target.shows is not None:
             shown = self.c.shown(target, s, st)  # a stop opened before its step said how to show it
         head, rest = question_parts(question)
-        ask = f'<p class="ask">{esc(rest)}</p>' if rest else ""
+        ask = f'<p class="ask">{marked(rest)}</p>' if rest else ""
         if len(rest) > LONG_REST:  # a summary written into the question: folded, the page opens on what matters
             ask = f'<details class="fold"><summary>The whole question</summary>{ask}</details>'
-        parts.append(f"<div><h1>{esc(head)}</h1>{ask}{sub}</div>")
+        parts.append(f"<div><h1>{marked(head)}</h1>{ask}{sub}</div>")
         parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
         # in front, what the person judges; behind Details, the output, its checks, turns and statistics
         details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]
@@ -944,10 +951,10 @@ class Review:
             row = f'<div class="pics">{"".join(pics)}</div>' if pics else ""
             ident = str(x.get("id") or "")
             pick = ident in choosable
-            text = f"<p>{esc(str(x['text']))}</p>" if x.get("text") else ""
+            text = f"<p>{marked(str(x['text']))}</p>" if x.get("text") else ""
             cards.append(f'<div class="card{" pick" if pick else ""}"' + (f' data-id="{esc(ident)}" tabindex="0"' if pick else "")
                          + f'>{row}<div class="txt">' + ('<i class="n"></i>' if pick else "")
-                         + f'<div><b>{esc(str(x["title"]))}</b>{text}</div></div></div>')
+                         + f'<div><b>{marked(str(x["title"]))}</b>{text}</div></div></div>')
         return f'<div class="cards">{"".join(cards)}</div>'
 
     @staticmethod
@@ -1062,7 +1069,7 @@ class Review:
                  "running" if self.c._held(run_id) else "idle")  # pyright: ignore[reportPrivateUsage]
         t = totals(events)
         crumbs = (f'<div class="crumbs"><a href="/role/{q(str(started.get("role", "")))}">{esc(str(started.get("role", "")))}</a>/'
-                  f'<b>{esc(headline(str(started.get("task", ""))))}</b><span class="r">{esc(run_id)}</span></div>')
+                  f'<b>{marked(headline(str(started.get("task", ""))))}</b><span class="r">{esc(run_id)}</span></div>')
         rows = "".join(self._event_row(ev) for ev in events)
         w = next((x for x in self.queue() if x.run_id == run_id and x.needs_person), None)
         call = ""  # what the run waits for, in one line, one click from it
@@ -1077,7 +1084,7 @@ class Review:
                 f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr></table></div>'
                 if st.branch else "")
         task = str(started.get("task", ""))
-        whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{esc(task)}</div></details>'
+        whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{marked(task)}</div></details>'
                  if headline(task) != task else "")
         body = (call + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
                 f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
@@ -1374,7 +1381,7 @@ class Review:
                   f'<th>steps checked</th><th>rounds until accepted</th><th>tokens per finished run</th>'
                   f'<th>your minutes</th></tr>{week_rows}</table></div></div>')
         run_rows = "".join(
-            f'<tr><td><a href="/run/{q(r)}">{esc(headline(str(evs[0].payload.get("task", ""))))}</a></td>'
+            f'<tr><td><a href="/run/{q(r)}">{marked(headline(str(evs[0].payload.get("task", ""))))}</a></td>'
             f'<td class="m">{esc(r)}</td></tr>' for r, evs in reversed(list(by_run.items())))
         runs_html = f'<div><div class="label">Runs</div><div class="box"><table>{run_rows}</table></div></div>'
         note = "" if role else '<div class="sub">The role module cannot be imported here, so stops are not listed.</div>'

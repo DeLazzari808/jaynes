@@ -746,3 +746,17 @@ def test_a_stop_opened_before_its_step_said_how_to_show_it_shows_as_the_step_doe
     front, _, details = page.partition('<details class="fold"><summary>Details')
     assert "<b>The draft</b><p>draft one, in full.</p>" in front
     assert 'class="label">Output' in details and 'class="label">Output' not in front
+
+
+def test_backticks_in_what_agents_write_are_shown_as_code(tmp_path: Path) -> None:
+    from jaynes.review import marked
+    assert marked("run `tenure serve` on <port>") == "run <code>tenure serve</code> on &lt;port&gt;"
+    assert marked("a ` alone") == "a ` alone"
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "add `mul` to calc",
+              "--runtime", "quick=tests.stopped:Agent"])
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + "/")
+    finally:
+        server.shutdown()
+    assert "add <code>mul</code> to calc" in page and "`mul`" not in page
