@@ -116,7 +116,7 @@ def claude_settings(workspace: Path, web: bool = False, scratch: Path | None = N
                     "autoAllowBashIfSandboxed": True,
                     "network": {"allowedDomains": [], "strictAllowlist": True,
                                 **({"allowLocalBinding": True} if project.is_dir() else {})},
-                    "filesystem": {"denyRead": ["~/"], "allowRead": reads,
+                    "filesystem": {"denyRead": ["~/"], "allowRead": reads + ([str(scratch)] if scratch else []),
                                    **({"allowWrite": [str(scratch)]} if scratch else {})}},
         "disableAllHooks": True, "autoMemoryEnabled": False, "disableClaudeAiConnectors": True,
         "syncClaudeAiPlugins": False, "syncClaudeAiSkills": False, "disableBundledSkills": True,

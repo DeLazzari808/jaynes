@@ -31,6 +31,7 @@ def test_on_a_project_step_claude_may_read_the_dependencies_write_caches_and_use
     ws, scratch, source, python = project_step(tmp_path)
     box = claude_settings(ws, scratch=scratch)["sandbox"]
     assert box["filesystem"]["allowWrite"] == [str(scratch)]
+    assert str(scratch) in box["filesystem"]["allowRead"]  # caches written there are read back: Go's, under ~/.jaynes
     assert {str(ws), str((source / ".venv").resolve()), str(python.resolve())} <= set(box["filesystem"]["allowRead"])
     assert box["network"]["allowLocalBinding"] is True and box["network"]["allowedDomains"] == []
 
@@ -66,9 +67,10 @@ def test_claude_may_read_the_toolchain_that_runs_the_projects_tests_even_when_it
     assert str(go.resolve()) in claude_settings(ws, scratch=scratch)["sandbox"]["filesystem"]["allowRead"]
 
 
-def test_a_step_without_a_project_gets_no_local_ports_and_reads_only_its_workspace(tmp_path: Path) -> None:
+def test_a_step_without_a_project_gets_no_local_ports_and_reads_only_its_workspace_and_scratch(tmp_path: Path) -> None:
     box = claude_settings(tmp_path, scratch=tmp_path / "scratch")["sandbox"]
-    assert box["filesystem"]["allowRead"] == [str(tmp_path)] and "allowLocalBinding" not in box["network"]
+    assert box["filesystem"]["allowRead"] == [str(tmp_path), str(tmp_path / "scratch")]
+    assert "allowLocalBinding" not in box["network"]
 
 
 def test_project_commands_keep_their_caches_in_scratch_and_find_the_copys_virtualenv(tmp_path: Path) -> None:
