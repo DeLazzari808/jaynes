@@ -104,6 +104,11 @@ Missing, roughly in order:
 - **Stops a person can judge in fix-bug.** build-feature's tests stop shows
   plain examples, each tied to a test that exists; fix-bug's still shows one
   technical sentence the agent wrote.
+- **A way to say an agreed test is wrong.** In build-feature and fix-bug the
+  agent that builds may not touch the tests, so a test with a wrong
+  expectation that the person accepted traps it until the run blocks. After
+  failing on the same test, it should name the test and why, and Jaynes
+  should stop and ask the person.
 - **A short question.** The stop's question is a heading four lines tall;
   the question should fit in one, with what it is about below it.
 - **Old runs leave the queue.** A run waiting for two days from a test that
