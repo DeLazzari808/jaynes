@@ -46,6 +46,7 @@ from jaynes.runners import Runner
 
 LONGEST = {"case": 50, "result": 70}  # characters: together, one line the person reads at a glance in the terminal
 SCREEN = 40_000  # characters of a sketch's page
+SUMMARY = 400  # characters of what changed, for the person at the merge
 SKETCH_SIZE = (1280, 800)  # the sketch's window; the picture is as tall as the page, up to TALLEST
 TALLEST = 2400
 STYLED = ("color:", "background", "font-family", "<style")  # a file that sets how something looks has one of these
@@ -94,7 +95,8 @@ class Sketched(BaseModel):
 
 
 class Built(BaseModel):
-    summary: str = Field(description="what changed and how it does what the plan asked, for the person reviewing it")
+    summary: str = Field(description="what changed and how it does what the plan asked, for the person reviewing "
+                                     "it, in two or three sentences; at most 400 characters")
     files: list[str]
 
 
@@ -248,14 +250,16 @@ def draw_sketches(ctx: StepContext) -> Sketched:
     return Sketched(pictures=[f"example-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
 
 
+def sentence(text: str) -> str:
+    text = text.strip()
+    return text if text.endswith((".", "!", "?")) else f"{text}."
+
+
 def show_examples(_: None, needs: Witnesses) -> list[Shown]:
     """The examples in front, each with its sketch, as the person judges them; what the agent says the tests cover,
     below."""
     out: Spec = needs[SPECIFY].value
     pictures: list[str] = needs[SKETCH].value.pictures
-    def sentence(text: str) -> str:
-        text = text.strip()
-        return text if text.endswith((".", "!", "?")) else f"{text}."
     def drawn(n: int) -> tuple[Picture, ...]:
         return (Picture(SKETCH.name, pictures[n], "sketch"),) if n < len(pictures) and pictures[n] else ()
     identity: Identity = needs[IDENTITY].value
@@ -269,8 +273,18 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
             Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True), about]
 
 
+def show_built(_: None, needs: Witnesses) -> list[Shown]:
+    """What changed, in the agent's few sentences, and the files it names, folded."""
+    made: Built = needs[BUILD].value
+    return [Shown("What changed", sentence(made.summary)),
+            Shown("Files changed", sentence(", ".join(made.files)) if made.files else "None named.", more=True)]
+
+
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
     """The agreed tests pass, and then the whole suite does."""
+    if len(out.summary) > SUMMARY:
+        return Fail(f"the summary is {len(out.summary)} characters, at most {SUMMARY}: the person reads it at the "
+                    "merge in two or three sentences; the code says the rest")
     agreed: Spec = needs[SPECIFY].value
     runner: Runner = needs[RUNNER].value
     for what, command in (("the tests still fail", runners.for_files(runner, agreed.tests)),
@@ -315,5 +329,5 @@ BUILD = ROLE.step(
                  "them again in a box without internet. Screens use only the colours and fonts in "
                  "inputs/identity.json, as the project's variables where it has them; Jaynes refuses a build that "
                  "brings others, since changing the identity is visual-identity's work.")
-ROLE.step("accept", needs=[BUILD], stop=stop(0.05, sampled=False),
-          question=lambda _, needs: f"Merge this feature? {needs[BUILD].value.summary}")
+ROLE.step("accept", needs=[BUILD], stop=stop(0.05, sampled=False), shows=show_built,
+          question=lambda _out, _needs: "Merge this feature?")

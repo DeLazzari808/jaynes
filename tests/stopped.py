@@ -88,3 +88,9 @@ class Drafts:
         fakes.write({"text": draft if (workspace / "step.json").read_text().find('"draft"') >= 0 else "built"})(
             workspace)
         return TurnResult(10, 1, "quick-1")
+
+
+WORDY = role("wordy", agent="quick")
+WORDY.step("draft", output=Note, stop=stop(0.2),
+           question=lambda out, _: f"Ship it? Added one draft, called {out.text}, after reading everything there was "
+                                   "to read about drafts, and nothing else changed anywhere in the project. " * 3)

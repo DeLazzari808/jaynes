@@ -110,8 +110,6 @@ Missing, roughly in order:
   person can then send the run back to the tests from its page. Sooner:
   after failing on the same test, the agent should name the test and why,
   and Jaynes should stop and ask the person.
-- **A short question.** The stop's question is a heading four lines tall;
-  the question should fit in one, with what it is about below it.
 - **Old runs leave the queue.** A run waiting for two days from a test that
   was dropped sits next to today's with the same weight.
 - **The page as an app.** Stops are answered on the page, and the terminal

@@ -148,6 +148,8 @@ def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_pa
                         source=repo)
     failed = bf.built(bf.Built(summary="s", files=[]), missing)
     assert isinstance(failed, Fail) and "the tests still fail" in failed.reasons[0]
+    wordy = bf.built(bf.Built(summary="what changed, " * 40, files=[]), missing)
+    assert isinstance(wordy, Fail) and "summary is 560 characters, at most 400" in wordy.reasons[0]
 
 
 def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the_tests(
@@ -174,6 +176,10 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     c.answer(bf.ROLE, "r1", "agree", "accept", by="person")
     last = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
     assert (last.status, last.step) == ("waiting", "accept")
+    merge = [e.payload for e in c.store.events("StopOpened", run_id="r1")][-1]
+    assert merge["question"] == "Merge this feature?"  # the summary is shown below, never as the heading
+    assert [(x["title"], x["text"], x["more"]) for x in merge["shown"]] == [
+        ("What changed", "adds mul.", False), ("Files changed", "calc.py.", True)]
     [rejected] = [e.payload for e in c.store.events("TurnRejected", run_id="r1")]
     assert rejected["step"] == "build" and "tests/test_mul.py" in rejected["reasons"][0]
 

@@ -715,3 +715,16 @@ def test_a_blocked_run_goes_back_from_its_page_to_the_step_the_person_names_with
         assert "3 of 4" in str(c.output(run, stopped.DRAFTED))
     finally:
         server.shutdown()
+
+
+def test_a_long_question_keeps_its_first_sentence_as_the_heading_and_the_rest_below(tmp_path: Path) -> None:
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:WORDY", "--task", "t",
+              "--runtime", "quick=tests.stopped:Agent"])
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + "/")
+    finally:
+        server.shutdown()
+    assert "<h1>Ship it?</h1>" in page
+    assert '<p class="ask">Added one draft, called draft one, after reading everything there was to read' in page
+    assert "<h1>Ship it? Added" not in page

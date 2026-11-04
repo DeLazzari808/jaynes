@@ -76,6 +76,15 @@ def headline(task: str, most: int = 100) -> str:
     return cut.rstrip(" ,;:.") + "…"
 
 
+def question_parts(question: str, most: int = 120) -> tuple[str, str]:
+    """A stop's question as a heading and what follows it: the first sentence, or as many whole words as fit, is
+    the heading; the rest, when a step wrote a whole summary into its question, goes below in a paragraph."""
+    head = headline(question, most)
+    prefix = head[:-1] if head.endswith("…") and not question.startswith(head) else head
+    rest = question[len(prefix):].strip(" ,;:.") if question.strip().startswith(prefix) else ""
+    return head, rest.strip()
+
+
 def q(segment: str) -> str:
     """One URL path segment."""
     return urllib.parse.quote(segment, safe="")
@@ -295,6 +304,7 @@ main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.2; margin: 0; text-wrap: balance; }
 h2 { font-size: 18px; font-weight: 500; margin: 0; }
 .sub { color: var(--dim); margin-top: 8px; }
+.ask { margin: 8px 0 0; max-width: 72ch; white-space: pre-wrap; }
 .label { font-family: var(--mono); font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 10px; display: flex; justify-content: space-between; gap: 12px; }
 .label span { text-transform: none; letter-spacing: 0; color: var(--faint); }
 .box { border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; }
@@ -810,7 +820,8 @@ class Review:
         if items:
             sub += ('<div class="sub">Click them in order of importance to choose; Accept keeps them all, in the order '
                     'shown.</div>')
-        parts.append(f"<div><h1>{esc(question)}</h1>{sub}</div>")
+        head, rest = question_parts(question)
+        parts.append(f"<div><h1>{esc(head)}</h1>" + (f'<p class="ask">{esc(rest)}</p>' if rest else "") + f"{sub}</div>")
         parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
         # in front, what the person judges; behind Details, the output, its checks, turns and statistics
         details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]
