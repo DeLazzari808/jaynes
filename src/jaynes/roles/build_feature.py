@@ -27,8 +27,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from jaynes import project, runners
-from jaynes.browser import BrowserError, open_page
+from jaynes import project, runners, screens
+from jaynes.browser import BrowserError, Page, open_page
 from jaynes.role import (
     Blocked,
     Fail,
@@ -47,8 +47,11 @@ from jaynes.runners import Runner
 LONGEST = {"case": 50, "result": 70}  # characters: together, one line the person reads at a glance in the terminal
 SCREEN = 40_000  # characters of a sketch's page
 SUMMARY = 400  # characters of what changed, for the person at the merge
-SKETCH_SIZE = (1280, 800)  # the sketch's window; the picture is as tall as the page, up to TALLEST
-TALLEST = 2400
+SKETCH_SIZE = (1280, 800)  # the window a screen is laid out in; its picture is as tall as what it shows
+SHORTEST, TALLEST, MARGIN = 160, 2400, 24
+# where what the page shows ends: a body can fill the window with nothing in it
+CONTENT_BOTTOM = "(() => { const r = document.createRange(); r.selectNodeContents(document.body); " \
+                 "return Math.ceil(r.getBoundingClientRect().bottom); })()"
 STYLED = ("color:", "background", "font-family", "<style")  # a file that sets how something looks has one of these
 STYLE_SUFFIXES = {".css", ".scss", ".sass", ".less", ".html", ".htm", ".tmpl", ".gohtml", ".templ", ".vue", ".svelte",
                   ".jsx", ".tsx", ".js", ".ts", ".go", ".py", ".rb", ".erb", ".php", ".astro", ".svg"}
@@ -69,6 +72,9 @@ class Example(BaseModel):
     screen: str = Field("", description="when the person sees this on a screen: that screen as you will build it, "
                                         "with this example's values, as one HTML page with its styles inline, "
                                         "nothing loaded from elsewhere; empty when nothing shows on a screen")
+    page: str = Field("", description="when the run has a preview and this shows on a screen: the path of that screen "
+                                      "on the running product, such as /t/charter?tab=team; Jaynes photographs it "
+                                      "for the merge")
 
 
 class Spec(BaseModel):
@@ -92,6 +98,11 @@ class Identity(BaseModel):
 class Sketched(BaseModel):
     pictures: list[str] = Field(description="the picture of each example's screen among the step's files, in the "
                                             "order of the examples; empty for an example with no screen")
+
+
+class Looked(BaseModel):
+    pictures: list[str] = Field(description="the picture of each example on the real screen among the step's files, "
+                                            "in the order of the examples; empty where there is none")
 
 
 class Built(BaseModel):
@@ -133,6 +144,12 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
                 if len(text := getattr(e, part).strip()) > most]
     reasons += [f"the screen of example {n} is {len(e.screen)} characters, at most {SCREEN}: draw only what the "
                 "person sees in that example" for n, e in enumerate(out.examples, 1) if len(e.screen) > SCREEN]
+    if needs.started.get("preview"):
+        reasons += [f"example {n} shows a screen and names no page: give the path of that screen on the running "
+                    "product, so Jaynes can photograph it for the merge" for n, e in enumerate(out.examples, 1)
+                    if e.screen.strip() and not e.page.strip()]
+    reasons += [f"{e.page} is not a path on the product: give one that starts with /, such as /t/charter"
+                for e in out.examples if e.page.strip() and not e.page.strip().startswith("/")]
     identity: Identity = needs[IDENTITY].value
     reasons += [f"the screen of example {n} uses {', '.join(strange)}, which the project's identity does not have; "
                 f"{_has(identity)}" for n, e in enumerate(out.examples, 1)
@@ -221,6 +238,15 @@ class _Quiet(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+def _photograph(page: Page, path: str, file: Path) -> None:
+    """The page at ``path``, as tall as what it shows, up to TALLEST: a short screen is a short picture."""
+    page.view("light", SKETCH_SIZE)
+    page.goto(path)
+    tall = page.evaluate(CONTENT_BOTTOM)
+    page.view("light", (SKETCH_SIZE[0], min(max(int(tall or 0) + MARGIN, SHORTEST), TALLEST)))
+    page.screenshot(file)
+
+
 def draw_sketches(ctx: StepContext) -> Sketched:
     """Each example's screen as a picture, drawn by Jaynes's Chrome from the page the agent wrote. The page reaches
     nothing but itself: every other request is refused."""
@@ -239,12 +265,7 @@ def draw_sketches(ctx: StepContext) -> Sketched:
         try:
             with _served(Path(tmp)) as origin, open_page(origin) as page:
                 for n in pages:
-                    page.view("light", SKETCH_SIZE)
-                    page.goto(f"/example-{n}.html")
-                    tall = page.evaluate("document.documentElement.scrollHeight")
-                    height = min(max(int(tall or 0), SKETCH_SIZE[1]), TALLEST)
-                    page.view("light", (SKETCH_SIZE[0], height))
-                    page.screenshot(files / f"example-{n}.png")
+                    _photograph(page, f"/example-{n}.html", files / f"example-{n}.png")
         except BrowserError as err:
             raise Blocked(f"Jaynes's Chrome could not draw the sketches: {err}") from None
     return Sketched(pictures=[f"example-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
@@ -273,13 +294,40 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
             Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True), about]
 
 
+def look_at_screens(ctx: StepContext) -> Looked:
+    """Each example on the real screen: the built project served in a box, photographed by Jaynes's Chrome."""
+    agreed: Spec = ctx.needs[SPECIFY].value
+    pages = {n: e.page.strip() for n, e in enumerate(agreed.examples, 1) if e.page.strip()}
+    if not pages or not ctx.started.get("preview") or ctx.needs.project is None:
+        return Looked(pictures=["" for _ in agreed.examples])
+    if chrome() is None:
+        raise Blocked("Jaynes looks at the screens with Google Chrome and found none; install it or set JAYNES_CHROME")
+    files = ctx.workspace / "files"
+    files.mkdir(exist_ok=True)
+    try:
+        with screens.serve(ctx.needs.project, ctx.started, ctx.needs.source, ctx.needs.hidden) as origin, \
+                open_page(origin, deny=screens.denied(ctx.started)) as page:
+            for n, path in pages.items():
+                _photograph(page, path, files / f"screen-{n}.png")
+    except BrowserError as err:
+        raise Blocked(f"Jaynes's Chrome could not look at the product: {err}") from None
+    return Looked(pictures=[f"screen-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
+
+
 def show_built(_: None, needs: Witnesses) -> list[Shown]:
-    """What changed, in the agent's few sentences, and the files it names, folded."""
+    """What changed, in the agent's few sentences, each example on the real screen, and the files, folded."""
     made: Built = needs[BUILD].value
+    agreed: Spec = needs[SPECIFY].value
+    pictures: list[str] = needs[LOOK].value.pictures
     summary = made.summary.strip()
     if len(summary) > SUMMARY:  # written before the limit: the first words here, the whole under Details
         summary = summary[:SUMMARY + 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
-    return [Shown("What changed", sentence(summary)),
+    seen = [Shown(e.case.strip(), sentence(e.result), (Picture(LOOK.name, file, "the real screen"),))
+            for e, file in zip(agreed.examples, pictures, strict=False) if file]
+    if not seen and any(e.screen.strip() for e in agreed.examples):
+        seen = [Shown("No pictures of the real screens", "This run has no preview; a run with --preview shows them "
+                                                         "here, as Jaynes sees them.")]
+    return [Shown("What changed", sentence(summary)), *seen,
             Shown("Files changed", sentence(", ".join(made.files)) if made.files else "None named.", more=True)]
 
 
@@ -316,7 +364,9 @@ SPECIFY = ROLE.step(
                  "values and no code, each naming its test: the person decides from them. Keep each short: the "
                  "situation in at most 50 characters, what they see in at most 70. When an example shows "
                  "something on a screen, draw that screen in its screen field as you will build it, with the "
-                 "example's values: Jaynes turns it into a picture beside the example. A screen uses only the "
+                 "example's values: Jaynes turns it into a picture beside the example. When the run has a "
+                 "preview, say in page where that screen will be on the running product: Jaynes photographs it "
+                 "there for the merge. A screen uses only the "
                  "colours and fonts in inputs/identity.json, the project's identity, as its variables or values; "
                  "when it lists none, draw plainly. If the person returned an earlier attempt, follow their note.")
 SKETCH = ROLE.step("sketch", output=Sketched, needs=[SPECIFY], run_by=draw_sketches, max_turns=1)
@@ -332,5 +382,8 @@ BUILD = ROLE.step(
                  "them again in a box without internet. Screens use only the colours and fonts in "
                  "inputs/identity.json, as the project's variables where it has them; Jaynes refuses a build that "
                  "brings others, since changing the identity is visual-identity's work.")
-ROLE.step("accept", needs=[BUILD], stop=stop(0.05, sampled=False), shows=show_built,
+LOOK = ROLE.step("look", output=Looked, needs=[SPECIFY, BUILD], run_by=look_at_screens, project="read", effect="read",
+                 max_turns=1)
+# build last among the needs: a return from the merge goes to it
+ROLE.step("accept", needs=[SPECIFY, LOOK, BUILD], stop=stop(0.05, sampled=False), shows=show_built,
           question=lambda _out, _needs: "Merge this feature?")

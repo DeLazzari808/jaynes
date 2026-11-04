@@ -251,8 +251,9 @@ screen-design improves one screen at a time with the person's method.
 ## Order of work
 
 0. Done on 2026-11-04: sketches of the screens at the examples stop, stops
-   answered on the page with the terminal only saying where, and the identity
-   step and checks in build-feature.
+   answered on the page with the terminal only saying where, the identity
+   step and checks in build-feature, and the real screens photographed for
+   the merge when the run has a preview.
 1. The format: Markdown with a TOML header, `gives` to models, menu checks by name.
 2. The menu, starting with the checks the two roles need.
 3. Options at any stop, and the goal step built on them, with returns that say

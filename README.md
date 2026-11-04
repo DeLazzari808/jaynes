@@ -201,7 +201,8 @@ Everything else happens in the page:
   fail because the feature does not exist yet, a stop where you see one to
   five examples of what they check, each with a sketch of its screen drawn by
   Jaynes's Chrome from the agent's page, then the code, then a stop before the
-  merge. The code keeps the project's identity: Jaynes reads the colours and
+  merge, with each example photographed on the real screen when the run has a
+  preview. The code keeps the project's identity: Jaynes reads the colours and
   fonts the project's files already set, and refuses a sketch or a screen
   that brings others; changing them is visual-identity's work.
   **small-change** is the light path: the agent makes the change and Jaynes

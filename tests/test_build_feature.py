@@ -3,6 +3,7 @@ pass, with a person at the tests and at the merge."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -150,7 +151,8 @@ def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_pa
     assert isinstance(failed, Fail) and "the tests still fail" in failed.reasons[0]
     wordy = bf.built(bf.Built(summary="what changed, " * 40, files=[]), missing)
     assert isinstance(wordy, Fail) and "summary is 560 characters, at most 400" in wordy.reasons[0]
-    old = Witnesses(ran_by(build=Checked("build", bf.Built(summary="what changed, " * 40, files=[]), "h", "c")))
+    old = Witnesses(ran_by(specify=agreed, look=Checked("look", bf.Looked(pictures=[""]), "h", "c"),
+                           build=Checked("build", bf.Built(summary="what changed, " * 40, files=[]), "h", "c")))
     [changed, _] = bf.show_built(None, old)  # a summary from before the limit is cut here, whole under Details
     assert changed.text.endswith("…") and len(changed.text) <= bf.SUMMARY + 1
 
@@ -191,3 +193,52 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     branch = git(repo, "branch", "--list", "jaynes/*").strip(" *")
     assert git(repo, "show", f"{branch}:calc.py").endswith("a * b")
     assert git(repo, "show", f"{branch}:tests/test_mul.py") == TEST.strip()
+
+
+SERVED = {"command": f"{sys.executable} -m http.server {{port}} --bind 127.0.0.1", "path": "/", "ports": []}
+
+
+def test_with_a_preview_each_screen_names_its_page_and_jaynes_photographs_it_for_the_merge(
+        repo: Path, tmp_path: Path) -> None:
+    needs = Witnesses(ran_by(identity=NONE), copy(repo, tmp_path, {"tests/test_mul.py": TEST}), source=repo,
+                      started={"preview": SERVED})
+    drawn = {"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies", "screen": SCREEN}
+    unnamed = bf.fails_first(spec(examples=[drawn]), needs)
+    assert isinstance(unnamed, Fail) and "example 1 shows a screen and names no page" in unnamed.reasons[0]
+    assert isinstance(bf.fails_first(spec(examples=[{**drawn, "page": "/mul.html"}]), needs), Pass)
+    elsewhere = bf.fails_first(spec(examples=[{**drawn, "page": "https://example.com/"}]), needs)
+    assert isinstance(elsewhere, Fail) and "is not a path on the product" in elsewhere.reasons[0]
+
+
+@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+def test_the_merge_stop_shows_each_example_on_the_real_screen(repo: Path, tmp_path: Path) -> None:
+    built = copy(repo, tmp_path, {"mul.html": SCREEN})
+    agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                             "screen": SCREEN, "page": "/mul.html"},
+                            {"case": "Multiplying 0 by 3", "result": "gives 0", "test": "test_mul_multiplies"}])
+    work = tmp_path / "turn"
+    work.mkdir()
+    ctx = StepContext("r1", "add mul", Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c")), built, source=repo),
+                      work, started={"preview": SERVED})
+    out = bf.look_at_screens(ctx)
+    assert out.pictures == ["screen-1.png", ""]
+    assert (work / "files" / "screen-1.png").read_bytes().startswith(b"\x89PNG")
+    png = (work / "files" / "screen-1.png").read_bytes()
+    assert int.from_bytes(png[20:24]) < 400  # a short screen is a short picture, not a window of white
+    needs = Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c"), look=Checked("look", out, "h", "c"),
+                             build=Checked("build", bf.Built(summary="adds mul", files=["calc.py"]), "h", "c")))
+    shown = bf.show_built(None, needs)
+    assert [(x.title, [(p.step, p.file) for p in x.pictures]) for x in shown] == [
+        ("What changed", []), ("Multiplying 2 by 3", [("look", "screen-1.png")]), ("Files changed", [])]
+
+
+def test_without_a_preview_the_merge_says_how_to_see_the_real_screens(tmp_path: Path) -> None:
+    agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                             "screen": SCREEN}])
+    ctx = StepContext("r1", "t", Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c")), tmp_path), tmp_path)
+    out = bf.look_at_screens(ctx)
+    assert out.pictures == [""]
+    needs = Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c"), look=Checked("look", out, "h", "c"),
+                             build=Checked("build", bf.Built(summary="adds mul", files=[]), "h", "c")))
+    assert [(x.title, x.more) for x in bf.show_built(None, needs)] == [
+        ("What changed", False), ("No pictures of the real screens", False), ("Files changed", True)]

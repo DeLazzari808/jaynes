@@ -575,6 +575,7 @@ def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_deta
     assert "Step 2 of 2, waiting for you" in front  # where the run is; its steps a click away
     assert '<details class="steps"><summary>Steps</summary><ul class="stages">' in front
     assert "<b>The list hides the status</b><p>Say it: the status goes beside the name.</p>" in front
+    assert front.index("<b>The list hides the status</b>") < front.index(f'<img src="{link}"')  # named, then seen
     assert '<details class="fold"><summary>More <span>1</span></summary>' in front  # the cost, folded
     assert "Output" not in front and ">Turns" not in front and 'class="label">Output' in details
     bar = page[page.index('<form id="answer"'):]

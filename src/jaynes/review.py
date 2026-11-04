@@ -393,7 +393,7 @@ details.others > summary span:first-child::before { content: "\\25B8  "; }
 details.others[open] > summary span:first-child::before { content: "\\25BE  "; }
 .cards { display: grid; gap: 12px; }
 .card { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
-.card .pics { display: flex; flex-wrap: wrap; gap: 10px; padding: 10px 10px 0; }
+.card .pics { display: flex; flex-wrap: wrap; gap: 10px; padding: 0 10px 10px; }
 .card .shot { position: relative; display: block; cursor: zoom-in; }
 .card .shot.wide { flex: 1 1 100%; }
 .card .shot.tall { flex: 1 1 calc(50% - 5px); }
@@ -953,8 +953,8 @@ class Review:
             pick = ident in choosable
             text = f"<p>{marked(str(x['text']))}</p>" if x.get("text") else ""
             cards.append(f'<div class="card{" pick" if pick else ""}"' + (f' data-id="{esc(ident)}" tabindex="0"' if pick else "")
-                         + f'>{row}<div class="txt">' + ('<i class="n"></i>' if pick else "")
-                         + f'<div><b>{marked(str(x["title"]))}</b>{text}</div></div></div>')
+                         + '><div class="txt">' + ('<i class="n"></i>' if pick else "")
+                         + f'<div><b>{marked(str(x["title"]))}</b>{text}</div></div>{row}</div>')
         return f'<div class="cards">{"".join(cards)}</div>'
 
     @staticmethod
