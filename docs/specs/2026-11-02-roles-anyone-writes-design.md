@@ -232,8 +232,27 @@ The design holds if two roles fit in it without Python:
 If one of them needs Python beyond a menu check, the format grows, or the menu
 does, before anything ships.
 
+## Screens keep the identity
+
+A feature does not change how the product looks. Jaynes reads the colours and
+fonts the project's files already set before any agent works (the identity
+step of build-feature), shows them at the examples stop, and refuses a sketch
+or a built screen that brings others. With no identity yet, anything goes, and
+the stop says so. Changing the identity is visual-identity's work, where the
+person sees the direction first. This is the tolerance a factory measures
+against: taste enters once, at the direction; after it, the look is checkable.
+Later it becomes a menu check any role can name.
+
+The workflow for a new product, as tenure showed: a thin end-to-end slice
+first, ugly, with real data (build-feature); then visual-identity on those
+real screens; from then on every build-feature keeps that identity, and
+screen-design improves one screen at a time with the person's method.
+
 ## Order of work
 
+0. Done on 2026-11-04: sketches of the screens at the examples stop, stops
+   answered on the page with the terminal only saying where, and the identity
+   step and checks in build-feature.
 1. The format: Markdown with a TOML header, `gives` to models, menu checks by name.
 2. The menu, starting with the checks the two roles need.
 3. Options at any stop, and the goal step built on them, with returns that say
@@ -252,6 +271,9 @@ does, before anything ships.
 
 - Checks are fixed phrases with slots, as in the table. An unknown phrase is
   an error that lists the menu.
+- Design is measured against the project's own identity, never against a
+  standard of Jaynes's: the identity is what the project's files set, and
+  only visual-identity changes it.
 - `jaynes add` runs only menu checks from a role someone else wrote; Python
   checks from others need an explicit flag.
 - When a role changes, its record shows the current version and the earlier

@@ -55,6 +55,7 @@ def copy(repo: Path, tmp_path: Path, files: dict[str, str]) -> Path:
     c = tmp_path / "copy"
     shutil.copytree(repo, c, ignore=shutil.ignore_patterns(".git"))
     for name, text in files.items():
+        (c / name).parent.mkdir(parents=True, exist_ok=True)
         (c / name).write_text(text)
     return c
 

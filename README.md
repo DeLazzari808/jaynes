@@ -93,7 +93,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
 | Built-in role fix-bug: a failing test first, then a fix, both run in the box | Works; first real run delivered its branch |
-| Built-in roles build-feature (the agreed plan's tests first, then the code) and small-change (no stop unless the change is big) | Works in tests; no real run yet |
+| Built-in roles build-feature (the agreed plan's tests first, shown as examples with sketches of the screens, then code that keeps the project's identity) and small-change (no stop unless the change is big) | build-feature delivered four slices of a real Go project; small-change works in tests |
 | Built-in role screen-design: your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
 | Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
 
@@ -200,8 +200,12 @@ Everything else happens in the page:
   finds no bug a test can show, it says why and you decide: accepting ends
   the run with nothing changed. The agent runs the tests itself too.
   **build-feature** works the same way from the plan you approved: tests that
-  fail because the feature does not exist yet, a stop where you see whether
-  they describe what you agreed, then the code, then a stop before the merge.
+  fail because the feature does not exist yet, a stop where you see one to
+  five examples of what they check, each with a sketch of its screen drawn by
+  Jaynes's Chrome from the agent's page, then the code, then a stop before the
+  merge. The code keeps the project's identity: Jaynes reads the colours and
+  fonts the project's files already set, and refuses a sketch or a screen
+  that brings others; changing them is visual-identity's work.
   **small-change** is the light path: the agent makes the change and Jaynes
   runs the suite, with no stop, unless the diff has more than 30 changed lines
   or touches a path that runs later; then you see it.

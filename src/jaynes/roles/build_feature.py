@@ -5,14 +5,20 @@ The task is the plan the person and the agent agreed on in conversation. The age
 their files; Jaynes runs them in a box and requires that they fail, printing the line the agent quotes. The person
 sees a few examples of what the tests check, with a sketch of the screen when an example shows one, and decides
 whether they describe what was agreed: a misunderstanding costs least here, before any code. The agent writes each
-sketch as a page; Jaynes draws it with its own Chrome, which reaches nothing but that page. Then the agent changes the project, never its tests, until Jaynes sees those tests and the whole suite pass.
-The person gives the final review, and the change comes back as a branch. The suite needs the same as fix-bug's.
+sketch as a page; Jaynes draws it with its own Chrome, which reaches nothing but that page. Then the agent
+changes the project, never its tests, until Jaynes sees those tests and the whole suite pass. The person gives the
+final review, and the change comes back as a branch. The suite needs the same as fix-bug's.
+
+A feature keeps the project's visual identity: the colours and fonts its files already set. Jaynes reads them at
+the start; a sketch or a built screen that brings others is refused, since changing the identity is
+visual-identity's work, where the person sees the direction first.
 """
 
 from __future__ import annotations
 
 import functools
 import http.server
+import re
 import tempfile
 import threading
 from collections.abc import Iterator
@@ -42,6 +48,14 @@ LONGEST = {"case": 50, "result": 70}  # characters: together, one line the perso
 SCREEN = 40_000  # characters of a sketch's page
 SKETCH_SIZE = (1280, 800)  # the sketch's window; the picture is as tall as the page, up to TALLEST
 TALLEST = 2400
+STYLED = ("color:", "background", "font-family", "<style")  # a file that sets how something looks has one of these
+STYLE_SUFFIXES = {".css", ".scss", ".sass", ".less", ".html", ".htm", ".tmpl", ".gohtml", ".templ", ".vue", ".svelte",
+                  ".jsx", ".tsx", ".js", ".ts", ".go", ".py", ".rb", ".erb", ".php", ".astro", ".svg"}
+NOT_THE_PROJECT = {"node_modules", "vendor", ".git", "dist", "build", "target", ".venv"}
+COLOR = re.compile(r"#(?:[0-9a-fA-F]{3}){1,2}\b|(?:rgba?|hsla?)\([^)]*\)", re.IGNORECASE)
+FONT = re.compile(r"font-family\s*:\s*([^;}\n]+)", re.IGNORECASE)
+GENERIC_FONTS = {"serif", "sans-serif", "monospace", "cursive", "fantasy", "system-ui", "ui-sans-serif", "ui-serif",
+                 "ui-monospace", "ui-rounded", "emoji", "math", "fangsong", "inherit", "initial", "unset"}
 
 
 class Example(BaseModel):
@@ -64,6 +78,14 @@ class Spec(BaseModel):
     tests: list[str] = Field(description="the test files you added or changed, relative to the project folder")
     failure: str = Field(description="a line the command prints because the feature does not exist yet, copied "
                                      "exactly, such as the assertion message or the missing name")
+
+
+class Identity(BaseModel):
+    """The colours and fonts the project's files already set, as Jaynes read them; empty when it sets none."""
+
+    colors: list[str] = Field(description="hex colours in six lowercase digits, and rgb() or hsl() values")
+    fonts: list[str] = Field(description="the first family of each font-family, lowercase; generic ones left out")
+    files: list[str] = Field(description="the project files they were read from")
 
 
 class Sketched(BaseModel):
@@ -109,9 +131,73 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
                 if len(text := getattr(e, part).strip()) > most]
     reasons += [f"the screen of example {n} is {len(e.screen)} characters, at most {SCREEN}: draw only what the "
                 "person sees in that example" for n, e in enumerate(out.examples, 1) if len(e.screen) > SCREEN]
+    identity: Identity = needs[IDENTITY].value
+    reasons += [f"the screen of example {n} uses {', '.join(strange)}, which the project's identity does not have; "
+                f"{_has(identity)}" for n, e in enumerate(out.examples, 1)
+                if (strange := _outside(*_literals(e.screen), identity))]
     if reasons:
         return Fail(*reasons)
     return Pass()
+
+
+def _literals(text: str) -> tuple[set[str], set[str]]:
+    """The colours and the first font families a text sets, normalised."""
+    colors = {_color(m) for m in COLOR.findall(text)}
+    fonts = {f for m in FONT.findall(text) if (f := m.split(",")[0].strip().strip("'\"").lower())
+             and f not in GENERIC_FONTS and not f.startswith("var(")}
+    return colors, fonts
+
+
+def _color(literal: str) -> str:
+    if literal.startswith("#"):
+        h = literal[1:].lower()
+        return "#" + ("".join(c * 2 for c in h) if len(h) == 3 else h)
+    return re.sub(r"\s+", "", literal.lower())
+
+
+def _outside(colors: set[str], fonts: set[str], identity: Identity) -> list[str]:
+    """What is set that the identity does not have: colours when it has colours, fonts when it has fonts."""
+    return (sorted(colors - set(identity.colors)) if identity.colors else []) + \
+        (sorted(fonts - set(identity.fonts)) if identity.fonts else [])
+
+
+def _has(identity: Identity) -> str:
+    return (f"it has {', '.join(identity.colors + identity.fonts)} in {', '.join(identity.files)}. Use those, or "
+            "change the identity with visual-identity")
+
+
+def _styled(root: Path) -> dict[str, tuple[set[str], set[str]]]:
+    """What each file of the project that sets how something looks sets, by path; tests and vendored code left out."""
+    out: dict[str, tuple[set[str], set[str]]] = {}
+    for path in sorted(root.rglob("*")):
+        rel = path.relative_to(root)
+        if (NOT_THE_PROJECT & set(rel.parts) or path.suffix.lower() not in STYLE_SUFFIXES or not path.is_file()
+                or path.stat().st_size > 1_000_000 or not project.allowed([rel.as_posix()], fb.TESTS)):
+            continue
+        text = path.read_text(errors="replace")
+        if any(w in text.lower() for w in STYLED):
+            colors, fonts = _literals(text)
+            if colors or fonts:
+                out[rel.as_posix()] = (colors, fonts)
+    return out
+
+
+def read_identity(ctx: StepContext) -> Identity:
+    """The colours and fonts the project sets today, read by Jaynes before any agent works."""
+    assert ctx.needs.project is not None
+    styled = _styled(ctx.needs.project)
+    return Identity(colors=sorted(set[str]().union(*(c for c, _ in styled.values()))),
+                    fonts=sorted(set[str]().union(*(f for _, f in styled.values()))), files=list(styled))
+
+
+def keeps_identity(_: Built, needs: Witnesses) -> Pass | Fail:
+    """No file of the built project sets a colour or font the identity does not have."""
+    assert needs.project is not None
+    identity: Identity = needs[IDENTITY].value
+    reasons = [f"{rel} brings {', '.join(strange)}, which the project's identity does not have; {_has(identity)}"
+               for rel, (colors, fonts) in _styled(needs.project).items()
+               if (strange := _outside(colors, fonts, identity))]
+    return Fail(*reasons[:20]) if reasons else Pass()
 
 
 @contextmanager
@@ -172,8 +258,15 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
         return text if text.endswith((".", "!", "?")) else f"{text}."
     def drawn(n: int) -> tuple[Picture, ...]:
         return (Picture(SKETCH.name, pictures[n], "sketch"),) if n < len(pictures) and pictures[n] else ()
+    identity: Identity = needs[IDENTITY].value
+    def count(n: int, word: str) -> str:
+        return f"{n} {word}{'s' * (n != 1)}"
+    about = Shown("The project's identity", f"{count(len(identity.colors), 'colour')} and "
+                  f"{count(len(identity.fonts), 'font')}, in {', '.join(identity.files)}; the screens use only "
+                  "those.", more=True) if identity.colors or identity.fonts else \
+        Shown("No identity yet", "The screens look as the agent drew them, until visual-identity runs.", more=True)
     return [*(Shown(e.case.strip(), sentence(e.result), drawn(n)) for n, e in enumerate(out.examples)),
-            Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True)]
+            Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True), about]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
@@ -192,8 +285,9 @@ def built(out: Built, needs: Witnesses) -> Pass | Fail:
 
 ROLE = role("build-feature")
 RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read", max_turns=1)
+IDENTITY = ROLE.step("identity", output=Identity, run_by=read_identity, project="read", max_turns=1)
 SPECIFY = ROLE.step(
-    "specify", output=Spec, needs=[RUNNER], project="write", may_change=fb.TESTS, check=fails_first,
+    "specify", output=Spec, needs=[RUNNER, IDENTITY], project="write", may_change=fb.TESTS, check=fails_first,
     instructions="The task is the plan the person agreed on. Write the smallest tests that show the feature does "
                  "what the plan says, next to the project's other tests and in their style. They must fail now, "
                  "because the feature does not exist yet. Change test files only; do not build the feature yet. "
@@ -205,18 +299,21 @@ SPECIFY = ROLE.step(
                  "values and no code, each naming its test: the person decides from them. Keep each short: the "
                  "situation in at most 50 characters, what they see in at most 70. When an example shows "
                  "something on a screen, draw that screen in its screen field as you will build it, with the "
-                 "example's values: Jaynes turns it into a picture beside the example. If the person returned "
-                 "an earlier attempt, follow their note.")
+                 "example's values: Jaynes turns it into a picture beside the example. A screen uses only the "
+                 "colours and fonts in inputs/identity.json, the project's identity, as its variables or values; "
+                 "when it lists none, draw plainly. If the person returned an earlier attempt, follow their note.")
 SKETCH = ROLE.step("sketch", output=Sketched, needs=[SPECIFY], run_by=draw_sketches, max_turns=1)
 # the stop has no output of its own, so a return goes back to specify, its last need
-ROLE.step("agree", needs=[SKETCH, SPECIFY], stop=stop(0.2),
+ROLE.step("agree", needs=[SKETCH, SPECIFY, IDENTITY], stop=stop(0.2),
           question=lambda _out, _needs: "Do these examples show what you asked for?", shows=show_examples)
 BUILD = ROLE.step(
-    "build", output=Built, needs=[RUNNER, SPECIFY], project="write", may_change=("**", *(f"!{t}" for t in fb.TESTS)),
-    check=built, deadline=3600.0,
+    "build", output=Built, needs=[RUNNER, SPECIFY, IDENTITY], project="write",
+    may_change=("**", *(f"!{t}" for t in fb.TESTS)), check=[built, keeps_identity], deadline=3600.0,
     instructions="Build the feature so the tests in inputs/specify.json pass, and the whole suite with them. Change "
                  "the project's code, never its tests: they are what the person agreed to. Keep the change as small "
                  "as the plan needs. Run the tests and the suite yourself as inputs/runner.json says; Jaynes runs "
-                 "them again in a box without internet.")
+                 "them again in a box without internet. Screens use only the colours and fonts in "
+                 "inputs/identity.json, as the project's variables where it has them; Jaynes refuses a build that "
+                 "brings others, since changing the identity is visual-identity's work.")
 ROLE.step("accept", needs=[BUILD], stop=stop(0.05, sampled=False),
           question=lambda _, needs: f"Merge this feature? {needs[BUILD].value.summary}")
