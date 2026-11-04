@@ -252,7 +252,7 @@ def draw_sketches(ctx: StepContext) -> Sketched:
 
 def sentence(text: str) -> str:
     text = text.strip()
-    return text if text.endswith((".", "!", "?")) else f"{text}."
+    return text if text.endswith((".", "!", "?", "…")) else f"{text}."
 
 
 def show_examples(_: None, needs: Witnesses) -> list[Shown]:
@@ -276,7 +276,10 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
 def show_built(_: None, needs: Witnesses) -> list[Shown]:
     """What changed, in the agent's few sentences, and the files it names, folded."""
     made: Built = needs[BUILD].value
-    return [Shown("What changed", sentence(made.summary)),
+    summary = made.summary.strip()
+    if len(summary) > SUMMARY:  # written before the limit: the first words here, the whole under Details
+        summary = summary[:SUMMARY + 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+    return [Shown("What changed", sentence(summary)),
             Shown("Files changed", sentence(", ".join(made.files)) if made.files else "None named.", more=True)]
 
 

@@ -76,6 +76,9 @@ def headline(task: str, most: int = 100) -> str:
     return cut.rstrip(" ,;:.") + "…"
 
 
+LONG_REST = 400  # characters of a question past its heading that are folded
+
+
 def question_parts(question: str, most: int = 120) -> tuple[str, str]:
     """A stop's question as a heading and what follows it: the first sentence, or as many whole words as fit, is
     the heading; the rest, when a step wrote a whole summary into its question, goes below in a paragraph."""
@@ -820,8 +823,13 @@ class Review:
         if items:
             sub += ('<div class="sub">Click them in order of importance to choose; Accept keeps them all, in the order '
                     'shown.</div>')
+        if shown is None and target is not None and target.shows is not None:
+            shown = self.c.shown(target, s, st)  # a stop opened before its step said how to show it
         head, rest = question_parts(question)
-        parts.append(f"<div><h1>{esc(head)}</h1>" + (f'<p class="ask">{esc(rest)}</p>' if rest else "") + f"{sub}</div>")
+        ask = f'<p class="ask">{esc(rest)}</p>' if rest else ""
+        if len(rest) > LONG_REST:  # a summary written into the question: folded, the page opens on what matters
+            ask = f'<details class="fold"><summary>The whole question</summary>{ask}</details>'
+        parts.append(f"<div><h1>{esc(head)}</h1>{ask}{sub}</div>")
         parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
         # in front, what the person judges; behind Details, the output, its checks, turns and statistics
         details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]

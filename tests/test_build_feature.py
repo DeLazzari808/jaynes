@@ -150,6 +150,9 @@ def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_pa
     assert isinstance(failed, Fail) and "the tests still fail" in failed.reasons[0]
     wordy = bf.built(bf.Built(summary="what changed, " * 40, files=[]), missing)
     assert isinstance(wordy, Fail) and "summary is 560 characters, at most 400" in wordy.reasons[0]
+    old = Witnesses(ran_by(build=Checked("build", bf.Built(summary="what changed, " * 40, files=[]), "h", "c")))
+    [changed, _] = bf.show_built(None, old)  # a summary from before the limit is cut here, whole under Details
+    assert changed.text.endswith("…") and len(changed.text) <= bf.SUMMARY + 1
 
 
 def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the_tests(

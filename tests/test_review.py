@@ -725,6 +725,24 @@ def test_a_long_question_keeps_its_first_sentence_as_the_heading_and_the_rest_be
         page = get(base + "/")
     finally:
         server.shutdown()
-    assert "<h1>Ship it?</h1>" in page
-    assert '<p class="ask">Added one draft, called draft one, after reading everything there was to read' in page
-    assert "<h1>Ship it? Added" not in page
+    assert "<h1>Ship it?</h1>" in page and "<h1>Ship it? Added" not in page
+    # a rest that long is a summary the agent wrote into the question: folded, so the page opens on what matters
+    assert ('<details class="fold"><summary>The whole question</summary><p class="ask">Added one draft, called '
+            'draft one, after reading everything there was to read') in page
+
+
+def test_a_stop_opened_before_its_step_said_how_to_show_it_shows_as_the_step_does_now(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from jaynes.role import Shown
+    from tests import stopped
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "write the draft",
+              "--runtime", "quick=tests.stopped:Agent"])
+    monkeypatch.setattr(stopped.DRAFT, "shows", lambda out, _: [Shown("The draft", f"{out.text}, in full.")])
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + "/")
+    finally:
+        server.shutdown()
+    front, _, details = page.partition('<details class="fold"><summary>Details')
+    assert "<b>The draft</b><p>draft one, in full.</p>" in front
+    assert 'class="label">Output' in details and 'class="label">Output' not in front

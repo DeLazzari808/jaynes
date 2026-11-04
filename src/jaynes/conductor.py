@@ -851,6 +851,10 @@ class Conductor:
         except Exception as err:  # a broken question must not hide the stop
             return f"(the step's question failed: {type(err).__name__}: {err})"[:500]
 
+    def shown(self, step: Step[Any], s: StepState, st: RunState) -> list[dict[str, Any]] | None:
+        """What a stop shows the person, as the step shows it now; for a page rendering a stop opened earlier."""
+        return self._shown(step, s, st)
+
     def _shown(self, step: Step[Any], s: StepState, st: RunState) -> list[dict[str, Any]] | None:
         """The output as the step shows it to the person; a broken one shows a line saying so, never hides the stop."""
         if step.shows is None or s.checked is None:
