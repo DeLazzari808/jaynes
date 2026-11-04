@@ -43,6 +43,9 @@ def test_each_example_names_a_test_that_is_in_the_tests(repo: Path, tmp_path: Pa
     assert isinstance(made_up, Fail) and "test_mul_by_zero is not in tests/test_mul.py" in made_up.reasons[0]
     none = bf.fails_first(spec(examples=[]), needs)
     assert isinstance(none, Fail) and "examples" in none.reasons[0]
+    long = bf.fails_first(spec(examples=[{"case": "Multiplying 2 by 3, " * 8, "result": "gives 6",
+                                         "test": "test_mul_multiplies"}]), needs)
+    assert isinstance(long, Fail) and "is 159 characters" in long.reasons[0] and "at most 100" in long.reasons[0]
 
 
 def test_the_tests_stop_shows_the_examples_in_front_and_the_agents_summary_below() -> None:

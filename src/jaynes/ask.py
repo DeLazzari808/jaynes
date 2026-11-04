@@ -54,9 +54,10 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
             f"{n}. {i}: {label}" for n, (i, label) in enumerate(items, 1)) + "\n\n" + evidence
         question += " Type the numbers you choose, most important first; Accept keeps them all in this order."
         accept = "All of them are right, in the order shown: the run goes on."
+    # the link right after the question: Claude Code cuts a long question at its end
+    question += f"\nOr answer on the page: {page(c.home)}/stop/{run_id}/{w.step}"
     if shown:  # Claude Code hides a preview it cannot show in full; the question always shows
         question += "\n\n" + _sentences(shown, chosen_apart=target.choose is not None, front_only=True)
-    question += f"\n\nOr answer on the page: {page(c.home)}/stop/{run_id}/{w.step}"
     return {"questions": [{
         "question": f"{question}\n\n[run {run_id}, step {w.step}]",
         "header": HEADER,
@@ -109,7 +110,8 @@ def _sentences(shown: list[dict[str, Any]], chosen_apart: bool, front_only: bool
     """What the stop shows, as lines: the items the person may choose are listed apart, numbered. ``front_only``
     keeps the lines in front, without what is folded below or the word about pictures."""
     def line(x: dict[str, Any]) -> str:
-        return ": ".join(filter(None, [str(x["title"]), str(x.get("text") or "")]))
+        title, text = str(x["title"]), str(x.get("text") or "")
+        return f"{title.rstrip('.')}: {text}" if text else title
     main = [line(x) for x in shown if not x.get("more") and not (chosen_apart and x.get("id"))]
     if front_only:
         return "\n".join(main)

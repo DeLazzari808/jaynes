@@ -18,10 +18,15 @@ from jaynes.roles import fix_bug as fb
 from jaynes.runners import Runner
 
 
+LONGEST = {"case": 100, "result": 140}  # characters: a line the person reads at a glance in the terminal
+
+
 class Example(BaseModel):
     case: str = Field(description="a situation the person knows, in their words and with real values, such as "
-                                  "'The event is on 15 Nov and today is 2 Nov'; no code or names from the code")
-    result: str = Field(description="what the person sees then, such as 'it shows 13 days left'")
+                                  "'The event is on 15 Nov and today is 2 Nov'; no code or names from the code; "
+                                  "at most 100 characters")
+    result: str = Field(description="what the person sees then, such as 'it shows 13 days left'; at most 140 "
+                                    "characters")
     test: str = Field(description="the name of the test that checks this, as written in the test file")
 
 
@@ -67,6 +72,10 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
     text = "\n".join((needs.project / t).read_text(errors="replace") for t in out.tests)
     reasons = [f"{e.test} is not in {', '.join(out.tests)}; name the test that checks {e.case!r}"
                for e in out.examples if not e.test.strip() or e.test.strip() not in text]
+    reasons += [f"the {part} of example {n} is {len(text)} characters, at most {most}: one situation and what "
+                "the person sees, in a line they read at a glance; put the rest in feature"
+                for n, e in enumerate(out.examples, 1) for part, most in LONGEST.items()
+                if len(text := getattr(e, part).strip()) > most]
     if reasons:
         return Fail(*reasons)
     return Pass()
