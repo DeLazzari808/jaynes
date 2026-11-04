@@ -214,6 +214,15 @@ def test_a_stop_that_says_how_it_shows_its_output_is_asked_in_sentences_with_the
     assert "{" not in preview  # no JSON in front of the person
     # Claude Code hides a preview it cannot show in full, so the sentences go in the question, which always shows
     assert shown["questions"][0]["question"] == (f"Make this change?\nOr answer on the page: http://127.0.0.1:8740/stop/"
-                                                 f"{run}/change\n\nThe list hides the status: Say it: the status goes "
-                                                 f"beside the name.\n\n[run {run}, step change]")
+                                                 f"{run}/change, with 1 picture\n\nThe list hides the status: Say it: "
+                                                 f"the status goes beside the name.\n\n[run {run}, step change]")
     assert "recorded the person's answer at change: accept" in str(hook(shown, "Accept"))
+
+
+def test_several_lines_in_front_are_numbered_so_the_person_can_say_which_is_wrong() -> None:
+    from jaynes.ask import _sentences  # pyright: ignore[reportPrivateUsage]
+    shown = [{"title": "Event on 15 Nov, today 2 Nov", "text": "13 days left."},
+             {"title": "No event date", "text": "says the date is not set."},
+             {"title": "Cost", "text": "12 tokens.", "more": True}]
+    assert _sentences(shown, chosen_apart=False, front_only=True) == (
+        "1. Event on 15 Nov, today 2 Nov: 13 days left.\n2. No event date: says the date is not set.")

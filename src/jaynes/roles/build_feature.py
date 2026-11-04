@@ -3,31 +3,57 @@ them pass with the rest of the suite.
 
 The task is the plan the person and the agent agreed on in conversation. The agent writes tests only and names
 their files; Jaynes runs them in a box and requires that they fail, printing the line the agent quotes. The person
-sees the tests and decides whether they describe what was agreed: a misunderstanding costs least here, before any
-code. Then the agent changes the project, never its tests, until Jaynes sees those tests and the whole suite pass.
+sees a few examples of what the tests check, with a sketch of the screen when an example shows one, and decides
+whether they describe what was agreed: a misunderstanding costs least here, before any code. The agent writes each
+sketch as a page; Jaynes draws it with its own Chrome, which reaches nothing but that page. Then the agent changes the project, never its tests, until Jaynes sees those tests and the whole suite pass.
 The person gives the final review, and the change comes back as a branch. The suite needs the same as fix-bug's.
 """
 
 from __future__ import annotations
 
+import functools
+import http.server
+import tempfile
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+
 from pydantic import BaseModel, Field
 
 from jaynes import project, runners
-from jaynes.role import Fail, Pass, Shown, Witnesses, role, stop
+from jaynes.browser import BrowserError, open_page
+from jaynes.role import (
+    Blocked,
+    Fail,
+    Pass,
+    Picture,
+    Shown,
+    StepContext,
+    Witnesses,
+    role,
+    stop,
+)
 from jaynes.roles import fix_bug as fb
+from jaynes.roles.references import chrome
 from jaynes.runners import Runner
 
-
-LONGEST = {"case": 100, "result": 140}  # characters: a line the person reads at a glance in the terminal
+LONGEST = {"case": 50, "result": 70}  # characters: together, one line the person reads at a glance in the terminal
+SCREEN = 40_000  # characters of a sketch's page
+SKETCH_SIZE = (1280, 800)  # the sketch's window; the picture is as tall as the page, up to TALLEST
+TALLEST = 2400
 
 
 class Example(BaseModel):
     case: str = Field(description="a situation the person knows, in their words and with real values, such as "
-                                  "'The event is on 15 Nov and today is 2 Nov'; no code or names from the code; "
-                                  "at most 100 characters")
-    result: str = Field(description="what the person sees then, such as 'it shows 13 days left'; at most 140 "
+                                  "'Event on 15 Nov, today 2 Nov'; no code or names from the code; at most 50 "
+                                  "characters")
+    result: str = Field(description="what the person sees then, such as 'it shows 13 days left'; at most 70 "
                                     "characters")
     test: str = Field(description="the name of the test that checks this, as written in the test file")
+    screen: str = Field("", description="when the person sees this on a screen: that screen as you will build it, "
+                                        "with this example's values, as one HTML page with its styles inline, "
+                                        "nothing loaded from elsewhere; empty when nothing shows on a screen")
 
 
 class Spec(BaseModel):
@@ -38,6 +64,11 @@ class Spec(BaseModel):
     tests: list[str] = Field(description="the test files you added or changed, relative to the project folder")
     failure: str = Field(description="a line the command prints because the feature does not exist yet, copied "
                                      "exactly, such as the assertion message or the missing name")
+
+
+class Sketched(BaseModel):
+    pictures: list[str] = Field(description="the picture of each example's screen among the step's files, in the "
+                                            "order of the examples; empty for an example with no screen")
 
 
 class Built(BaseModel):
@@ -76,17 +107,72 @@ def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
                 "the person sees, in a line they read at a glance; put the rest in feature"
                 for n, e in enumerate(out.examples, 1) for part, most in LONGEST.items()
                 if len(text := getattr(e, part).strip()) > most]
+    reasons += [f"the screen of example {n} is {len(e.screen)} characters, at most {SCREEN}: draw only what the "
+                "person sees in that example" for n, e in enumerate(out.examples, 1) if len(e.screen) > SCREEN]
     if reasons:
         return Fail(*reasons)
     return Pass()
 
 
-def show_examples(out: Spec, _: Witnesses) -> list[Shown]:
-    """The examples in front, as the person judges them; what the agent says the tests cover, below."""
+@contextmanager
+def _served(folder: Path) -> Iterator[str]:
+    """The files in ``folder`` on a loopback address, for Jaynes's Chrome only."""
+    handler = functools.partial(_Quiet, directory=str(folder))
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class _Quiet(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format: str, *args: object) -> None:
+        pass
+
+
+def draw_sketches(ctx: StepContext) -> Sketched:
+    """Each example's screen as a picture, drawn by Jaynes's Chrome from the page the agent wrote. The page reaches
+    nothing but itself: every other request is refused."""
+    agreed: Spec = ctx.needs[SPECIFY].value
+    pages = {n: e.screen for n, e in enumerate(agreed.examples, 1) if e.screen.strip()}
+    if not pages:
+        return Sketched(pictures=["" for _ in agreed.examples])
+    if chrome() is None:
+        raise Blocked("Jaynes draws the sketches of the screens with Google Chrome and found none; install it or "
+                      "set JAYNES_CHROME")
+    files = ctx.workspace / "files"
+    files.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="jaynes-sketch-") as tmp:
+        for n, html in pages.items():
+            (Path(tmp) / f"example-{n}.html").write_text(html)
+        try:
+            with _served(Path(tmp)) as origin, open_page(origin) as page:
+                for n in pages:
+                    page.view("light", SKETCH_SIZE)
+                    page.goto(f"/example-{n}.html")
+                    tall = page.evaluate("document.documentElement.scrollHeight")
+                    height = min(max(int(tall or 0), SKETCH_SIZE[1]), TALLEST)
+                    page.view("light", (SKETCH_SIZE[0], height))
+                    page.screenshot(files / f"example-{n}.png")
+        except BrowserError as err:
+            raise Blocked(f"Jaynes's Chrome could not draw the sketches: {err}") from None
+    return Sketched(pictures=[f"example-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
+
+
+def show_examples(_: None, needs: Witnesses) -> list[Shown]:
+    """The examples in front, each with its sketch, as the person judges them; what the agent says the tests cover,
+    below."""
+    out: Spec = needs[SPECIFY].value
+    pictures: list[str] = needs[SKETCH].value.pictures
     def sentence(text: str) -> str:
         text = text.strip()
         return text if text.endswith((".", "!", "?")) else f"{text}."
-    return [*(Shown(e.case.strip(), sentence(e.result)) for e in out.examples),
+    def drawn(n: int) -> tuple[Picture, ...]:
+        return (Picture(SKETCH.name, pictures[n], "sketch"),) if n < len(pictures) and pictures[n] else ()
+    return [*(Shown(e.case.strip(), sentence(e.result), drawn(n)) for n, e in enumerate(out.examples)),
             Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True)]
 
 
@@ -108,7 +194,6 @@ ROLE = role("build-feature")
 RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read", max_turns=1)
 SPECIFY = ROLE.step(
     "specify", output=Spec, needs=[RUNNER], project="write", may_change=fb.TESTS, check=fails_first,
-    stop=stop(0.2), question=lambda _out, _needs: "Do these examples show what you asked for?", shows=show_examples,
     instructions="The task is the plan the person agreed on. Write the smallest tests that show the feature does "
                  "what the plan says, next to the project's other tests and in their style. They must fail now, "
                  "because the feature does not exist yet. Change test files only; do not build the feature yet. "
@@ -117,8 +202,15 @@ SPECIFY = ROLE.step(
                  "yourself before you answer. Jaynes runs them again from the project folder in a box without "
                  "internet, with the dependencies already installed, and requires them to fail, printing the line "
                  "you quote. Then give one to five examples of what they check, in the person's words with real "
-                 "values and no code, each naming its test: the person decides from them. If the person returned "
+                 "values and no code, each naming its test: the person decides from them. Keep each short: the "
+                 "situation in at most 50 characters, what they see in at most 70. When an example shows "
+                 "something on a screen, draw that screen in its screen field as you will build it, with the "
+                 "example's values: Jaynes turns it into a picture beside the example. If the person returned "
                  "an earlier attempt, follow their note.")
+SKETCH = ROLE.step("sketch", output=Sketched, needs=[SPECIFY], run_by=draw_sketches, max_turns=1)
+# the stop has no output of its own, so a return goes back to specify, its last need
+ROLE.step("agree", needs=[SKETCH, SPECIFY], stop=stop(0.2),
+          question=lambda _out, _needs: "Do these examples show what you asked for?", shows=show_examples)
 BUILD = ROLE.step(
     "build", output=Built, needs=[RUNNER, SPECIFY], project="write", may_change=("**", *(f"!{t}" for t in fb.TESTS)),
     check=built, deadline=3600.0,

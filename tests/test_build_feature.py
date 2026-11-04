@@ -6,12 +6,24 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from jaynes.conductor import Conductor
-from jaynes.role import Checked, Fail, Pass, Witnesses
+from jaynes.role import Checked, Fail, Pass, StepContext, Witnesses
 from jaynes.roles import build_feature as bf
+from jaynes.roles.references import chrome
 from jaynes.verify import verify
 from tests.fakes import Scripted
-from tests.test_fix_bug import PYTHON, copy, edit, git, pytestmark, python, ran_by, repo  # noqa: F401  # pyright: ignore[reportUnusedImport]
+from tests.test_fix_bug import (  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    PYTHON,
+    copy,
+    edit,
+    git,
+    pytestmark,
+    python,
+    ran_by,
+    repo,
+)
 
 TEST = "from calc import mul\n\n\ndef test_mul_multiplies():\n    assert mul(2, 3) == 6\n"
 MUL = "def add(a, b):\n    return a - b\n\n\ndef mul(a, b):\n    return a * b\n"
@@ -43,16 +55,44 @@ def test_each_example_names_a_test_that_is_in_the_tests(repo: Path, tmp_path: Pa
     assert isinstance(made_up, Fail) and "test_mul_by_zero is not in tests/test_mul.py" in made_up.reasons[0]
     none = bf.fails_first(spec(examples=[]), needs)
     assert isinstance(none, Fail) and "examples" in none.reasons[0]
-    long = bf.fails_first(spec(examples=[{"case": "Multiplying 2 by 3, " * 8, "result": "gives 6",
+    long = bf.fails_first(spec(examples=[{"case": "Multiplying 2 by 3, " * 3, "result": "gives 6",
                                          "test": "test_mul_multiplies"}]), needs)
-    assert isinstance(long, Fail) and "is 159 characters" in long.reasons[0] and "at most 100" in long.reasons[0]
+    assert isinstance(long, Fail) and "is 59 characters" in long.reasons[0] and "at most 50" in long.reasons[0]
+    wordy = bf.fails_first(spec(examples=[{"case": "Multiplying 2 by 3", "result": "it gives six, " * 6,
+                                          "test": "test_mul_multiplies"}]), needs)
+    assert isinstance(wordy, Fail) and "at most 70" in wordy.reasons[0]
+    huge = bf.fails_first(spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6",
+                                         "test": "test_mul_multiplies", "screen": "<p>6</p>" * 6000}]), needs)
+    assert isinstance(huge, Fail) and "the screen of example 1" in huge.reasons[0]
 
 
-def test_the_tests_stop_shows_the_examples_in_front_and_the_agents_summary_below() -> None:
-    shown = bf.show_examples(spec(), Witnesses({}))
-    assert [(x.title, x.text, x.more) for x in shown] == [
-        ("Multiplying 2 by 3", "gives 6.", False),
-        ("What the tests cover", "mul multiplies two numbers. In tests/test_mul.py.", True)]
+SCREEN = "<html><body style='background:#123456'><h1>2 x 3 = 6</h1></body></html>"
+
+
+def test_the_examples_stop_shows_each_example_with_its_screen_and_the_agents_summary_below() -> None:
+    drawn = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                            "screen": SCREEN},
+                           {"case": "Multiplying 0 by 3", "result": "gives 0", "test": "test_mul_multiplies"}])
+    needs = Witnesses(ran_by(specify=Checked("specify", drawn, "h", "c"),
+                             sketch=Checked("sketch", bf.Sketched(pictures=["example-1.png", ""]), "h", "c")))
+    shown = bf.show_examples(None, needs)
+    assert [(x.title, x.text, x.more, [(p.step, p.file) for p in x.pictures]) for x in shown] == [
+        ("Multiplying 2 by 3", "gives 6.", False, [("sketch", "example-1.png")]),
+        ("Multiplying 0 by 3", "gives 0.", False, []),
+        ("What the tests cover", "mul multiplies two numbers. In tests/test_mul.py.", True, [])]
+
+
+@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+def test_jaynes_draws_each_screen_the_agent_described_and_nothing_else(tmp_path: Path) -> None:
+    drawn = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                            "screen": SCREEN + "<img src='https://example.com/x.png'>"},
+                           {"case": "Multiplying 0 by 3", "result": "gives 0", "test": "test_mul_multiplies"}])
+    ctx = StepContext("r1", "add mul", Witnesses(ran_by(specify=Checked("specify", drawn, "h", "c"))), tmp_path)
+    out = bf.draw_sketches(ctx)
+    assert out.pictures == ["example-1.png", ""]
+    png = (tmp_path / "files" / "example-1.png").read_bytes()
+    assert png.startswith(b"\x89PNG")
+    assert sorted(p.name for p in (tmp_path / "files").iterdir()) == ["example-1.png"]
 
 
 def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_path: Path) -> None:
@@ -67,17 +107,23 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     assert verify(bf.ROLE) == []
     agent = Scripted(name="claude", plan={
         ("specify", 1): edit({"tests/test_mul.py": TEST}, spec().model_dump()),
+        ("specify", 2): edit({"tests/test_mul.py": TEST}, spec().model_dump()),
         ("build", 1): edit({"tests/test_mul.py": "def test_mul_multiplies():\n    pass\n"},
                            {"summary": "s", "files": []}),
         ("build", 2): edit({"calc.py": MUL}, {"summary": "adds mul", "files": ["calc.py"]}),
     })
     c = Conductor(tmp_path / "home", runtimes={"claude": lambda: agent})
     first = c.run(bf.ROLE, "add mul(a, b)", run_id="r1", project=repo)
-    assert (first.status, first.step) == ("waiting", "specify")
+    assert (first.status, first.step) == ("waiting", "agree")
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
     assert opened["question"] == "Do these examples show what you asked for?"
+    assert [x["title"] for x in opened["shown"]] == ["Multiplying 2 by 3", "What the tests cover"]
 
-    c.answer(bf.ROLE, "r1", "specify", "accept", by="person")
+    c.answer(bf.ROLE, "r1", "agree", "return", note="show 2 by 4 too", to="specify", by="person")
+    again = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
+    assert (again.status, again.step) == ("waiting", "agree")
+    assert "show 2 by 4 too" in agent.prompts[-1]
+    c.answer(bf.ROLE, "r1", "agree", "accept", by="person")
     last = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
     assert (last.status, last.step) == ("waiting", "accept")
     [rejected] = [e.payload for e in c.store.events("TurnRejected", run_id="r1")]

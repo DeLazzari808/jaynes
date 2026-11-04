@@ -55,7 +55,9 @@ def dialog(c: Conductor, role: Role, run_id: str) -> dict[str, Any] | None:
         question += " Type the numbers you choose, most important first; Accept keeps them all in this order."
         accept = "All of them are right, in the order shown: the run goes on."
     # the link right after the question: Claude Code cuts a long question at its end
-    question += f"\nOr answer on the page: {page(c.home)}/stop/{run_id}/{w.step}"
+    pictures = sum(len(x.get("pictures") or []) for x in shown or [])
+    question += f"\nOr answer on the page: {page(c.home)}/stop/{run_id}/{w.step}" + (
+        f", with {pictures} picture{'s' * (pictures > 1)}" if pictures else "")
     if shown:  # Claude Code hides a preview it cannot show in full; the question always shows
         question += "\n\n" + _sentences(shown, chosen_apart=target.choose is not None, front_only=True)
     return {"questions": [{
@@ -97,8 +99,9 @@ def _evidence(c: Conductor, role: Role, st: RunState, s: StepState, target: Step
             parts.append(f"From {need.name}:\n{_text(_value(c, st.step(need.name), need))}")
     else:
         parts.append(f"Output:\n{_text(_value(c, s, target))}")
-    for step, patch in c.patches(role, st):
-        parts.append(f"Changes from {step}:\n{patch.decode(errors='replace')}")
+    if not shown:  # a stop that shows its output in sentences leaves the code to the page
+        for step, patch in c.patches(role, st):
+            parts.append(f"Changes from {step}:\n{patch.decode(errors='replace')}")
     text = "\n\n".join(parts)
     if len(text) > LIMIT:
         text = (text[:LIMIT] + f"\n\n[{len(text) - LIMIT} more characters not shown: read them in the review page, "
@@ -113,8 +116,8 @@ def _sentences(shown: list[dict[str, Any]], chosen_apart: bool, front_only: bool
         title, text = str(x["title"]), str(x.get("text") or "")
         return f"{title.rstrip('.')}: {text}" if text else title
     main = [line(x) for x in shown if not x.get("more") and not (chosen_apart and x.get("id"))]
-    if front_only:
-        return "\n".join(main)
+    if front_only:  # numbered when there are several, so the person can say which one is wrong
+        return "\n".join(f"{n}. {x}" for n, x in enumerate(main, 1)) if len(main) > 1 else "\n".join(main)
     more = [line(x) for x in shown if x.get("more")]
     pictures = sum(len(x.get("pictures") or []) for x in shown)
     out = "\n".join(main)
