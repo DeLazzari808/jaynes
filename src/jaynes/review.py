@@ -1875,7 +1875,7 @@ def _call(home: Path, shared: Shared, link: str, stopping: threading.Event, ever
     while not stopping.wait(every):
         try:
             now = {(w.run_id, w.step, w.since) for w in Conductor(home).queue(idle_after=shared.idle_after)
-                   if w.needs_person and not w.here}  # a run from a terminal asks its stops there
+                   if w.needs_person}
         except Exception:  # a locked or half-written log is read again on the next tick
             continue
         if seen is not None and now - seen and time.time() - shared.polled > alive:

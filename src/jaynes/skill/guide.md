@@ -19,13 +19,12 @@ with what was agreed in conversation.
    Jaynes works from the project's last commit: uncommitted changes are not in the run.
    Say nothing about Jaynes while it works.
 3. When the run ends it prints one line of JSON. By its `status`:
-   - `waiting`: run `jaynes ask <run>` and call AskUserQuestion with the JSON it prints as the input, exactly
-     as printed, with nothing changed or added. The tool result then says what Jaynes recorded. When it says to
-     continue, run `jaynes run <run>` in the background and come back to this step; otherwise do what it says.
-     If `jaynes ask` fails, tell the person what it printed.
-   - `blocked`: tell the person why, from `reasons`, in a sentence or two.
+   - `waiting`: the person answers on the page. Tell them in one line its `question` and its `page` link, as
+     printed, then run `jaynes wait <run>` in the background: it returns once they answered, with a new line of
+     JSON, and you come back to this step with it.
+   - `blocked`: tell the person why, from `reasons`, in a sentence or two, with the `page` link.
    - `paused`: the agent's plan ran out; the run continues by itself at `until`.
    - `finished`: tell the person, in one sentence, that the change is on the branch `jaynes/<run>`, and offer to
      merge it.
-4. Never answer a stop yourself and never choose for the person: only the person answers, in the dialog.
-   Never open the review page's link. The person can see a stop in full on the review page, opened by `jaynes`.
+4. Never answer a stop yourself and never choose for the person: only the person answers, on the page. Never
+   open the page's link yourself; Jaynes calls the person to it.

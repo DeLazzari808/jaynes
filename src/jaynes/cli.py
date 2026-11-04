@@ -244,10 +244,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     from jaynes.project import ProjectError
     from jaynes.review import ensure_page
     skill.refresh()
-    first = next(iter(c.store.events("RunStarted", run_id=run_id)), None)
-    here = args.here or bool(first and first.payload.get("here"))
-    if not here:
-        ensure_page(c.home)  # the person sees the run, and is called at its stops
+    ensure_page(c.home)  # the person sees the run, and is called at its stops, wherever it started
     try:
         result = c.run(r, task, run_id, started=started,
                        project=Path(args.project) if args.project and args.role else None)
@@ -255,10 +252,40 @@ def cmd_run(args: argparse.Namespace) -> None:
         sys.exit(str(err))
     except InputError as err:
         sys.exit("\n".join(err.reasons))
-    if result.status in ("waiting", "blocked") and not here:
+    if result.status in ("waiting", "blocked"):
         ensure_page(c.home)  # in case it was closed while the run worked
-    print(json.dumps({"run": run_id, "status": result.status, "step": result.step, "until": result.until,
-                      "reasons": list(result.reasons)}))
+    print(json.dumps(_where(c, run_id, result), ensure_ascii=False))
+
+
+def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
+    """Where a run is, as one line of JSON; at a stop, its question and the page where the person answers it."""
+    from jaynes.ask import page
+    out: dict[str, Any] = {"run": run_id, "status": result.status, "step": result.step, "until": result.until,
+                           "reasons": list(result.reasons)}
+    if result.status == "waiting":
+        w = next((x for x in c.queue() if x.run_id == run_id and x.kind == "stop"), None)
+        out["question"] = w.question if w else None
+        out["page"] = f"{page(c.home)}/stop/{run_id}/{result.step}"
+    elif result.status == "blocked":
+        out["page"] = f"{page(c.home)}/run/{run_id}"
+    return out
+
+
+def cmd_wait(args: argparse.Namespace) -> None:
+    """Wait until the person answers the run's stop on the page, then go on with the run as ``jaynes run`` does,
+    and print where it is then. The page may already be going on with it; this waits for that to let go."""
+    from jaynes.conductor import Conductor, RunBusy
+    c = Conductor(_home(args))
+    while any(w.run_id == args.run and w.needs_person for w in c.queue()):
+        time.sleep(args.every)
+    while True:
+        try:
+            cmd_run(argparse.Namespace(id=args.run, role=None, home=args.home, here=False, preview=None,
+                                       preview_path=None, preview_ports=None, suite=None, input=[], runtime=[],
+                                       project=None))
+            return
+        except RunBusy:
+            time.sleep(args.every)
 
 
 def cmd_check(args: argparse.Namespace) -> None:
@@ -502,6 +529,11 @@ def main(argv: list[str] | None = None) -> int:
     o.add_argument("run")
     o.add_argument("step")
     o.add_argument("--home")
+    wt = sub.add_parser("wait", help="wait until the person answers a run's stop on the page, then go on with the "
+                                     "run")
+    wt.add_argument("run")
+    wt.add_argument("--home")
+    wt.add_argument("--every", type=float, default=2.0, help="seconds between looks")
     ak = sub.add_parser("ask", help="the open stop of a run, as input for Claude Code's question dialog")
     ak.add_argument("run")
     ak.add_argument("--home")
@@ -523,7 +555,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
-     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "output": cmd_output,
+     "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
      "guide": cmd_guide}[args.cmd](args)
     return 0
 

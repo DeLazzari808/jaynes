@@ -114,10 +114,9 @@ Missing, roughly in order:
   the question should fit in one, with what it is about below it.
 - **Old runs leave the queue.** A run waiting for two days from a test that
   was dropped sits next to today's with the same weight.
-- **The page as the place to answer, the terminal only telling you.**
-  Claude Code's question dialog cannot show long evidence ("preview cannot
-  be shown in full"), so a terminal stop shows the question alone. Next, the
-  page installed as an app (a PWA) with macOS notifications.
+- **The page as an app.** Stops are answered on the page, and the terminal
+  only says where; next, the page installed as an app (a PWA) with macOS
+  notifications.
 - **More built-in roles** that need no design taste to check, such as
   upgrading dependencies.
 - **Two or three directions to choose from** in redesign. Stops can let you
@@ -258,7 +257,7 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes wait` (returns once you answered a run's stop on the page), `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps

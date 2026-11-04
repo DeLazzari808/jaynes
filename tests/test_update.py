@@ -106,7 +106,7 @@ def test_jaynes_skill_installs_the_command_and_prints_what_to_do(capsys: pytest.
     text = skill.path().read_text()
     assert text.startswith("---\nname: jaynes\n") and "$ARGUMENTS" in text
     out = capsys.readouterr().out
-    assert "/jaynes <task>" in out and "jaynes run --here --role" in out and "jaynes ask" in out
+    assert "/jaynes <task>" in out and "jaynes run --here --role" in out and "jaynes wait" in out
 
 
 def test_the_skill_only_says_when_and_jaynes_guide_says_how_naming_every_built_in_role(
@@ -116,7 +116,7 @@ def test_the_skill_only_says_when_and_jaynes_guide_says_how_naming_every_built_i
     assert "jaynes guide" in text and "jaynes run" not in text  # steps change with the CLI, not with the plugin
     cli.main(["guide"])
     out = capsys.readouterr().out
-    assert "jaynes run --here --role" in out and "jaynes ask" in out and "$ARGUMENTS" not in out
+    assert "jaynes run --here --role" in out and "jaynes wait" in out and "$ARGUMENTS" not in out
     assert all(f"`{name}`" in out for name in BUILT_IN)
 
 

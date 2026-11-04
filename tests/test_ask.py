@@ -117,16 +117,33 @@ def test_a_dialog_that_is_not_jaynes_is_left_alone_and_a_broken_event_breaks_not
     assert "could not read" in out.getvalue()
 
 
-def test_a_run_from_the_terminal_leaves_the_page_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_run_from_the_terminal_calls_the_person_to_the_page_and_says_where(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     opened: list[Path] = []
     monkeypatch.setattr("jaynes.review.ensure_page", opened.append)
     run = started(tmp_path, "tests.stopped:ROLE", "quick=tests.stopped:Agent", "--here")
-    cli.main(["run", run, "--home", str(tmp_path)])  # continued: still from the terminal
-    assert opened == []
+    printed = json.loads(capsys.readouterr().out)
+    assert (printed["status"], printed["question"]) == ("waiting", "Ship 'draft one'?")
+    assert printed["page"] == f"http://127.0.0.1:8740/stop/{run}/draft"
+    assert set(opened) == {tmp_path}  # the page is where the person answers, wherever the run started
     [w] = Conductor(tmp_path).queue()
-    assert w.here  # so the page does not open for it either
-    started(tmp_path / "other", "tests.stopped:ROLE", "quick=tests.stopped:Agent")
-    assert opened == [tmp_path / "other", tmp_path / "other"]
+    assert w.needs_person
+
+
+def test_wait_returns_once_the_person_answered_on_the_page_with_where_the_run_is_then(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    import threading
+
+    from tests import stopped
+    monkeypatch.setattr("jaynes.review.ensure_page", lambda _home: None)
+    run = started(tmp_path, "tests.stopped:ROLE", "quick=tests.stopped:Agent", "--here")
+    capsys.readouterr()
+    answer = threading.Timer(0.5, lambda: Conductor(tmp_path).answer(stopped.ROLE, run, "draft", "accept",
+                                                                     by="person"))
+    answer.start()
+    cli.main(["wait", run, "--home", str(tmp_path), "--every", "0.1"])
+    answer.join()
+    assert json.loads(capsys.readouterr().out)["status"] == "finished"
 
 
 def test_ask_refuses_while_the_hook_is_missing(tmp_path: Path) -> None:
