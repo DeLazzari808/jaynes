@@ -664,3 +664,22 @@ def test_a_restart_keeps_the_key_so_the_open_tab_still_answers_and_no_tab_opens(
     monkeypatch.setattr("webbrowser.open", opened.append)
     review.serve(home, port + 1, browser=True)
     assert made == [first.key] and opened == [] and review.KEPT not in review.os.environ  # runs never see it
+
+
+LONG_TASK = ("Implement the team baseline and the ticket return ranking as Go packages in the module tenure, working on "
+             "a frozen snapshot. First read CONTEXT.md and the sections Passes and Slice 1 of PLAN.md. " * 6).strip()
+
+
+def test_a_run_is_titled_by_a_line_and_its_whole_task_is_one_click_away(tmp_path: Path) -> None:
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", LONG_TASK,
+              "--runtime", "quick=tests.stopped:Agent"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    base, server = serving(tmp_path)
+    try:
+        title = "Implement the team baseline and the ticket return ranking as Go packages in the module tenure…"
+        for page in (get(f"{base}/"), get(f"{base}/stop/{run}/draft")):
+            assert title in page and LONG_TASK not in page
+        whole = get(f"{base}/run/{run}")
+        assert f"<b>{title}</b>" in whole and f'<summary>The whole task</summary><div class="task">{LONG_TASK}' in whole
+    finally:
+        server.shutdown()

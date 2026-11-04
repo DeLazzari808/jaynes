@@ -65,6 +65,17 @@ StageState = Literal["jaynes", "checked", "accepted", "changed", "sampled", "wai
 PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
             ".gif": "image/gif"}  # no SVG: it can carry scripts
 
+def headline(task: str, most: int = 100) -> str:
+    """A run's title: its task's first sentence, or as many whole words as fit in ``most`` characters. A task can be
+    a whole plan, thousands of characters; the run's page keeps all of it one click away."""
+    line = next((x.strip() for x in task.splitlines() if x.strip()), "")
+    sentence = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0]
+    if len(sentence) <= most:
+        return sentence
+    cut = line[:most + 1].rsplit(" ", 1)[0] if " " in line[:most + 1] else line[:most]
+    return cut.rstrip(" ,;:.") + "…"
+
+
 def q(segment: str) -> str:
     """One URL path segment."""
     return urllib.parse.quote(segment, safe="")
@@ -390,6 +401,7 @@ details.steps .foot { margin: 10px -18px -16px; }
 details.fold { border-top: 1px solid var(--line); padding-top: 14px; }
 details.fold > summary { cursor: pointer; font-family: var(--mono); font-size: 12px; color: var(--dim); }
 details.fold > summary span { color: var(--faint); margin-left: 6px; }
+details.fold .task { margin: 10px 0 14px; white-space: pre-wrap; color: var(--dim); max-width: 72ch; }
 details.fold[open] > summary { margin-bottom: 18px; }
 details.fold > * + * { margin-top: 22px; }
 .bar .row { flex-wrap: wrap; }
@@ -704,7 +716,7 @@ class Review:
                 state = {"stop": "waiting for you", "blocked": "blocked", "idle": "not running",
                          "running": "working", "paused": "paused for quota"}[w.kind]
                 t = totals(events)
-                row = (f'<div class="item on {w.kind}"><a href="{href}"><div class="t">{esc(w.task)}</div>'
+                row = (f'<div class="item on {w.kind}"><a href="{href}"><div class="t">{esc(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">Step {where} of {len(names)}, {state}</span>{started}'
                        f'</div></a><details class="steps"><summary>Steps</summary>{stage_list(run_stages)}'
                        f'<div class="foot"><span>started</span><b>{age(now - events[0].ts)} ago</b>'
@@ -712,7 +724,7 @@ class Review:
                        f'<span>tokens</span><b>{tokens(t.tokens_in)} in, {tokens(t.tokens_out)} out</b>'
                        f'<span>you answered</span><b>{t.answered} of {t.stops} stops</b></div></details></div>')
             else:
-                row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{esc(w.task)}</div>'
+                row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{esc(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
                        f'{stage_strip(run_stages)}</a>')
             (waiting if w.kind == "stop" else others).append(row)
@@ -748,7 +760,7 @@ class Review:
         role = self.role_of(run_id)
         target = next((s for s in role.steps if s.name == step), None) if role else None
         s = st.steps.get(step, StepState())
-        crumbs = (f'<div class="crumbs"><span>{esc(w.role)}</span>/<a href="/run/{q(run_id)}">{esc(w.task)}</a>/'
+        crumbs = (f'<div class="crumbs"><span>{esc(w.role)}</span>/<a href="/run/{q(run_id)}">{esc(headline(w.task))}</a>/'
                   f'<b>{esc(step)}</b><span class="r">{esc(self._where(s))}</span></div>')
         parts: list[str] = []
         if w.kind == "idle":
@@ -1012,7 +1024,7 @@ class Review:
                  "running" if self.c._held(run_id) else "idle")  # pyright: ignore[reportPrivateUsage]
         t = totals(events)
         crumbs = (f'<div class="crumbs"><a href="/role/{q(str(started.get("role", "")))}">{esc(str(started.get("role", "")))}</a>/'
-                  f'<b>{esc(str(started.get("task", "")))}</b><span class="r">{esc(run_id)}</span></div>')
+                  f'<b>{esc(headline(str(started.get("task", ""))))}</b><span class="r">{esc(run_id)}</span></div>')
         rows = "".join(self._event_row(ev) for ev in events)
         w = next((x for x in self.queue() if x.run_id == run_id and x.needs_person), None)
         call = ""  # what the run waits for, in one line, one click from it
@@ -1026,7 +1038,10 @@ class Review:
         made = (f'<div class="box"><table class="kv"><tr><td>branch</td><td class="m">{esc(str(st.branch["branch"]))} '
                 f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr></table></div>'
                 if st.branch else "")
-        body = (call + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
+        task = str(started.get("task", ""))
+        whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{esc(task)}</div></details>'
+                 if headline(task) != task else "")
+        body = (call + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
                 f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
                 + f'<details class="fold"><summary>Details <span>turns, tokens and events</span></summary>'
                 f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
@@ -1321,7 +1336,7 @@ class Review:
                   f'<th>steps checked</th><th>rounds until accepted</th><th>tokens per finished run</th>'
                   f'<th>your minutes</th></tr>{week_rows}</table></div></div>')
         run_rows = "".join(
-            f'<tr><td><a href="/run/{q(r)}">{esc(str(evs[0].payload.get("task", "")))}</a></td>'
+            f'<tr><td><a href="/run/{q(r)}">{esc(headline(str(evs[0].payload.get("task", ""))))}</a></td>'
             f'<td class="m">{esc(r)}</td></tr>' for r, evs in reversed(list(by_run.items())))
         runs_html = f'<div><div class="label">Runs</div><div class="box"><table>{run_rows}</table></div></div>'
         note = "" if role else '<div class="sub">The role module cannot be imported here, so stops are not listed.</div>'
