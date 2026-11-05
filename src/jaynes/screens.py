@@ -1,8 +1,9 @@
 """What steps about a product's screens share: serving a copy of it, and the facts and citations agents may use.
 
 ``serve`` runs the run's preview command on a copy of the project, in a box (``jaynes.sandbox``), with a fresh clone
-of the run's frozen data in place, and yields the origin Jaynes's Chrome (``jaynes.browser``) looks at. Never the
-person's folder, never their live data.
+of the run's frozen data in place, if it has any, and yields the origin Jaynes's Chrome (``jaynes.browser``) looks at.
+Never the person's folder. What data the product sees is the role's promise, not this module's: screen-design freezes
+a copy, so it never touches live data; build-feature gives none, so a product that reads the person's files shows them.
 
 Agents see a summary of each API response, not the response: how many items, how values are spread, a few samples
 with their ids. A number an agent writes goes in a ``Count``, which names a query over the raw response; Jaynes
