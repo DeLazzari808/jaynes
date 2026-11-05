@@ -376,6 +376,7 @@ RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read
 IDENTITY = ROLE.step("identity", output=Identity, run_by=read_identity, project="read", max_turns=1)
 SPECIFY = ROLE.step(
     "specify", output=Spec, needs=[RUNNER, IDENTITY], project="write", may_change=fb.TESTS, check=fails_first,
+    deadline=3600.0,
     instructions="The task is the plan the person agreed on. Write the smallest tests that show the feature does "
                  "what the plan says, next to the project's other tests and in their style. They must fail now, "
                  "because the feature does not exist yet. If the feature will change what an existing test expects, "

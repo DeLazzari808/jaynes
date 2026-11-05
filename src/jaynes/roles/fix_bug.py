@@ -217,7 +217,7 @@ ROLE = role("fix-bug")
 RUNNER = ROLE.step("runner", output=Runner, run_by=find_runner, project="read", max_turns=1)
 REPRODUCE = ROLE.step(
     "reproduce", output=Reproduction, needs=[RUNNER], project="write", may_change=TESTS, check=fails_for_the_bug,
-    stop=stop(0.2), question=ask_about_bug, shows=show_bug,
+    stop=stop(0.2), question=ask_about_bug, shows=show_bug, deadline=3600.0,
     ends=lambda out: not out.reproduced,
     instructions="Find the bug the task describes and write the smallest test that fails because of it, next to "
                  "the project's other tests and in their style. When the task lists what must hold, write a test "

@@ -101,6 +101,8 @@ Missing, roughly in order:
 
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
+- **A turn past its deadline keeps its work.** The next attempt starts from
+  nothing, even when the tests were almost written.
 - **Old runs leave the queue.** A run waiting for two days from a test that
   was dropped sits next to today's with the same weight.
 - **The page as an app.** Stops are answered on the page, and the terminal
