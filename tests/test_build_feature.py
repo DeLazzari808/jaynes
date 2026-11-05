@@ -241,7 +241,7 @@ def test_with_a_preview_each_screen_names_its_page_and_jaynes_photographs_it_for
 
 
 @pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
-def test_the_merge_stop_shows_each_example_on_the_real_screen(repo: Path, tmp_path: Path) -> None:
+def test_the_merge_stop_shows_each_page_on_the_real_screen_and_claims_no_example(repo: Path, tmp_path: Path) -> None:
     built = copy(repo, tmp_path, {"mul.html": SCREEN})
     agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
                              "screen": SCREEN, "page": "/mul.html"},
@@ -259,8 +259,9 @@ def test_the_merge_stop_shows_each_example_on_the_real_screen(repo: Path, tmp_pa
                              build=Checked("build", bf.Built(summary="adds mul", files=["calc.py"]), "h", "c")))
     shown = bf.show_built(None, needs)
     assert [(x.title, [(p.step, p.file) for p in x.pictures]) for x in shown] == [
-        ("What changed", []), ("All 2 agreed examples pass", []), ("Multiplying 2 by 3", [("look", "screen-1.png")]),
-        ("Multiplying 0 by 3", []), ("Files changed", [])]
+        ("What changed", []), ("All 2 agreed examples pass", []), ("The real screen at /mul.html", [("look", "screen-1.png")]),
+        ("Multiplying 2 by 3", []), ("Multiplying 0 by 3", []), ("Files changed", [])]
+    assert "not each example" in shown[2].text  # the data on the computer is not the example's: T-7 was never there
 
 
 @pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")

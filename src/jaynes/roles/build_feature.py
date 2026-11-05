@@ -329,25 +329,16 @@ def look_at_screens(ctx: StepContext) -> Looked:
 
 def show_built(_: None, needs: Witnesses) -> list[Shown]:
     """What changed, in the agent's few sentences, that the agreed examples pass, which Jaynes ran itself, each page
-    on the real screen, and, folded, the files and the examples no picture of their own shows. A page several examples
-    share is one picture of it as it is now: it cannot show each of their situations."""
+    on the real screen, and, folded, the examples and the files. A picture is the page as it is now, with the data on
+    this computer: it cannot show an example's situation, so it is never titled as one."""
     made: Built = needs[BUILD].value
     agreed: Spec = needs[SPECIFY].value
     pictures: list[str] = needs[LOOK].value.pictures
-    on_file: dict[str, list[int]] = {}
-    for at, file in enumerate(pictures[:len(agreed.examples)]):
-        if file:
-            on_file.setdefault(file, []).append(at)
-    seen: list[Shown] = []
-    for file, shared in on_file.items():
-        first = agreed.examples[shared[0]]
-        picture = (Picture(LOOK.name, file, "the real screen"),)
-        seen.append(Shown(first.case.strip(), sentence(first.result), picture) if len(shared) == 1 else
-                    Shown(f"The real screen at {first.page.strip()}", "This page as it is now, with the data on this "
-                          "computer, not each example: the tests prove those.", picture))
-    alone = {shared[0] for shared in on_file.values() if len(shared) == 1}
-    unseen = [Shown(e.case.strip(), sentence(e.result), more=True)
-              for at, e in enumerate(agreed.examples) if at not in alone]
+    on_file = {file: e for file, e in zip(pictures, agreed.examples, strict=False) if file}
+    seen = [Shown(f"The real screen at {e.page.strip()}", "This page as it is now, with the data on this computer, not "
+                  "each example: the tests prove those.", (Picture(LOOK.name, file, "the real screen"),))
+            for file, e in on_file.items()]
+    unseen = [Shown(e.case.strip(), sentence(e.result), more=True) for e in agreed.examples]
     n = len(agreed.examples)
     passed = Shown("The agreed example passes" if n == 1 else f"All {n} agreed examples pass",
                    f"Jaynes ran {'its test' if n == 1 else 'their tests'} and the whole suite itself, in a box without "
