@@ -15,8 +15,9 @@ with what was agreed in conversation.
    Jaynes.
 2. In the background, from the project's folder, run
    `jaynes run --here --role <role> --task "<the task>" --project .`
-   If the project has a dev server, or the task adds one, add `--preview "<its command, with {port} as the
-   port>"`: the person then sees the real screens before the merge.
+   If the project has a dev server, or the task adds one, always add `--preview "<its command, with {port} as
+   the port>"`, even when the task changes only part of a screen: without it the person merges a screen they
+   never saw, and it cannot be added once the run has started.
    Jaynes works from the project's last commit: uncommitted changes are not in the run.
    Say nothing about Jaynes while it works.
 3. When the run ends it prints one line of JSON. By its `status`:

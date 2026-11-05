@@ -288,7 +288,11 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
                   "those.", more=True) if identity.colors or identity.fonts else \
         Shown("No identity yet", "The screens look as the agent drew them, until visual-identity runs.", more=True)
     screens_shown = any(e.screen.strip() for e in out.examples)
+    blind = screens_shown and not needs.started.get("preview")  # told now, while starting again costs little
     return [*(Shown(e.case.strip(), sentence(e.result), drawn(n)) for n, e in enumerate(out.examples)),
+            *([Shown("No real screens at the merge", "This run started without a preview, so you will judge the "
+                     "merge without seeing them. To see them, start it again with --preview now, before it builds.")]
+              if blind else []),
             Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True),
             *([about] if screens_shown else [])]
 

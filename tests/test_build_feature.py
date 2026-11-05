@@ -80,7 +80,8 @@ def test_the_examples_stop_shows_each_example_with_its_screen_and_the_agents_sum
                             "screen": SCREEN},
                            {"case": "Multiplying 0 by 3", "result": "gives 0", "test": "test_mul_multiplies"}])
     needs = Witnesses(ran_by(specify=Checked("specify", drawn, "h", "c"), identity=NONE,
-                             sketch=Checked("sketch", bf.Sketched(pictures=["example-1.png", ""]), "h", "c")))
+                             sketch=Checked("sketch", bf.Sketched(pictures=["example-1.png", ""]), "h", "c")),
+                      started={"preview": SERVED})
     shown = bf.show_examples(None, needs)
     assert [(x.title, x.text, x.more, [(p.step, p.file) for p in x.pictures]) for x in shown] == [
         ("Multiplying 2 by 3", "gives 6.", False, [("sketch", "example-1.png")]),
@@ -91,6 +92,18 @@ def test_the_examples_stop_shows_each_example_with_its_screen_and_the_agents_sum
                              sketch=Checked("sketch", bf.Sketched(pictures=["", ""]), "h", "c")))
     assert (bf.show_examples(None, needs)[-1].title, bf.show_examples(None, needs)[-1].text) == (
         "The project's identity", "3 colours and 1 font, in static/app.css; the screens use only those.")
+
+
+def test_the_examples_stop_warns_that_a_run_without_a_preview_will_have_no_real_screens_at_the_merge() -> None:
+    drawn = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                            "screen": SCREEN}])
+    ran = ran_by(specify=Checked("specify", drawn, "h", "c"), identity=NONE,
+                 sketch=Checked("sketch", bf.Sketched(pictures=["example-1.png"]), "h", "c"))
+    without = [(x.title, x.more) for x in bf.show_examples(None, Witnesses(ran))]
+    assert ("No real screens at the merge", False) in without
+    assert without.index(("No real screens at the merge", False)) == 1  # after the examples, before what is folded
+    served = bf.show_examples(None, Witnesses(ran, started={"preview": SERVED}))
+    assert "No real screens at the merge" not in [x.title for x in served]
 
 
 def test_the_examples_stop_says_nothing_of_the_identity_when_no_example_shows_a_screen() -> None:
