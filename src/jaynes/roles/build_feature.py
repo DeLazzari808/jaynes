@@ -69,8 +69,9 @@ class Example(BaseModel):
     result: str = Field(description="what the person sees then, such as 'it shows 13 days left'; at most 70 "
                                     "characters")
     test: str = Field(description="the name of the test that checks this, as written in the test file")
-    screen: str = Field("", description="when the person sees this on a screen: that screen as you will build it, "
-                                        "with this example's values, as one HTML page with its styles inline, "
+    screen: str = Field("", description="when the person sees this on a screen: the part of that screen this example "
+                                        "is about, as you will build it, with this example's values, as one HTML "
+                                        "page with its styles inline, "
                                         "nothing loaded from elsewhere; empty when nothing shows on a screen")
     page: str = Field("", description="when the run has a preview and this shows on a screen: the path of that screen "
                                       "on the running product, such as /t/charter?tab=team; Jaynes photographs it "
@@ -374,8 +375,9 @@ SPECIFY = ROLE.step(
                  "you quote. Then give one to five examples of what they check, in the person's words with real "
                  "values and no code, each naming its test: the person decides from them. Keep each short: the "
                  "situation in at most 50 characters, what they see in at most 70. When an example shows "
-                 "something on a screen, draw that screen in its screen field as you will build it, with the "
-                 "example's values: Jaynes turns it into a picture beside the example. When the run has a "
+                 "something on a screen, draw in its screen field the part of that screen the example is about, "
+                 "as you will build it, with the example's values, leaving out what stays as it was: Jaynes turns "
+                 "it into a picture beside the example. When the run has a "
                  "preview, say in page where that screen will be on the running product: Jaynes photographs it "
                  "there for the merge. A screen uses only the "
                  "colours and fonts in inputs/identity.json, the project's identity, as its variables or values; "
