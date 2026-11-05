@@ -159,7 +159,7 @@ def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_pa
     assert isinstance(wordy, Fail) and "summary is 560 characters, at most 400" in wordy.reasons[0]
     old = Witnesses(ran_by(specify=agreed, look=Checked("look", bf.Looked(pictures=[""]), "h", "c"),
                            build=Checked("build", bf.Built(summary="what changed, " * 40, files=[]), "h", "c")))
-    [changed, _] = bf.show_built(None, old)  # a summary from before the limit is cut here, whole under Details
+    changed, *_ = bf.show_built(None, old)  # a summary from before the limit is cut here, whole under Details
     assert changed.text.endswith("…") and len(changed.text) <= bf.SUMMARY + 1
 
 
@@ -190,7 +190,9 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     merge = [e.payload for e in c.store.events("StopOpened", run_id="r1")][-1]
     assert merge["question"] == "Merge this feature?"  # the summary is shown below, never as the heading
     assert [(x["title"], x["text"], x["more"]) for x in merge["shown"]] == [
-        ("What changed", "adds mul.", False), ("Files changed", "calc.py.", True)]
+        ("What changed", "adds mul.", False),
+        ("The agreed example passes", "Jaynes ran its test and the whole suite itself, in a box without internet.", False),
+        ("Multiplying 2 by 3", "gives 6.", True), ("Files changed", "calc.py.", True)]
     [rejected] = [e.payload for e in c.store.events("TurnRejected", run_id="r1")]
     assert rejected["step"] == "build" and "tests/test_mul.py" in rejected["reasons"][0]
 
@@ -235,7 +237,8 @@ def test_the_merge_stop_shows_each_example_on_the_real_screen(repo: Path, tmp_pa
                              build=Checked("build", bf.Built(summary="adds mul", files=["calc.py"]), "h", "c")))
     shown = bf.show_built(None, needs)
     assert [(x.title, [(p.step, p.file) for p in x.pictures]) for x in shown] == [
-        ("What changed", []), ("Multiplying 2 by 3", [("look", "screen-1.png")]), ("Files changed", [])]
+        ("What changed", []), ("All 2 agreed examples pass", []), ("Multiplying 2 by 3", [("look", "screen-1.png")]),
+        ("Multiplying 0 by 3", []), ("Files changed", [])]
 
 
 def test_without_a_preview_the_merge_says_how_to_see_the_real_screens(tmp_path: Path) -> None:
@@ -247,4 +250,13 @@ def test_without_a_preview_the_merge_says_how_to_see_the_real_screens(tmp_path: 
     needs = Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c"), look=Checked("look", out, "h", "c"),
                              build=Checked("build", bf.Built(summary="adds mul", files=[]), "h", "c")))
     assert [(x.title, x.more) for x in bf.show_built(None, needs)] == [
-        ("What changed", False), ("No pictures of the real screens", False), ("Files changed", True)]
+        ("What changed", False), ("The agreed example passes", False), ("No pictures of the real screens", False),
+        ("Multiplying 2 by 3", True), ("Files changed", True)]
+
+
+def test_the_merge_stop_names_files_as_the_person_finds_them_in_the_repository() -> None:
+    needs = Witnesses(ran_by(specify=Checked("specify", spec(), "h", "c"),
+                             look=Checked("look", bf.Looked(pictures=[""]), "h", "c"),
+                             build=Checked("build", bf.Built(summary="adds mul", files=["project/calc.py", "mul.py"]),
+                                           "h", "c")))
+    assert bf.show_built(None, needs)[-1].text == "calc.py, mul.py."

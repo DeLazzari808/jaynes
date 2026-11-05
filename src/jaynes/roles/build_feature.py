@@ -106,8 +106,9 @@ class Looked(BaseModel):
 
 
 class Built(BaseModel):
-    summary: str = Field(description="what changed and how it does what the plan asked, for the person reviewing "
-                                     "it, in two or three sentences; at most 400 characters")
+    summary: str = Field(description="what the person can do now that they could not before, in two or three plain "
+                                     "sentences for someone who does not read the code: commands they type, yes; "
+                                     "names of functions, types or files, no; at most 400 characters")
     files: list[str]
 
 
@@ -317,20 +318,29 @@ def look_at_screens(ctx: StepContext) -> Looked:
 
 
 def show_built(_: None, needs: Witnesses) -> list[Shown]:
-    """What changed, in the agent's few sentences, each example on the real screen, and the files, folded."""
+    """What changed, in the agent's few sentences, that the agreed examples pass, which Jaynes ran itself, each one on
+    the real screen, and, folded, the ones with no picture and the files."""
     made: Built = needs[BUILD].value
     agreed: Spec = needs[SPECIFY].value
     pictures: list[str] = needs[LOOK].value.pictures
     summary = made.summary.strip()
     if len(summary) > SUMMARY:  # written before the limit: the first words here, the whole under Details
         summary = summary[:SUMMARY + 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
-    seen = [Shown(e.case.strip(), sentence(e.result), (Picture(LOOK.name, file, "the real screen"),))
-            for e, file in zip(agreed.examples, pictures, strict=False) if file]
+    files = [f.removeprefix("project/") for f in made.files]  # the agent's folder, not the person's repository
+    pictured = dict(enumerate(pictures))
+    seen = [Shown(e.case.strip(), sentence(e.result), (Picture(LOOK.name, pictured[n], "the real screen"),))
+            for n, e in enumerate(agreed.examples) if pictured.get(n)]
+    unseen = [Shown(e.case.strip(), sentence(e.result), more=True)
+              for n, e in enumerate(agreed.examples) if not pictured.get(n)]
+    n = len(agreed.examples)
+    passed = Shown("The agreed example passes" if n == 1 else f"All {n} agreed examples pass",
+                   f"Jaynes ran {'its test' if n == 1 else 'their tests'} and the whole suite itself, in a box without "
+                   "internet.")
     if not seen and any(e.screen.strip() for e in agreed.examples):
         seen = [Shown("No pictures of the real screens", "This run has no preview; a run with --preview shows them "
                                                          "here, as Jaynes sees them.")]
-    return [Shown("What changed", sentence(summary)), *seen,
-            Shown("Files changed", sentence(", ".join(made.files)) if made.files else "None named.", more=True)]
+    return [Shown("What changed", sentence(summary)), passed, *seen, *unseen,
+            Shown("Files changed", sentence(", ".join(files)) if files else "None named.", more=True)]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
