@@ -808,7 +808,9 @@ class Review:
                 f'<tr><td class="m" style="color:var(--red)">{"why" if w.asks else "rejected"}</td><td>{marked(r)}</td>'
                 '</tr>' for r in w.reasons)
                 + "</table></div>")
-            parts.append(self._turns(events, step, s.round))
+            turns = self._turns(events, step, s.round)
+            parts.append(f'<details class="fold"><summary>What the agent did</summary>{turns}</details>' if w.asks
+                         else turns)
             at_branch = (st.blocked or {}).get("at") == "branch"
             bar = (self._run_bar(run_id, cont=False) if at_branch or role is None
                    else self._send_back_bar(run_id, role, st, step))

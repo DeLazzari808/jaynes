@@ -594,6 +594,7 @@ def test_a_run_that_asks_the_person_waits_for_them_and_says_who_needs_them(serve
     assert '<div class="qhead" data-waiting="1">' in page
     assert "The agent needs you at final" in page and "<code>add</code>" in page
     assert "Every attempt of the round was rejected" not in page and 'action="/send-back"' in page
+    assert '<details class="fold"><summary>What the agent did</summary>' in page  # the question opens alone
 
 
 def test_only_stops_wait_for_the_person_and_the_same_task_twice_is_told_apart(served: tuple[str, Path, str]) -> None:
