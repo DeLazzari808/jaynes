@@ -584,6 +584,17 @@ def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_deta
     assert 'data-a="return"' in sight and 'data-a="accept"' in sight  # in sight, with the note
 
 
+def test_an_empty_queue_says_when_runs_are_blocked_and_opens_them(served: tuple[str, Path, str]) -> None:
+    base, home, run = served
+    store = Store(home / "jaynes.sqlite3")
+    store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
+                                  "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
+    store.append("RunBlocked", {"step": "final", "reasons": ["every attempt failed"]}, run_id=run)
+    page = get(base + "/")
+    assert "1 run is blocked" in page and "Runs that stop or block will appear here" not in page
+    assert '<details class="others" open>' in page
+
+
 def test_a_run_that_asks_the_person_waits_for_them_and_says_who_needs_them(served: tuple[str, Path, str]) -> None:
     base, home, run = served
     store = Store(home / "jaynes.sqlite3")

@@ -748,7 +748,7 @@ class Review:
                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
                        f'{stage_strip(run_stages)}</a>')
             (waiting if w.waits else others).append(row)
-            unfold = unfold or (on and not w.waits)
+            unfold = unfold or (on and not w.waits) or (w.kind == "blocked" and not any(x.waits for x in items))
         body = "".join(waiting) or '<div class="empty-q">Nothing is waiting for you.</div>'
         if others:
             body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
@@ -766,8 +766,11 @@ class Review:
         items = [w for w in self.queue() if w.waits]
         if items:
             return self.stop_page(items[0].run_id, items[0].step)
+        blocked = sum(w.kind == "blocked" for w in self.queue())
+        say = (f"{blocked} run{' is' if blocked == 1 else 's are'} blocked: see Other runs." if blocked else
+               "Runs that stop or block will appear here.")
         main = ('<div class="crumbs"><b>Queue</b></div><div class="body" style="display:flex">'
-                '<div class="empty"><h1>Nothing is waiting</h1><p>Runs that stop or block will appear here.</p>'
+                f'<div class="empty"><h1>Nothing is waiting</h1><p>{say}</p>'
                 '<p><a class="btn go" href="/new">Start a run</a></p></div></div>')
         return page("Jaynes review", self.sidebar(None), main, self.seq())
 
