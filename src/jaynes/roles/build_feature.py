@@ -290,8 +290,10 @@ def show_examples(_: None, needs: Witnesses) -> list[Shown]:
                   f"{count(len(identity.fonts), 'font')}, in {', '.join(identity.files)}; the screens use only "
                   "those.", more=True) if identity.colors or identity.fonts else \
         Shown("No identity yet", "The screens look as the agent drew them, until visual-identity runs.", more=True)
+    screens_shown = any(e.screen.strip() for e in out.examples)
     return [*(Shown(e.case.strip(), sentence(e.result), drawn(n)) for n, e in enumerate(out.examples)),
-            Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True), about]
+            Shown("What the tests cover", f"{sentence(out.feature)} In {', '.join(out.tests)}.", more=True),
+            *([about] if screens_shown else [])]
 
 
 def look_at_screens(ctx: StepContext) -> Looked:

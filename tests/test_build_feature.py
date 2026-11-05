@@ -93,6 +93,12 @@ def test_the_examples_stop_shows_each_example_with_its_screen_and_the_agents_sum
         "The project's identity", "3 colours and 1 font, in static/app.css; the screens use only those.")
 
 
+def test_the_examples_stop_says_nothing_of_the_identity_when_no_example_shows_a_screen() -> None:
+    needs = Witnesses(ran_by(specify=Checked("specify", spec(), "h", "c"), identity=Checked("identity", IDENTITY, "h", "c"),
+                             sketch=Checked("sketch", bf.Sketched(pictures=[""]), "h", "c")))
+    assert [x.title for x in bf.show_examples(None, needs)] == ["Multiplying 2 by 3", "What the tests cover"]
+
+
 def test_jaynes_reads_the_identity_from_the_projects_style_files_leaving_tests_and_vendors_out(
         repo: Path, tmp_path: Path) -> None:
     project = copy(repo, tmp_path, {"static/app.css": CSS, "tests/test_look.py": "RED = '#ff0000'\n",
@@ -172,7 +178,7 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     assert (first.status, first.step) == ("waiting", "agree")
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
     assert opened["question"] == "Do these examples show what you asked for?"
-    assert [x["title"] for x in opened["shown"]] == ["Multiplying 2 by 3", "What the tests cover", "No identity yet"]
+    assert [x["title"] for x in opened["shown"]] == ["Multiplying 2 by 3", "What the tests cover"]
 
     c.answer(bf.ROLE, "r1", "agree", "return", note="show 2 by 4 too", to="specify", by="person")
     again = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
