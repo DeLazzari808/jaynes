@@ -21,13 +21,17 @@ import re
 import shutil
 import signal
 import subprocess
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jaynes import suite
 from jaynes.runtime import QuotaExhausted, Ran, RuntimeFailure, TurnResult, TurnTimeout
 
-LIMIT = re.compile(r"usage limit|hit your limit|limit reached|rate.?limit|quota", re.I)
+LIMIT = re.compile(r"usage limit|hit your (\S+ )?limit|limit reached|rate.?limit|quota", re.I)
+RESET = re.compile(r"resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)(?:\s*\(([\w/+-]+)\))?", re.I)
 NOT_QUOTA = ("error_max_turns", "error_max_budget_usd")  # Claude result subtypes that name another failure
 OUTPUT_TAIL = 2000  # characters of a command's output kept, from its end, where test summaries are
 
@@ -73,10 +77,22 @@ def _kill(proc: subprocess.Popen[str]) -> None:
             continue
 
 
-def _reset_epoch(text: str) -> float | None:
-    """Claude reports exhaustion as text, sometimes with an epoch after '|'."""
+def _reset_epoch(text: str, now: float | None = None) -> float | None:
+    """Claude reports exhaustion as text, with an epoch after '|' or a clock time such as 'resets 3:10am (Zone)'."""
     m = re.search(r"\|(\d{10})\b", text)
-    return float(m.group(1)) if m else None
+    if m:
+        return float(m.group(1))
+    m = RESET.search(text)
+    if m is None:
+        return None
+    try:
+        zone = ZoneInfo(m[4]) if m[4] else None
+    except (ZoneInfoNotFoundError, ValueError):
+        zone = None
+    today = datetime.fromtimestamp(time.time() if now is None else now, zone)
+    reset = today.replace(hour=int(m[1]) % 12 + 12 * (m[3].lower() == "pm"), minute=int(m[2] or 0), second=0,
+                          microsecond=0)
+    return (reset if reset > today else reset + timedelta(days=1)).timestamp()
 
 
 # --- Claude Code ----------------------------------------------------------------

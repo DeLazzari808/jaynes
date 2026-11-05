@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from jaynes.preview import link_dependencies
 from jaynes.runtime import QuotaExhausted, Ran, RuntimeFailure
-from jaynes.runtimes import ClaudeRuntime, _project_env, _run, claude_commands, claude_failure, claude_settings, codex_command  # pyright: ignore[reportPrivateUsage]
+from jaynes.runtimes import ClaudeRuntime, _project_env, _reset_epoch, _run, claude_commands, claude_failure, claude_settings, codex_command  # pyright: ignore[reportPrivateUsage]
 from jaynes.suite import environment
 
 
@@ -119,6 +121,18 @@ def test_a_codex_command_item_says_what_ran_and_how_it_ended() -> None:
     assert codex_command(item) == Ran("bash -lc 'pytest -q'", False, "1 failed\n")
     assert codex_command({**item, "exit_code": 0, "status": "completed"}) == Ran("bash -lc 'pytest -q'", True, "1 failed\n")
     assert codex_command({"type": "agent_message", "text": "hi"}) is None
+
+
+def test_a_limit_claude_names_in_hours_pauses_the_run_until_the_time_it_gives() -> None:
+    said = "You've hit your 5-hour limit · resets 3:10am (America/Sao_Paulo)"
+    limit = claude_failure({"is_error": True, "subtype": "success", "result": said}, 1, "")
+    assert isinstance(limit, QuotaExhausted) and limit.until is not None
+    at = datetime(2026, 11, 5, 1, 31, tzinfo=ZoneInfo("America/Sao_Paulo")).timestamp()
+    assert _reset_epoch(said, at) == datetime(2026, 11, 5, 3, 10, tzinfo=ZoneInfo("America/Sao_Paulo")).timestamp()
+    late = datetime(2026, 11, 5, 3, 30, tzinfo=ZoneInfo("America/Sao_Paulo")).timestamp()
+    assert _reset_epoch(said, late) == datetime(2026, 11, 6, 3, 10, tzinfo=ZoneInfo("America/Sao_Paulo")).timestamp()
+    assert isinstance(claude_failure({"is_error": True, "result": "You've hit your weekly limit"}, 1, ""), QuotaExhausted)
+    assert _reset_epoch("You've hit your weekly limit") is None
 
 
 def test_a_claude_turn_pauses_for_quota_only_when_claude_says_so_not_when_the_agent_does() -> None:
