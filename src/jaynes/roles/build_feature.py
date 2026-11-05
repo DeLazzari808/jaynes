@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import functools
 import http.server
+import os
 import re
 import tempfile
 import threading
@@ -237,6 +238,11 @@ def _served(folder: Path) -> Iterator[str]:
 
 
 class _Quiet(http.server.SimpleHTTPRequestHandler):
+    def guess_type(self, path: str | os.PathLike[str]) -> str:
+        """UTF-8, as the agent writes it: without a <meta charset>, Chrome would read the page as Latin-1."""
+        kind = super().guess_type(path)
+        return f"{kind}; charset=utf-8" if kind.startswith("text/") else kind
+
     def log_message(self, format: str, *args: object) -> None:
         pass
 
@@ -264,7 +270,7 @@ def draw_sketches(ctx: StepContext) -> Sketched:
     files.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="jaynes-sketch-") as tmp:
         for n, html in pages.items():
-            (Path(tmp) / f"example-{n}.html").write_text(html)
+            (Path(tmp) / f"example-{n}.html").write_text(html, encoding="utf-8")
         try:
             with _served(Path(tmp)) as origin, open_page(origin) as page:
                 for n in pages:

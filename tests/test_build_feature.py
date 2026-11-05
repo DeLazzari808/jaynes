@@ -163,6 +163,14 @@ def test_jaynes_draws_each_screen_the_agent_described_and_nothing_else(tmp_path:
     assert sorted(p.name for p in (tmp_path / "files").iterdir()) == ["example-1.png"]
 
 
+@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+def test_a_sketch_without_a_charset_keeps_its_accents(tmp_path: Path) -> None:
+    (tmp_path / "example-1.html").write_text("<p>Tarefa concluída · 2 pts</p>", encoding="utf-8")
+    with bf._served(tmp_path) as origin, bf.open_page(origin) as page:  # pyright: ignore[reportPrivateUsage]
+        page.goto("/example-1.html")
+        assert page.evaluate("document.body.textContent") == "Tarefa concluída · 2 pts"
+
+
 def test_the_code_must_pass_the_new_tests_and_the_whole_suite(repo: Path, tmp_path: Path) -> None:
     agreed = Checked("specify", spec(), "h", "c")
     missing = Witnesses(ran_by(specify=agreed, identity=NONE), copy(repo, tmp_path, {"tests/test_mul.py": TEST}),
