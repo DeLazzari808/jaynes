@@ -145,12 +145,33 @@ def test_the_merge_says_what_changed_and_that_the_tests_pass() -> None:
     shown = fb.show_fixed(None, Witnesses(ran_by(reproduce=found, fix=Checked("fix", made, "h", "c"))))
     assert [(x.title, x.text, x.more) for x in shown] == [
         ("What changed", "add adds now.", False),
-        ("The bug's test passes", "Jaynes ran it and the whole suite itself, in a box without internet.", False),
+        ("The bug's tests pass", "Jaynes ran them and the whole suite itself, in a box without internet.", False),
         ("Adding 2 and 2", "Now: gives 0. After the fix: gives 4.", True),
         ("Files changed", "calc.py.", True)]
     old = fb.Fix(summary="word " * 200, files=[])
     [changed, *_] = fb.show_fixed(None, Witnesses(ran_by(reproduce=found, fix=Checked("fix", old, "h", "c"))))
     assert len(changed.text) <= fb.SUMMARY + 1 and changed.text.endswith("…")
+
+
+def test_an_agent_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Path, tmp_path: Path) -> None:
+    say = "tests/test_zero.py expects 0 for add(0, 0), which the task changes"
+    agent = Scripted(name="claude", plan={
+        ("reproduce", 1): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
+        ("fix", 1): write({"summary": "s", "files": [], "wrong_test": say}),
+        ("reproduce", 2): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
+    })
+    c = Conductor(tmp_path / "home", runtimes={"claude": lambda: agent})
+    c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1", project=repo)
+    c.answer(fb.ROLE, "r1", "reproduce", "accept", by="person")
+    blocked = c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1")
+    assert (blocked.status, blocked.step) == ("blocked", "fix") and say in blocked.reasons[0]
+    assert "send the run back to reproduce" in blocked.reasons[0]
+    [waiting] = c.queue()
+    assert waiting.kind == "blocked" and waiting.waits  # a question for the person, not a failure to look into later
+    assert [e.payload for e in c.store.events("TurnRejected", run_id="r1")] == []  # no attempt spent on it
+
+    c.send_back(fb.ROLE, "r1", "reproduce", note="the test should expect 1", by="person")
+    assert c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1").step == "reproduce"
 
 
 def test_a_fix_with_a_long_summary_is_refused(repo: Path, tmp_path: Path) -> None:

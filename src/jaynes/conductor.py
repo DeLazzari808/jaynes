@@ -41,7 +41,7 @@ from jaynes import project as repo
 from jaynes.gate import Window
 from jaynes.preview import link_dependencies
 from jaynes import inputs as run_inputs
-from jaynes.role import OUTPUT, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
+from jaynes.role import OUTPUT, Asks, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
 from jaynes.runtime import QuotaExhausted, Runtime, RuntimeFailure, TurnTimeout
 from jaynes.store import Event, Store
 
@@ -84,10 +84,15 @@ class Waiting:
     evidence: str | None = None  # the hash of what a stop shows; an answer that carries it is bound to it
     until: float | None = None  # when a paused run's quota resets
     here: bool = False  # started from an agent's terminal, which asks its stops there instead of the page
+    asks: bool = False  # blocked because only the person can decide: it waits for them as a stop does
 
     @property
     def needs_person(self) -> bool:
         return self.kind in ("stop", "blocked", "idle")
+
+    @property
+    def waits(self) -> bool:
+        return self.kind == "stop" or self.asks
 
 
 class RunBusy(Exception):
@@ -481,7 +486,8 @@ class Conductor:
             if st.blocked is not None:
                 since = max(e.ts for e in events if e.type == "RunBlocked")
                 items.append(Waiting(run_id, "blocked", str(st.blocked["step"]), since, role, task,
-                                     reasons=tuple(st.blocked["reasons"]), here=here))
+                                     reasons=tuple(st.blocked["reasons"]), here=here,
+                                     asks=bool(st.blocked.get("asks"))))
             opened = [(name, s.open_stop) for name, s in st.steps.items() if s.open_stop is not None]
             for name, (opened_at, payload) in opened:
                 items.append(Waiting(run_id, "stop", name, opened_at, role, task, payload.get("question"),
@@ -716,7 +722,8 @@ class Conductor:
         try:
             failures = self._check(step, value, needs)
         except Blocked as err:
-            self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]]})
+            self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]],
+                                              **({"asks": True} if isinstance(err, Asks) else {})})
             return None
         if failures:
             self._reject(run_id, step, attempt, "check", failures, t0)

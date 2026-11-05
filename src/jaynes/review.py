@@ -747,8 +747,8 @@ class Review:
                 row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{marked(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
                        f'{stage_strip(run_stages)}</a>')
-            (waiting if w.kind == "stop" else others).append(row)
-            unfold = unfold or (on and w.kind != "stop")
+            (waiting if w.waits else others).append(row)
+            unfold = unfold or (on and not w.waits)
         body = "".join(waiting) or '<div class="empty-q">Nothing is waiting for you.</div>'
         if others:
             body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
@@ -763,7 +763,7 @@ class Review:
     # pages ------------------------------------------------------------------
 
     def queue_page(self) -> str:
-        items = [w for w in self.queue() if w.kind == "stop"]
+        items = [w for w in self.queue() if w.waits]
         if items:
             return self.stop_page(items[0].run_id, items[0].step)
         main = ('<div class="crumbs"><b>Queue</b></div><div class="body" style="display:flex">'
@@ -798,12 +798,15 @@ class Review:
             parts.append("<div><h1>This run is blocked after its last step</h1>"
                          '<div class="sub">Every step finished, but its changes did not reach your repository:</div>'
                          "</div>")
+        elif w.asks:
+            parts.append(f'<div><h1>The agent needs you at {esc(step)}</h1></div>')
         elif w.kind == "blocked":
             parts.append(f"<div><h1>This run is blocked at {esc(step)}</h1>"
                          f'<div class="sub">Every attempt of the round was rejected. The last reasons:</div></div>')
         if w.kind == "blocked":
             parts.append('<div class="box"><table>' + "".join(
-                f'<tr><td class="m" style="color:var(--red)">rejected</td><td>{esc(r)}</td></tr>' for r in w.reasons)
+                f'<tr><td class="m" style="color:var(--red)">{"why" if w.asks else "rejected"}</td><td>{marked(r)}</td>'
+                '</tr>' for r in w.reasons)
                 + "</table></div>")
             parts.append(self._turns(events, step, s.round))
             at_branch = (st.blocked or {}).get("at") == "branch"

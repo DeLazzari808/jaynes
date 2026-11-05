@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from jaynes.conductor import Conductor
-from jaynes.role import Checked, Fail, Pass, StepContext, Witnesses
+from jaynes.role import Blocked, Checked, Fail, Pass, StepContext, Witnesses
 from jaynes.roles import build_feature as bf
 from jaynes.roles.references import chrome
 from jaynes.verify import verify
@@ -252,6 +252,12 @@ def test_without_a_preview_the_merge_says_how_to_see_the_real_screens(tmp_path: 
     assert [(x.title, x.more) for x in bf.show_built(None, needs)] == [
         ("What changed", False), ("The agreed example passes", False), ("No pictures of the real screens", False),
         ("Multiplying 2 by 3", True), ("Files changed", True)]
+
+
+def test_a_build_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Path, tmp_path: Path) -> None:
+    needs = Witnesses(ran_by(specify=Checked("specify", spec(), "h", "c")), repo, source=repo)
+    with pytest.raises(Blocked, match="send the run back to specify"):
+        bf.built(bf.Built(summary="s", files=[], wrong_test="test_zero expects the old total"), needs)
 
 
 def test_the_merge_stop_names_files_as_the_person_finds_them_in_the_repository() -> None:

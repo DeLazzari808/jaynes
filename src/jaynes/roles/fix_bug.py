@@ -19,7 +19,7 @@ import re
 from pydantic import BaseModel, Field
 
 from jaynes import project, runners, sandbox, suite
-from jaynes.role import Fail, Pass, Shown, StepContext, Witnesses, role, stop
+from jaynes.role import Asks, Fail, Pass, Shown, StepContext, Witnesses, role, stop
 from jaynes.runners import Runner
 
 TESTS = ("**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**", "**/test_*.py", "**/*_test.py",
@@ -53,11 +53,16 @@ class Reproduction(BaseModel):
                                                 "tests show; the person judges the tests from these")
 
 
+WRONG_TEST = ("empty, unless a test you may not change expects what the task changes: then name the test and what "
+              "it should expect, and Jaynes stops and asks the person")
+
+
 class Fix(BaseModel):
     summary: str = Field(description="what was wrong and what the person sees now, in two or three plain sentences "
                                      "for someone who does not read the code: commands they type, yes; names of "
                                      "functions, types or files, no; at most 400 characters")
     files: list[str]
+    wrong_test: str = Field(default="", description=WRONG_TEST)
 
 
 NO_RUNNER = ("no test runner was found in the project: Jaynes looks for pytest, a test script in package.json, "
@@ -135,8 +140,16 @@ def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
     return _quoted(out.failure, ran, "because of the bug") or Pass()
 
 
+def speak_up(wrong_test: str, tests_step: str) -> None:
+    """An agent that may not touch the tests says which one stands in its way: only the person can change that."""
+    if wrong_test.strip():
+        raise Asks(f"The agent says a test must change first: {wrong_test.strip()} If you agree, send the run back "
+                      f"to {tests_step} and say what the test should expect.")
+
+
 def fixed(out: Fix, needs: Witnesses) -> Pass | Fail:
     """The reproduction's tests pass, and then the whole suite does."""
+    speak_up(out.wrong_test, REPRODUCE.name)
     if len(out.summary) > SUMMARY:
         return Fail(f"the summary is {len(out.summary)} characters, at most {SUMMARY}: the person reads it at the "
                     "merge in two or three sentences; the code says the rest")
@@ -194,10 +207,8 @@ def show_fixed(_: None, needs: Witnesses) -> list[Shown]:
     examples and the files."""
     found: Reproduction = needs[REPRODUCE].value
     made: Fix = needs[FIX].value
-    one = len(found.tests) == 1
     return [Shown("What changed", sentence(shortened(made.summary))),
-            Shown("The bug's test passes" if one else "The bug's tests pass",
-                  f"Jaynes ran {'it' if one else 'them'} and the whole suite itself, in a box without internet."),
+            Shown("The bug's tests pass", "Jaynes ran them and the whole suite itself, in a box without internet."),
             *_examples(found, more=True), changed_files(made.files)]
 
 
@@ -211,7 +222,8 @@ REPRODUCE = ROLE.step(
     instructions="Find the bug the task describes and write the smallest test that fails because of it, next to "
                  "the project's other tests and in their style. When the task lists what must hold, write a test "
                  "for each item now, even one that passes today: the fix may not touch the tests, so what you leave "
-                 "out here goes unproven. Change test files only; do not fix the bug yet. "
+                 "out here goes unproven. If the fix will change what an existing test expects, change that test "
+                 "now too. Change test files only; do not fix the bug yet. "
                  "inputs/runner.json says how Jaynes runs the project's tests: each followed by test files runs "
                  "only them, suite runs them all, and when each is empty the suite runs. Run your tests that way "
                  "yourself before you answer. Jaynes runs them again from the project folder in a box without "
@@ -225,7 +237,8 @@ FIX = ROLE.step(
     instructions="Fix the bug so the tests in inputs/reproduce.json pass, and the whole suite with them. Change "
                  "the project's code, never its tests: they are how the person knows the bug is gone. Keep the "
                  "change as small as the fix needs. Run the tests and the suite yourself as inputs/runner.json "
-                 "says; Jaynes runs them again in a box without internet.")
+                 "says; Jaynes runs them again in a box without internet. If a test expects what the task changes, "
+                 "say so in wrong_test; never bend the code to satisfy it, such as adding what the test looks for.")
 # fix last among the needs: a return from the merge goes to it
 ROLE.step("accept", needs=[REPRODUCE, FIX], stop=stop(0.05, sampled=False), shows=show_fixed,
           question=lambda _out, _needs: "Merge this fix?")

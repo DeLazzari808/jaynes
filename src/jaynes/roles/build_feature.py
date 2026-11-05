@@ -110,6 +110,7 @@ class Built(BaseModel):
                                      "sentences for someone who does not read the code: commands they type, yes; "
                                      "names of functions, types or files, no; at most 400 characters")
     files: list[str]
+    wrong_test: str = Field(default="", description=fb.WRONG_TEST)
 
 
 def fails_first(out: Spec, needs: Witnesses) -> Pass | Fail:
@@ -336,6 +337,7 @@ def show_built(_: None, needs: Witnesses) -> list[Shown]:
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
     """The agreed tests pass, and then the whole suite does."""
+    fb.speak_up(out.wrong_test, SPECIFY.name)
     if len(out.summary) > SUMMARY:
         return Fail(f"the summary is {len(out.summary)} characters, at most {SUMMARY}: the person reads it at the "
                     "merge in two or three sentences; the code says the rest")
@@ -358,7 +360,9 @@ SPECIFY = ROLE.step(
     "specify", output=Spec, needs=[RUNNER, IDENTITY], project="write", may_change=fb.TESTS, check=fails_first,
     instructions="The task is the plan the person agreed on. Write the smallest tests that show the feature does "
                  "what the plan says, next to the project's other tests and in their style. They must fail now, "
-                 "because the feature does not exist yet. Change test files only; do not build the feature yet. "
+                 "because the feature does not exist yet. If the feature will change what an existing test expects, "
+                 "change that test now too: the build may not touch tests. Change test files only; do not build the "
+                 "feature yet. "
                  "inputs/runner.json says how Jaynes runs the project's tests: each followed by test files runs "
                  "only them, suite runs them all, and when each is empty the suite runs. Run your tests that way "
                  "yourself before you answer. Jaynes runs them again from the project folder in a box without "
@@ -384,7 +388,9 @@ BUILD = ROLE.step(
                  "as the plan needs. Run the tests and the suite yourself as inputs/runner.json says; Jaynes runs "
                  "them again in a box without internet. Screens use only the colours and fonts in "
                  "inputs/identity.json, as the project's variables where it has them; Jaynes refuses a build that "
-                 "brings others, since changing the identity is visual-identity's work.")
+                 "brings others, since changing the identity is visual-identity's work. If a test expects what the "
+                 "plan changes, say so in wrong_test; never bend the code to satisfy it, such as adding what the test "
+                 "looks for.")
 LOOK = ROLE.step("look", output=Looked, needs=[SPECIFY, BUILD], run_by=look_at_screens, project="read", effect="read",
                  max_turns=1)
 # build last among the needs: a return from the merge goes to it

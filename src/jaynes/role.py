@@ -57,6 +57,10 @@ class Blocked(Exception):
     the run blocks with the reason at once, and no attempt of the agent is spent, since the fault is not its."""
 
 
+class Asks(Blocked):
+    """Raised by a check when only the person can decide: the run blocks and waits for them as a stop does."""
+
+
 class Witnesses:
     """The checked outputs a step needs, read by step, and the step's copy of the project if it has one.
 
