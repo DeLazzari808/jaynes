@@ -308,27 +308,40 @@ def look_at_screens(ctx: StepContext) -> Looked:
         raise Blocked("Jaynes looks at the screens with Google Chrome and found none; install it or set JAYNES_CHROME")
     files = ctx.workspace / "files"
     files.mkdir(exist_ok=True)
+    named: dict[str, str] = {}  # a page is photographed once, however many examples are on it
+    for n, path in pages.items():
+        named.setdefault(path, f"screen-{n}.png")
     try:
         with screens.serve(ctx.needs.project, ctx.started, ctx.needs.source, ctx.needs.hidden) as origin, \
                 open_page(origin, deny=screens.denied(ctx.started)) as page:
-            for n, path in pages.items():
-                _photograph(page, path, files / f"screen-{n}.png")
+            for path, file in named.items():
+                _photograph(page, path, files / file)
     except BrowserError as err:
         raise Blocked(f"Jaynes's Chrome could not look at the product: {err}") from None
-    return Looked(pictures=[f"screen-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
+    return Looked(pictures=[named[pages[n]] if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
 
 
 def show_built(_: None, needs: Witnesses) -> list[Shown]:
-    """What changed, in the agent's few sentences, that the agreed examples pass, which Jaynes ran itself, each one on
-    the real screen, and, folded, the ones with no picture and the files."""
+    """What changed, in the agent's few sentences, that the agreed examples pass, which Jaynes ran itself, each page
+    on the real screen, and, folded, the files and the examples no picture of their own shows. A page several examples
+    share is one picture of it as it is now: it cannot show each of their situations."""
     made: Built = needs[BUILD].value
     agreed: Spec = needs[SPECIFY].value
     pictures: list[str] = needs[LOOK].value.pictures
-    pictured = dict(enumerate(pictures))
-    seen = [Shown(e.case.strip(), sentence(e.result), (Picture(LOOK.name, pictured[n], "the real screen"),))
-            for n, e in enumerate(agreed.examples) if pictured.get(n)]
+    on_file: dict[str, list[int]] = {}
+    for at, file in enumerate(pictures[:len(agreed.examples)]):
+        if file:
+            on_file.setdefault(file, []).append(at)
+    seen: list[Shown] = []
+    for file, shared in on_file.items():
+        first = agreed.examples[shared[0]]
+        picture = (Picture(LOOK.name, file, "the real screen"),)
+        seen.append(Shown(first.case.strip(), sentence(first.result), picture) if len(shared) == 1 else
+                    Shown(f"The real screen at {first.page.strip()}", "This page as it is now, with the data on this "
+                          "computer, not each example: the tests prove those.", picture))
+    alone = {shared[0] for shared in on_file.values() if len(shared) == 1}
     unseen = [Shown(e.case.strip(), sentence(e.result), more=True)
-              for n, e in enumerate(agreed.examples) if not pictured.get(n)]
+              for at, e in enumerate(agreed.examples) if at not in alone]
     n = len(agreed.examples)
     passed = Shown("The agreed example passes" if n == 1 else f"All {n} agreed examples pass",
                    f"Jaynes ran {'its test' if n == 1 else 'their tests'} and the whole suite itself, in a box without "

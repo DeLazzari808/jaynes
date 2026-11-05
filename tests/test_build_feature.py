@@ -254,6 +254,29 @@ def test_the_merge_stop_shows_each_example_on_the_real_screen(repo: Path, tmp_pa
         ("Multiplying 0 by 3", []), ("Files changed", [])]
 
 
+@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+def test_examples_on_the_same_page_share_one_picture_that_claims_none_of_them(repo: Path, tmp_path: Path) -> None:
+    built = copy(repo, tmp_path, {"mul.html": SCREEN})
+    agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
+                             "screen": SCREEN, "page": "/mul.html"},
+                            {"case": "Multiplying 0 by 3", "result": "gives 0", "test": "test_mul_multiplies",
+                             "screen": SCREEN, "page": "/mul.html"}])
+    work = tmp_path / "turn"
+    work.mkdir()
+    ctx = StepContext("r1", "add mul", Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c")), built, source=repo),
+                      work, started={"preview": SERVED})
+    out = bf.look_at_screens(ctx)
+    assert out.pictures == ["screen-1.png", "screen-1.png"]  # one page, one photograph
+    needs = Witnesses(ran_by(specify=Checked("specify", agreed, "h", "c"), look=Checked("look", out, "h", "c"),
+                             build=Checked("build", bf.Built(summary="adds mul", files=[]), "h", "c")))
+    shown = bf.show_built(None, needs)
+    assert [(x.title, x.more, len(x.pictures)) for x in shown] == [
+        ("What changed", False, 0), ("All 2 agreed examples pass", False, 0),
+        ("The real screen at /mul.html", False, 1),
+        ("Multiplying 2 by 3", True, 0), ("Multiplying 0 by 3", True, 0), ("Files changed", True, 0)]
+    assert "not each example" in shown[2].text
+
+
 def test_without_a_preview_the_merge_says_how_to_see_the_real_screens(tmp_path: Path) -> None:
     agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
                              "screen": SCREEN}])
