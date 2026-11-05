@@ -3,9 +3,9 @@
 Jaynes finds the command that runs the project's tests (``jaynes.runners``), or takes the one the person gave
 at the start, so the agent cannot run less than the suite. The agent writes tests only and names their files;
 Jaynes runs them in a box and requires that they fail, printing the failure the agent quotes. The person sees
-the tests and decides whether they show the bug. Then the agent changes the project, never its tests, until
-Jaynes sees those tests and the whole suite pass. The person gives the final review, and the change comes
-back as a branch.
+the bug in plain examples, with the failure Jaynes saw, and decides whether the tests show it; the code stays
+under Details. Then the agent changes the project, never its tests, until Jaynes sees those tests and the whole
+suite pass. The person gives the final review, and the change comes back as a branch.
 
 The project's suite must pass at its last commit, with its dependencies installed in the person's folder:
 the box reaches no internet, only local ports, so nothing is installed during the run. A suite whose own
@@ -19,11 +19,23 @@ import re
 from pydantic import BaseModel, Field
 
 from jaynes import project, runners, sandbox, suite
-from jaynes.role import Fail, Pass, StepContext, Witnesses, role, stop
+from jaynes.role import Fail, Pass, Shown, StepContext, Witnesses, role, stop
 from jaynes.runners import Runner
 
 TESTS = ("**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**", "**/test_*.py", "**/*_test.py",
          "**/*.test.*", "**/*.spec.*", "**/*_test.go", "**/*_spec.rb", "**/*Test.java", "**/*Tests.cs")
+
+
+LONGEST = {"case": 50, "now": 70, "after": 70}  # characters of an example, as the person reads it at the stop
+SUMMARY = 400  # characters of what changed, for the person at the merge
+
+
+class Example(BaseModel):
+    case: str = Field(description="a situation the person knows, in their words and with real values, such as "
+                                  "'Event on 15 Nov, today 2 Nov'; no code or names from the code; at most 50 "
+                                  "characters")
+    now: str = Field(description="what the person sees today, because of the bug; at most 70 characters")
+    after: str = Field(description="what the person will see once it is fixed; at most 70 characters")
 
 
 class Reproduction(BaseModel):
@@ -36,10 +48,15 @@ class Reproduction(BaseModel):
                                                                     "relative to the project folder")
     failure: str = Field(default="", description="a line the command prints because of the bug, copied exactly, "
                                                  "such as the assertion message")
+    examples: list[Example] = Field(default_factory=list[Example],
+                                    description="the bug as the person meets it, one example for each thing the "
+                                                "tests show; the person judges the tests from these")
 
 
 class Fix(BaseModel):
-    summary: str = Field(description="what was wrong and what changed, for the person reviewing it")
+    summary: str = Field(description="what was wrong and what the person sees now, in two or three plain sentences "
+                                     "for someone who does not read the code: commands they type, yes; names of "
+                                     "functions, types or files, no; at most 400 characters")
     files: list[str]
 
 
@@ -96,7 +113,11 @@ def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
         return Fail("say what goes wrong, or, when no test shows it, what you tried and why")
     if not out.reproduced:
         return Pass()
-    reasons = [f"{name} is empty; a reproduced bug needs it" for name in ("tests", "failure") if not getattr(out, name)]
+    reasons = [f"{name} is empty; a reproduced bug needs it" for name in ("tests", "failure", "examples")
+               if not getattr(out, name)]
+    reasons += [f"the {field} of example {n} is {len(text)} characters, at most {most}: the person reads it at a glance"
+                for n, e in enumerate(out.examples, 1) for field, most in LONGEST.items()
+                if len(text := getattr(e, field).strip()) > most]
     if reasons:
         return Fail(*reasons)
     reasons = [f"{t} is not a test file; tests go in paths such as tests/ or *_test.*" for t in out.tests
@@ -116,6 +137,9 @@ def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
 
 def fixed(out: Fix, needs: Witnesses) -> Pass | Fail:
     """The reproduction's tests pass, and then the whole suite does."""
+    if len(out.summary) > SUMMARY:
+        return Fail(f"the summary is {len(out.summary)} characters, at most {SUMMARY}: the person reads it at the "
+                    "merge in two or three sentences; the code says the rest")
     found: Reproduction = needs[REPRODUCE].value
     runner: Runner = needs[RUNNER].value
     for what, command in (("the tests still fail", runners.for_files(runner, found.tests)),
@@ -128,18 +152,66 @@ def fixed(out: Fix, needs: Witnesses) -> Pass | Fail:
     return Pass()
 
 
+def sentence(text: str) -> str:
+    text = text.strip()
+    return text if text.endswith((".", "!", "?", "…")) else f"{text}."
+
+
+def shortened(summary: str) -> str:
+    """A summary written before the limit: its first words; the whole stays under Details."""
+    text = summary.strip()
+    return text if len(text) <= SUMMARY else text[:SUMMARY + 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
+
+
+def changed_files(files: list[str]) -> Shown:
+    """The files as the person finds them: the agent names them from its own folder."""
+    named = [f.removeprefix("project/") for f in files]
+    return Shown("Files changed", sentence(", ".join(named)) if named else "None named.", more=True)
+
+
+def _examples(found: Reproduction, more: bool = False) -> list[Shown]:
+    return [Shown(e.case.strip(), f"Now: {sentence(e.now)} After the fix: {sentence(e.after)}", more=more)
+            for e in found.examples]
+
+
+def ask_about_bug(out: Reproduction, _: Witnesses) -> str:
+    return "Do these tests show the bug?" if out.reproduced else (
+        f"No test shows the bug: {out.bug} Accept ends the run with nothing changed; return it with a hint to look "
+        "again.")
+
+
+def show_bug(out: Reproduction, _: Witnesses) -> list[Shown]:
+    """The examples and the failure Jaynes saw in front; the agent's words and the files below, the code in Details."""
+    if not out.reproduced:
+        return []
+    return [*_examples(out), Shown("What the test printed", out.failure.strip()),
+            Shown("What goes wrong", sentence(out.bug), more=True),
+            Shown("The tests", sentence(", ".join(out.tests)), more=True)]
+
+
+def show_fixed(_: None, needs: Witnesses) -> list[Shown]:
+    """What changed, in the agent's few sentences, that the tests pass, which Jaynes ran itself, and, folded, the
+    examples and the files."""
+    found: Reproduction = needs[REPRODUCE].value
+    made: Fix = needs[FIX].value
+    one = len(found.tests) == 1
+    return [Shown("What changed", sentence(shortened(made.summary))),
+            Shown("The bug's test passes" if one else "The bug's tests pass",
+                  f"Jaynes ran {'it' if one else 'them'} and the whole suite itself, in a box without internet."),
+            *_examples(found, more=True), changed_files(made.files)]
+
+
 ROLE = role("fix-bug")
 # a run that finds no runner blocks at once with how to give one: trying again finds the same files
 RUNNER = ROLE.step("runner", output=Runner, run_by=find_runner, project="read", max_turns=1)
 REPRODUCE = ROLE.step(
     "reproduce", output=Reproduction, needs=[RUNNER], project="write", may_change=TESTS, check=fails_for_the_bug,
-    stop=stop(0.2),
-    question=lambda out, _: (f"Do these tests show the bug? {out.bug}" if out.reproduced else
-                             f"No test shows the bug: {out.bug} Accept ends the run with nothing changed; "
-                             "return it with a hint to look again."),
+    stop=stop(0.2), question=ask_about_bug, shows=show_bug,
     ends=lambda out: not out.reproduced,
     instructions="Find the bug the task describes and write the smallest test that fails because of it, next to "
-                 "the project's other tests and in their style. Change test files only; do not fix the bug yet. "
+                 "the project's other tests and in their style. When the task lists what must hold, write a test "
+                 "for each item now, even one that passes today: the fix may not touch the tests, so what you leave "
+                 "out here goes unproven. Change test files only; do not fix the bug yet. "
                  "inputs/runner.json says how Jaynes runs the project's tests: each followed by test files runs "
                  "only them, suite runs them all, and when each is empty the suite runs. Run your tests that way "
                  "yourself before you answer. Jaynes runs them again from the project folder in a box without "
@@ -154,5 +226,6 @@ FIX = ROLE.step(
                  "the project's code, never its tests: they are how the person knows the bug is gone. Keep the "
                  "change as small as the fix needs. Run the tests and the suite yourself as inputs/runner.json "
                  "says; Jaynes runs them again in a box without internet.")
-ROLE.step("accept", needs=[FIX], stop=stop(0.05, sampled=False),
-          question=lambda _, needs: f"Merge this fix? {needs[FIX].value.summary}")
+# fix last among the needs: a return from the merge goes to it
+ROLE.step("accept", needs=[REPRODUCE, FIX], stop=stop(0.05, sampled=False), shows=show_fixed,
+          question=lambda _out, _needs: "Merge this fix?")

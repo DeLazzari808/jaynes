@@ -62,7 +62,8 @@ def copy(repo: Path, tmp_path: Path, files: dict[str, str]) -> Path:
 
 def reproduction(**overrides: Any) -> fb.Reproduction:
     base: dict[str, Any] = {"bug": "add subtracts", "tests": ["tests/test_add.py"],
-                            "failure": "AssertionError: add subtracts"}
+                            "failure": "AssertionError: add subtracts",
+                            "examples": [{"case": "Adding 2 and 2", "now": "gives 0", "after": "gives 4"}]}
     return fb.Reproduction(**{**base, **overrides})
 
 
@@ -113,6 +114,49 @@ def edit(files: dict[str, str], value: Any) -> Action:
             (ws / "project" / path).write_text(text)
         write(value)(ws)
     return act
+
+
+def test_a_reproduction_says_the_bug_in_short_plain_examples(repo: Path, tmp_path: Path) -> None:
+    fixed_copy = copy(repo, tmp_path, {"tests/test_add.py": TEST})
+    needs = Witnesses(ran_by(), fixed_copy, source=repo)
+    none = fb.fails_for_the_bug(reproduction(examples=[]), needs)
+    assert isinstance(none, Fail) and "examples" in none.reasons[0]
+    long = fb.fails_for_the_bug(reproduction(examples=[{"case": "x" * 51, "now": "gives 0", "after": "gives 4"}]), needs)
+    assert isinstance(long, Fail) and "the case of example 1" in long.reasons[0]
+    assert isinstance(fb.fails_for_the_bug(reproduction(), needs), Pass)
+
+
+def test_the_stop_opens_on_the_examples_and_the_failure_with_the_code_behind_details() -> None:
+    needs = Witnesses(ran_by())
+    shown = fb.show_bug(reproduction(), needs)
+    assert [(x.title, x.text, x.more) for x in shown] == [
+        ("Adding 2 and 2", "Now: gives 0. After the fix: gives 4.", False),
+        ("What the test printed", "AssertionError: add subtracts", False),
+        ("What goes wrong", "add subtracts.", True),
+        ("The tests", "tests/test_add.py.", True)]
+    assert fb.show_bug(reproduction(examples=[]), needs)[0].title == "What the test printed"  # a run from before
+    assert fb.show_bug(fb.Reproduction(bug="nothing wrong", reproduced=False), needs) == []
+    assert fb.ask_about_bug(reproduction(), needs) == "Do these tests show the bug?"
+
+
+def test_the_merge_says_what_changed_and_that_the_tests_pass() -> None:
+    found = Checked("reproduce", reproduction(), "h", "c")
+    made = fb.Fix(summary="add adds now", files=["project/calc.py"])
+    shown = fb.show_fixed(None, Witnesses(ran_by(reproduce=found, fix=Checked("fix", made, "h", "c"))))
+    assert [(x.title, x.text, x.more) for x in shown] == [
+        ("What changed", "add adds now.", False),
+        ("The bug's test passes", "Jaynes ran it and the whole suite itself, in a box without internet.", False),
+        ("Adding 2 and 2", "Now: gives 0. After the fix: gives 4.", True),
+        ("Files changed", "calc.py.", True)]
+    old = fb.Fix(summary="word " * 200, files=[])
+    [changed, *_] = fb.show_fixed(None, Witnesses(ran_by(reproduce=found, fix=Checked("fix", old, "h", "c"))))
+    assert len(changed.text) <= fb.SUMMARY + 1 and changed.text.endswith("…")
+
+
+def test_a_fix_with_a_long_summary_is_refused(repo: Path, tmp_path: Path) -> None:
+    needs = Witnesses(ran_by(reproduce=Checked("reproduce", reproduction(), "h", "c")), repo, source=repo)
+    refused = fb.fixed(fb.Fix(summary="x" * 401, files=[]), needs)
+    assert isinstance(refused, Fail) and "at most 400" in refused.reasons[0]
 
 
 def test_the_role_finds_the_bug_with_a_test_and_then_fixes_it_without_touching_tests(repo: Path,

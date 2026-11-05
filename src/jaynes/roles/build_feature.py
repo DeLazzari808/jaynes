@@ -41,12 +41,12 @@ from jaynes.role import (
     stop,
 )
 from jaynes.roles import fix_bug as fb
+from jaynes.roles.fix_bug import SUMMARY, sentence
 from jaynes.roles.references import chrome
 from jaynes.runners import Runner
 
 LONGEST = {"case": 50, "result": 70}  # characters: together, one line the person reads at a glance in the terminal
 SCREEN = 40_000  # characters of a sketch's page
-SUMMARY = 400  # characters of what changed, for the person at the merge
 SKETCH_SIZE = (1280, 800)  # the window a screen is laid out in; its picture is as tall as what it shows
 SHORTEST, TALLEST, MARGIN = 160, 2400, 24
 # where what the page shows ends: a body can fill the window with nothing in it
@@ -272,11 +272,6 @@ def draw_sketches(ctx: StepContext) -> Sketched:
     return Sketched(pictures=[f"example-{n}.png" if n in pages else "" for n in range(1, len(agreed.examples) + 1)])
 
 
-def sentence(text: str) -> str:
-    text = text.strip()
-    return text if text.endswith((".", "!", "?", "…")) else f"{text}."
-
-
 def show_examples(_: None, needs: Witnesses) -> list[Shown]:
     """The examples in front, each with its sketch, as the person judges them; what the agent says the tests cover,
     below."""
@@ -323,10 +318,6 @@ def show_built(_: None, needs: Witnesses) -> list[Shown]:
     made: Built = needs[BUILD].value
     agreed: Spec = needs[SPECIFY].value
     pictures: list[str] = needs[LOOK].value.pictures
-    summary = made.summary.strip()
-    if len(summary) > SUMMARY:  # written before the limit: the first words here, the whole under Details
-        summary = summary[:SUMMARY + 1].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
-    files = [f.removeprefix("project/") for f in made.files]  # the agent's folder, not the person's repository
     pictured = dict(enumerate(pictures))
     seen = [Shown(e.case.strip(), sentence(e.result), (Picture(LOOK.name, pictured[n], "the real screen"),))
             for n, e in enumerate(agreed.examples) if pictured.get(n)]
@@ -339,8 +330,8 @@ def show_built(_: None, needs: Witnesses) -> list[Shown]:
     if not seen and any(e.screen.strip() for e in agreed.examples):
         seen = [Shown("No pictures of the real screens", "This run has no preview; a run with --preview shows them "
                                                          "here, as Jaynes sees them.")]
-    return [Shown("What changed", sentence(summary)), passed, *seen, *unseen,
-            Shown("Files changed", sentence(", ".join(files)) if files else "None named.", more=True)]
+    return [Shown("What changed", sentence(fb.shortened(made.summary))), passed, *seen, *unseen,
+            fb.changed_files(made.files)]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:

@@ -101,9 +101,6 @@ Missing, roughly in order:
 
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
-- **Stops a person can judge in fix-bug.** build-feature's tests stop shows
-  plain examples, each tied to a test that exists; fix-bug's still shows one
-  technical sentence the agent wrote.
 - **A way to say an agreed test is wrong.** In build-feature and fix-bug the
   agent that builds may not touch the tests, so a test with a wrong
   expectation that the person accepted traps it until the run blocks; the
