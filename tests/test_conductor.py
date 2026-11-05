@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from jaynes.conductor import AnswerRejected, Conductor, RunBusy, RunResult, coin
+from jaynes.conductor import AnswerRejected, Conductor, RunBusy, RunResult, coin, return_to
 from jaynes.gate import Window
 from jaynes.role import Fail, Pass, Witnesses, role, stop
 from tests.fakes import Scripted, fail, nothing, quota, raw, stray, tamper, timeout, write
@@ -547,6 +547,23 @@ def test_return_at_a_stop_with_no_output_must_name_the_step_to_rerun(tmp_path: P
     c.answer(r, "r1", "accept", "return", note="shorter", to="draft", by="person")
     assert c.run(r, "t", run_id="r1") == RunResult("waiting", "accept")
     assert [p["round"] for p in payloads(c, "r1", "StepStarted")] == [1, 2]
+
+
+def test_a_return_reaches_the_agent_and_never_a_step_jaynes_runs_which_cannot_read_the_note(tmp_path: Path) -> None:
+    r = role("drawn", agent="fake")
+    first = r.step("first", output=Note, run_by=lambda ctx: Note(text="read"))
+    draft = r.step("draft", output=Note, needs=[first])
+    drawn = r.step("drawn", output=Note, needs=[draft], run_by=lambda ctx: Note(text="drawn"))
+    r.step("agree", needs=[drawn, draft, first], stop=stop(0.2))
+    agent = Scripted(default=lambda s: {"text": s})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", run_id="r1") == RunResult("waiting", "agree")
+    assert return_to(r, "agree") == "draft"
+    with pytest.raises(AnswerRejected, match="'first' is run by Jaynes, which cannot read a note; return to 'draft'"):
+        c.answer(r, "r1", "agree", "return", note="one name per person", to="first", by="person")
+    c.answer(r, "r1", "agree", "return", note="one name per person", to=return_to(r, "agree"), by="person")
+    assert c.run(r, "t", run_id="r1") == RunResult("waiting", "agree")
+    assert "one name per person" in agent.prompts[-1]
 
 
 def test_a_step_s_message_limit_reaches_the_runtime_and_none_is_passed_without_one(tmp_path: Path) -> None:

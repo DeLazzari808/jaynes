@@ -1630,9 +1630,11 @@ class Review:
 
     @staticmethod
     def _earlier(role: Role | None, step: str) -> list[str]:
-        """Steps before ``step`` with an output, which a return or context from its stop can go back to."""
+        """Steps before ``step`` with an output, which a return or context from its stop can go back to: those an
+        agent runs, since only an agent reads the note, unless Jaynes runs them all."""
         names = [x.name for x in role.steps] if role else []
-        return [x.name for x in role.steps[:names.index(step)] if x.output is not None] if role and step in names else []
+        earlier = [x for x in role.steps[:names.index(step)] if x.output is not None] if role and step in names else []
+        return [x.name for x in ([x for x in earlier if x.run_by is None] or earlier)]
 
     def _items(self, target: Step[Any] | None, s: StepState) -> list[tuple[str, str]]:
         """The items a person may choose among at this stop, as (id, label); none where the step lets nobody."""

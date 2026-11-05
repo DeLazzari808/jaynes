@@ -291,13 +291,15 @@ def coin(run_id: str, step: str) -> float:
 
 
 def return_to(role: Role, step: str) -> str | None:
-    """Where a return from a stop with no output goes: its last need with an output, else the nearest earlier
-    step with one."""
+    """Where a return from a stop with no output goes: the latest of its needs an agent runs, since only an agent
+    reads the note, else the nearest earlier step an agent runs, else the nearest earlier step with an output."""
     names = [x.name for x in role.steps]
     here = role.steps[names.index(step)]
-    needs = [n.name for n in here.needs if n.output is not None]
-    earlier = [x.name for x in role.steps[:names.index(step)] if x.output is not None]
-    return needs[-1] if needs else earlier[-1] if earlier else None
+    earlier = [x for x in role.steps[:names.index(step)] if x.output is not None]
+    agents = [x for x in earlier if x.run_by is None]
+    needs = [x for x in agents if x in here.needs]
+    found = needs or agents or earlier
+    return found[-1].name if found else None
 
 
 def new_run_id() -> str:
@@ -377,6 +379,9 @@ class Conductor:
             earlier = names[:names.index(step)] if step in names else []
             if to not in earlier or role.steps[names.index(to)].output is None:
                 raise AnswerRejected([f"{to!r} is not an earlier step of {role.name} with an output"])
+            need = return_to(role, step)
+            if role.steps[names.index(to)].run_by is not None and need and role.steps[names.index(need)].run_by is None:
+                raise AnswerRejected([f"{to!r} is run by Jaynes, which cannot read a note; return to {need!r}"])
         with self._lock(run_id):
             st = project(self.store.events(run_id=run_id))
             s = st.step(step)
