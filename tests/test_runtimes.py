@@ -123,6 +123,16 @@ def test_a_codex_command_item_says_what_ran_and_how_it_ended() -> None:
     assert codex_command({"type": "agent_message", "text": "hi"}) is None
 
 
+def test_the_computer_stays_awake_while_a_turn_runs(tmp_path: Path, monkeypatch: Any) -> None:
+    held = tmp_path / "held"
+    fake = tmp_path / "caffeinate"
+    fake.write_text(f'#!/bin/sh\necho "$@" > {held}\nexec sleep 30\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{tmp_path}:/usr/bin:/bin")
+    code, out, _ = _run(["sh", "-c", f"until [ -f {held} ]; do sleep 0.05; done; echo $$"], tmp_path, tmp_path, "", 10)
+    assert code == 0 and held.read_text().split() == ["-i", "-w", out.strip()]
+
+
 def test_a_limit_claude_names_in_hours_pauses_the_run_until_the_time_it_gives() -> None:
     said = "You've hit your 5-hour limit · resets 3:10am (America/Sao_Paulo)"
     limit = claude_failure({"is_error": True, "subtype": "success", "result": said}, 1, "")

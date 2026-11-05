@@ -48,6 +48,7 @@ def _run(args: list[str], cwd: Path, scratch: Path, prompt: str, deadline: float
     environ = {**os.environ, "TMPDIR": str(scratch), **(env or {})}
     proc = subprocess.Popen(args, cwd=cwd, env=environ, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE, text=True, start_new_session=True)
+    awake = _stay_awake(proc.pid)
     try:
         out, err = proc.communicate(prompt, timeout=deadline)
     except subprocess.TimeoutExpired:
@@ -56,7 +57,18 @@ def _run(args: list[str], cwd: Path, scratch: Path, prompt: str, deadline: float
     finally:
         if proc.poll() is None:
             _kill(proc)
+        if awake is not None:
+            awake.terminate()
+            awake.wait()
     return proc.returncode, out, err
+
+
+def _stay_awake(pid: int) -> subprocess.Popen[bytes] | None:
+    """On a Mac, an idle computer goes to sleep in the middle of a turn, and the turn fails with it. Held only while
+    the turn's process lives; a computer with no caffeinate has nothing to hold."""
+    program = shutil.which("caffeinate")
+    return subprocess.Popen([program, "-i", "-w", str(pid)], stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL) if program else None
 
 
 def _project_env(workspace: Path, scratch: Path) -> dict[str, str]:
