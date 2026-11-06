@@ -181,6 +181,19 @@ def test_claude_stays_on_opus_unless_the_person_names_another_model(tmp_path: Pa
     assert model(ClaudeRuntime().command(tmp_path)) == "claude-other"
 
 
+def test_claude_thinks_at_the_same_effort_whoever_started_jaynes(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setattr("jaynes.runtimes._binary", lambda name: name)  # pyright: ignore[reportUnknownLambdaType]
+    monkeypatch.delenv("JAYNES_CLAUDE_EFFORT", raising=False)
+    monkeypatch.setenv("CLAUDE_EFFORT", "max")  # what a session that started Jaynes happens to run at
+
+    def effort(args: list[str]) -> str:
+        return args[args.index("--effort") + 1]
+
+    assert effort(ClaudeRuntime().command(tmp_path)) == "high"
+    monkeypatch.setenv("JAYNES_CLAUDE_EFFORT", "xhigh")
+    assert effort(ClaudeRuntime().command(tmp_path)) == "xhigh"
+
+
 def test_a_turn_another_model_answered_fails_and_is_never_taken_for_the_one_asked(tmp_path: Path, monkeypatch: Any) -> None:
     monkeypatch.delenv("JAYNES_CLAUDE_MODEL", raising=False)
     stream = json.dumps({"type": "result", "subtype": "success", "is_error": False, "usage": {},

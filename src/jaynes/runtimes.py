@@ -220,6 +220,7 @@ def claude_failure(result: dict[str, Any], code: int, err: str) -> QuotaExhauste
 
 
 MODEL = "claude-opus-5-5"  # the account's default moved under running turns; another model only by JAYNES_CLAUDE_MODEL
+EFFORT = "high"  # measured: xhigh cost 66% more on a slice and passed no more tests; another by JAYNES_CLAUDE_EFFORT
 
 
 class ClaudeRuntime:
@@ -228,6 +229,7 @@ class ClaudeRuntime:
 
     def __init__(self, model: str | None = None, max_messages: int = 200) -> None:
         self.model = model or os.environ.get("JAYNES_CLAUDE_MODEL") or MODEL
+        self.effort = os.environ.get("JAYNES_CLAUDE_EFFORT") or EFFORT
         self.max_messages = max_messages  # the deadline is what usually ends a long turn
 
     def command(self, workspace: Path, web: bool = False, scratch: Path | None = None,
@@ -236,7 +238,7 @@ class ClaudeRuntime:
                 "--settings", json.dumps(claude_settings(workspace, web, scratch)), "--strict-mcp-config",
                 "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence",
                 "--permission-mode", "dontAsk", "--max-turns", str(max_messages or self.max_messages)]
-        return [*args, "--model", self.model]
+        return [*args, "--model", self.model, "--effort", self.effort]
 
     def turn(self, workspace: Path, scratch: Path, prompt: str, deadline: float, web: bool = False,
              max_messages: int | None = None) -> TurnResult:

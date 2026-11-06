@@ -24,8 +24,8 @@ were still sent back.
 1. **Describe a role as a method.** Ordered steps, each with a required output
    and a check.
 2. **Jaynes conducts the agent one step at a time, always on the same model.**
-   Claude Opus unless you set `JAYNES_CLAUDE_MODEL`; a turn another model answers
-   does not count. Claude Code runs a single
+   Claude Opus at high effort unless you set `JAYNES_CLAUDE_MODEL` or
+   `JAYNES_CLAUDE_EFFORT`; a turn another model answers does not count. Claude Code runs a single
    step and can only write that step's output. The next step starts
    when the check passes. Evidence the agent could fake, like the references
    captured from the web, is produced by Jaynes.
