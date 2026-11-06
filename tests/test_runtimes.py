@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from jaynes.preview import link_dependencies
 from jaynes.runtime import QuotaExhausted, Ran, RuntimeFailure
 from jaynes.runtimes import ClaudeRuntime, _project_env, _reset_epoch, _run, claude_commands, claude_failure, claude_settings, codex_command  # pyright: ignore[reportPrivateUsage]
@@ -166,11 +168,34 @@ def test_a_claude_turn_has_200_messages_unless_its_step_says_and_running_out_say
     assert isinstance(out, RuntimeFailure) and "ran out of messages" in str(out) and "max_messages" in str(out)
 
 
+def test_claude_stays_on_opus_unless_the_person_names_another_model(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setattr("jaynes.runtimes._binary", lambda name: name)  # pyright: ignore[reportUnknownLambdaType]
+    monkeypatch.delenv("JAYNES_CLAUDE_MODEL", raising=False)
+
+    def model(args: list[str]) -> str:
+        return args[args.index("--model") + 1]
+
+    assert model(ClaudeRuntime().command(tmp_path)) == "claude-opus-5-5"
+    assert "--fallback-model" not in ClaudeRuntime().command(tmp_path)
+    monkeypatch.setenv("JAYNES_CLAUDE_MODEL", "claude-other")
+    assert model(ClaudeRuntime().command(tmp_path)) == "claude-other"
+
+
+def test_a_turn_another_model_answered_fails_and_is_never_taken_for_the_one_asked(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.delenv("JAYNES_CLAUDE_MODEL", raising=False)
+    stream = json.dumps({"type": "result", "subtype": "success", "is_error": False, "usage": {},
+                         "modelUsage": {"claude-other": {"outputTokens": 900}, "claude-opus-5-5": {"outputTokens": 3}}})
+    monkeypatch.setattr("jaynes.runtimes._run", lambda *a, **k: (0, stream + "\n", ""))  # pyright: ignore[reportUnknownLambdaType]
+    monkeypatch.setattr("jaynes.runtimes._binary", lambda name: name)  # pyright: ignore[reportUnknownLambdaType]
+    with pytest.raises(RuntimeFailure, match="asked for claude-opus-5-5 and claude-other answered"):
+        ClaudeRuntime().turn(tmp_path, tmp_path, "p", 10)
+
+
 def test_a_turn_says_how_much_of_its_input_was_read_back_from_the_cache(tmp_path: Path, monkeypatch: Any) -> None:
     usage = {"input_tokens": 5, "cache_creation_input_tokens": 300, "cache_read_input_tokens": 9000, "output_tokens": 40}
     stream = json.dumps({"type": "result", "subtype": "success", "is_error": False, "usage": usage,
                          "modelUsage": {"claude-x": {}}})
     monkeypatch.setattr("jaynes.runtimes._run", lambda *a, **k: (0, stream + "\n", ""))  # pyright: ignore[reportUnknownLambdaType]
     monkeypatch.setattr("jaynes.runtimes._binary", lambda name: name)  # pyright: ignore[reportUnknownLambdaType]
-    turn = ClaudeRuntime().turn(tmp_path, tmp_path, "p", 10)
+    turn = ClaudeRuntime("claude-x").turn(tmp_path, tmp_path, "p", 10)
     assert (turn.tokens_in, turn.tokens_cached, turn.tokens_out) == (9305, 9000, 40)  # new input: 305

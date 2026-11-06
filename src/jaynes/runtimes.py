@@ -219,12 +219,15 @@ def claude_failure(result: dict[str, Any], code: int, err: str) -> QuotaExhauste
                           f"{f'{said} {err[-400:]}'.strip()[:300]}")
 
 
+MODEL = "claude-opus-5-5"  # the account's default moved under running turns; another model only by JAYNES_CLAUDE_MODEL
+
+
 class ClaudeRuntime:
     name = "claude"
     scratch_dirs = (".claude",)  # Claude Code 2.1 creates .claude/.cc-writes in every folder it works in
 
     def __init__(self, model: str | None = None, max_messages: int = 200) -> None:
-        self.model = model or os.environ.get("JAYNES_CLAUDE_MODEL")
+        self.model = model or os.environ.get("JAYNES_CLAUDE_MODEL") or MODEL
         self.max_messages = max_messages  # the deadline is what usually ends a long turn
 
     def command(self, workspace: Path, web: bool = False, scratch: Path | None = None,
@@ -233,7 +236,7 @@ class ClaudeRuntime:
                 "--settings", json.dumps(claude_settings(workspace, web, scratch)), "--strict-mcp-config",
                 "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence",
                 "--permission-mode", "dontAsk", "--max-turns", str(max_messages or self.max_messages)]
-        return args + (["--model", self.model] if self.model else [])
+        return [*args, "--model", self.model]
 
     def turn(self, workspace: Path, scratch: Path, prompt: str, deadline: float, web: bool = False,
              max_messages: int | None = None) -> TurnResult:
@@ -242,17 +245,20 @@ class ClaudeRuntime:
         result, read = claude_result(out)
         if result.get("is_error") or code != 0:
             raise claude_failure(result, code, err)
+        answered = self._model(result)
+        if self.model not in answered:  # an alias such as "opus" is inside the name the runtime reports
+            raise RuntimeFailure(f"asked for {self.model} and {answered} answered; this turn does not count")
         usage: dict[str, Any] = result.get("usage") or {}
         tokens_in = sum(int(usage.get(k) or 0) for k in
                         ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-        return TurnResult(tokens_in, int(usage.get("output_tokens") or 0), self._model(result), tuple(read),
+        return TurnResult(tokens_in, int(usage.get("output_tokens") or 0), answered, tuple(read),
                           tuple(claude_commands(out)), int(usage.get("cache_read_input_tokens") or 0))
 
     def _model(self, result: dict[str, Any]) -> str:
         per_model: dict[str, dict[str, Any]] = result.get("modelUsage") or {}
         if per_model:  # the model that wrote the most is the one that answered
             return max(per_model, key=lambda m: int(per_model[m].get("outputTokens") or 0))
-        return self.model or "claude"
+        return self.model
 
 
 # --- Codex ------------------------------------------------------------------------
