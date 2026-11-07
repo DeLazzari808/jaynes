@@ -2,6 +2,26 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: A direction specialist plans each request
+
+**Decided.** A request becomes a plan of runs, one per role. The delivery of one
+run enters the next, with context chosen by address as decided; runs that do
+not depend on each other run at the same time; the record ties them all to the
+request. That much is the engine's. A direction specialist, private like the
+others, reads the request and picks which specialists take part and in what
+order. The plan does not wait for the person, who sees it in the result. The
+direction has its own count: calling the wrong specialist or leaving one out is
+its error.
+
+**Why.** A real request often needs several specialists, such as a product
+designer, a writer and engineering for one screen, and today one agent picks a
+single role.
+
+**Tradeoffs.**
+
+- A wrong plan sends every later run the wrong way until someone sees it.
+- One more agent per request costs tokens.
+
 ## 2026-11-07: A stop no longer holds the run
 
 **Decided.** A run does not wait for the person's answer. It goes on with the
