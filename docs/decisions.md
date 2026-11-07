@@ -2,6 +2,29 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: An API and an MCP server, and what an agent may release
+
+**Decided, not started.** Jaynes gets a local API with every action of its page,
+and its page becomes one client of it; another frontend, such as the private
+company's panel, uses the same API. An MCP server offers the same actions to
+agents. An agent can be the first to handle an exception, and the person gets
+only what it may not release.
+
+- An agent may resolve two attempts that still fail, by trying another way,
+  calling another specialist or rewriting the request, and a doubt.
+- Only the person may release an action that cannot be undone and a braked
+  specialist, and only the person answers samples: an agent's answer never
+  counts as proof. Jaynes already records whether the person or an agent
+  answered.
+
+**Tradeoffs.**
+
+- A frontend acting for the person holds the person's key, and agents on the
+  same computer could read it, so the key must live where they cannot reach,
+  such as the browser or the system keychain.
+- An agent resolving exceptions can hide a pattern the person would have
+  noticed; its resolutions show in the results.
+
 ## 2026-11-07: What is Jaynes and what is the company built on it
 
 **Decided.** A second test, next to engine against role: would someone who
