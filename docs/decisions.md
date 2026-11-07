@@ -2,6 +2,29 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: A safe real target, and where a step's error counts
+
+Found by walking an invented request end to end: reminders by message one day
+before a class, in a booking app.
+
+**Decided.**
+
+- In many areas the real run cannot be undone, such as sending a message or
+  charging a card. Each project keeps a safe real target, such as the person's
+  own number, a test account or a payment service's test mode. The role says
+  it needs one; the project says which. The real run then becomes safe, and
+  only switching on for real customers waits for the person.
+- Counts exist only on stops, but an error can come from a step without one.
+  The error counts on the first stop after the step that erred, because that
+  stop let it through.
+
+**Tradeoffs.**
+
+- A test target can behave unlike the real one, such as a test account with
+  limits the real one does not have.
+- A stop late in the role collects the errors of every step before it, so its
+  count falls for work it did not do.
+
 ## 2026-11-07: An API and an MCP server, and what an agent may release
 
 **Decided, not started.** Jaynes gets a local API with every action of its page,
