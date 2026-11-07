@@ -15,8 +15,14 @@ comes later.
   they must build their own specialists before it does real work for them.
 - Making specialist creation easy becomes a core part of Jaynes, not an extra.
 
-**Open.** What happens to the roles already inside Jaynes, and how Jaynes finds
-private specialists that live outside it.
+The roles already inside Jaynes stay as public examples at their current
+level. From now on specialist work happens in the private repository, and Jaynes
+gets only engine improvements: anything a role needs from the engine is public,
+the role itself is private. Removing the roles was rejected, because the
+repository history is public and removing them would not make them private.
+
+**Open.** How Jaynes finds private specialists that live outside it when the
+person asks for a change.
 
 ## 2026-11-07: What counts as proof that a step got it right
 
