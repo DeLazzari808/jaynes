@@ -2,6 +2,21 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: What is Jaynes and what is the company built on it
+
+**Decided.** A second test, next to engine against role: would someone who
+installed Jaynes without the private company need it? If so, it is Jaynes.
+
+- Jaynes's page shows what waits for the person, the samples to answer, the
+  deliveries with their proof, what is running and the plan of runs of each
+  request, with buttons to halt everything and to undo. All of it follows from
+  the engine's ideas, and without it nobody else could use Jaynes.
+- Running a company belongs to the company: which projects exist and which
+  comes first, which requests to create, business results, the direction
+  specialist and the rest of the team, and deciding what is worth telling the
+  person and when.
+- Jaynes warns the person outside the page only when something is held.
+
 ## 2026-11-07: Waiting is the brake, not the default
 
 **Decided.** When a stop's count shows too many errors, its runs wait for the
