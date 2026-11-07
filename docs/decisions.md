@@ -2,6 +2,41 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Levels per stop, and when the count starts over
+
+**Decided.** A stop has three levels:
+
+1. Always asks: at the start, or after the count showed too many errors.
+2. By sample: it has proven right and asks one time in ten, with a concrete
+   question. Jaynes does this today.
+3. Almost alone: it has proven right for much longer and asks one time in
+   fifty, a number to tune. There is no level without samples, because some
+   errors never become corrections: the person just lives with a mediocre
+   result.
+
+At levels 2 and 3 a stop also asks on doubt. The engine's signals hold in any
+area: a check failed and the agent redid the work, the agent asked for
+information it lacked, a reviewing agent disagrees, or the specialist works on
+that project for the first time. A role adds the signals of its area, such as
+touching files outside the agreed ones in software or spending above the usual
+in marketing.
+
+An action that cannot be undone always asks, at any level. The rule is the
+engine's; each role names which actions of its area cannot be undone.
+
+The count starts over when what the agent receives changes, such as the step's
+text or its question. Adding a check does not start it over, because a check
+only stops more work and does not make what passes worse.
+
+**Why.** Today any change to a role's text, checks or question starts the
+count over, so a specialist that improves every week would never earn trust.
+
+**Tradeoffs.**
+
+- A new check makes the agent retry, and a retry can turn out different, so
+  keeping the count is a close approximation, not an exact guarantee.
+- Doubt signals ask more often at the start of each project.
+
 ## 2026-11-07: Engine, role and specialist; corrections after delivery
 
 **Decided.** The test for where something belongs: if it works the same for
