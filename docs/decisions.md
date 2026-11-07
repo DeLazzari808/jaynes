@@ -2,6 +2,40 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Where a project's context lives, and how a step gets it
+
+**Decided.** A job title is not the unit of a specialist; it needs finer pieces.
+The same specialist works on many projects, each for a different owner, so
+context sits in three layers:
+
+- The specialist's own roles, checks, techniques and general lessons travel to
+  every project.
+- A project's identity, users, decisions, glossary, real data and the history
+  of its runs live in that project's repository, versioned with its code.
+- The person's taste splits in two: general taste travels, and taste about one
+  project lives in that project's repository.
+
+A step gets context by address, not by similarity. The run knows its project,
+each step declares the context it receives, and the record keeps what it was
+shown. The agent may read more files, but only inside its copy of that project.
+No similarity search (RAG) for now.
+
+**Why.** One project's context files are about 27 KB today, about 7 thousand
+tokens, and fit whole. A search by similarity across projects can return a
+plausible fact from another project, and makes it hard to say afterwards why a
+passage was sent. Some projects hold data from the companies the person works
+for, which must never reach another project.
+
+**Tradeoffs.**
+
+- Taste kept in each repository cannot be seen in one place across projects.
+- A step that declares its context misses what nobody declared; reading its
+  own copy of the project covers part of that.
+
+**Later.** Similarity search only when a project's history or references
+outgrow what fits, such as hundreds of runs or a large reference library; even
+then only after filtering by project, and with what was sent recorded.
+
 ## 2026-11-06: Jaynes is the engine of a dark software factory
 
 **Decided.** Agents conduct the development cycle. The person writes what they
