@@ -2,6 +2,26 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Waiting is the brake, not the default
+
+**Decided.** When a stop's count shows too many errors, its runs wait for the
+person's answer again, until the count recovers. Other specialists go on as
+before. The page gets a button to halt everything, for when the person wants to
+stop without waiting for the count. Undoing a delivery uses the area's own
+undo, which comes from the role, such as reverting the merge in software; where
+the area cannot undo, the action already waited for the person.
+
+**Why.** A merge can be undone, so it does not wait either. Without a brake, a
+specialist that errs often would keep delivering and merging while its work
+passes the checks, and showing a stop on the page stops nothing.
+
+**Tradeoffs.**
+
+- Errors in a row brake fast: two in a row at a 5% or 10% budget, three at 20%.
+  Scattered errors brake slowly: three errors in ten runs do not brake.
+- Until it brakes, a new specialist's errors reach the main line and have to
+  be undone.
+
 ## 2026-11-07: A direction specialist plans each request
 
 **Decided.** A request becomes a plan of runs, one per role. The delivery of one
