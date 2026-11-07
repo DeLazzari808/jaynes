@@ -5,7 +5,10 @@ What was decided, what it costs, and what is still open. Newest first.
 ## 2026-11-07: Waiting is the brake, not the default
 
 **Decided.** When a stop's count shows too many errors, its runs wait for the
-person's answer again, until the count recovers. Other specialists go on as
+person's answer again, until the count recovers. Braking needs little proof,
+such as two errors in the last ten runs, because braking without need only
+costs waiting. Releasing the brake needs the statistical proof Jaynes uses
+today, that the error rate is under the stop's budget. Other specialists go on as
 before. The page gets a button to halt everything, for when the person wants to
 stop without waiting for the count. Undoing a delivery uses the area's own
 undo, which comes from the role, such as reverting the merge in software; where
@@ -17,8 +20,10 @@ passes the checks, and showing a stop on the page stops nothing.
 
 **Tradeoffs.**
 
-- Errors in a row brake fast: two in a row at a 5% or 10% budget, three at 20%.
-  Scattered errors brake slowly: three errors in ten runs do not brake.
+- The statistical test alone brakes only on errors in a row: two in a row at a
+  5% or 10% budget, three at 20%, while three errors in ten runs would not
+  brake. The looser rule to brake covers that, and can brake a stop that was
+  fine.
 - Until it brakes, a new specialist's errors reach the main line and have to
   be undone.
 
