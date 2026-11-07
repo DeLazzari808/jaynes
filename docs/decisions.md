@@ -2,6 +2,28 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: A stop no longer holds the run
+
+**Decided.** A run does not wait for the person's answer. It goes on with the
+agent's best choice, and the answer can arrive later. An accept changes
+nothing; a return redoes the work from that step on, and after delivery it
+counts as a correction. Only an action that cannot be undone, such as
+publishing, sending or spending, waits for the person. "Always asks" now means
+the stop is always shown, not that the run waits.
+
+**Why.** The levels help over time, but a new project with a new specialist
+starts with every stop at "always asks", so the start would stay as slow as
+today. On the measured project, 67 of 71 hours were waits, mostly while the
+person was away, not on hard questions.
+
+**Tradeoffs.**
+
+- A return on an early step throws away the work done after it, a few dollars
+  of agent time against hours of waiting.
+- A misunderstood goal is built in full before anyone sees it.
+- More results pile up for the person, so the queue and a way to halt and undo
+  matter more.
+
 ## 2026-11-07: Proof the maker cannot see
 
 **Decided.** Two parts, both before the delivery stop may rise a level.
