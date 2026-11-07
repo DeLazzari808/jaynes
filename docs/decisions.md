@@ -2,6 +2,46 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Engine, role and specialist; corrections after delivery
+
+**Decided.** The test for where something belongs: if it works the same for
+marketing and for software, it is the engine; if it depends on the area, it is
+the role.
+
+- The engine runs the steps in order and gives each agent only its step,
+  checks that each step delivered, runs the checks the role asked for, stops
+  where the role says, records everything, counts right and wrong per stop and
+  decides when a stop may ask less.
+- A role is the method of one kind of work: its steps and their order, what
+  each delivers, its checks, where it stops and with what question, and what a
+  delivery is in that area.
+- A specialist is several roles with knowledge, memory and a track record.
+
+When someone corrects a delivery afterwards, the count of the stop behind it
+changes. That rule is the engine's. How to find which delivery a correction
+touched is the role's: the code history in software, the screen in design, the
+campaign in marketing.
+
+A correction is one of three kinds:
+
+- An error: it was wrong by what was already known, including a preference
+  already written where the agent could read it. It counts as an error.
+- A new preference: nobody knew. It does not count and becomes taste memory, of
+  the project or general.
+- New information: the world changed or a new fact appeared. It does not count.
+
+The agent making the correction proposes the kind and which step it came from;
+the person sees it in the result, with no stop. A delivery earns its right
+answer after a fixed time per project, 7 days by default, and a correction
+found later turns it into an error.
+
+**Tradeoffs.**
+
+- The agent can file a real error as a new preference and keep the count too
+  optimistic; the person sees the kind in the result, and samples catch part
+  of it.
+- A fixed wait ignores how much the delivery was used in that time.
+
 ## 2026-11-07: Jaynes promises specialists of any area
 
 **Decided.** The engine serves any area, and nothing in it may depend on code.
@@ -63,7 +103,7 @@ run. A defect found in real use after delivery never reached the count.
 - A step earns trust more slowly, since it waits for the time after delivery.
 - Someone has to say which step a later defect came from.
 
-**Open.** How long to wait after delivery, and who traces a defect to its step.
+**Settled later the same day:** see the next entry above.
 
 ## 2026-11-07: Where a project's context lives, and how a step gets it
 
