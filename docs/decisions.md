@@ -2,6 +2,24 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Jaynes promises specialists of any area
+
+**Decided.** The engine serves any area, and nothing in it may depend on code.
+The public promise is open from the start: Jaynes runs specialists of any area,
+not only software.
+
+**Why.** The private company built on it needs every area, from marketing and
+research to sales.
+
+**Tradeoffs.**
+
+- So far only software, and design for software, has been proven. In other
+  areas the machine can check less by itself, so trust there rests mostly on
+  the outcome after delivery.
+- A promise wider than the proof can read as hype.
+
+**Open.** How the page and the README show which areas have been proven.
+
 ## 2026-11-07: Jaynes is open, the specialists stay private for now
 
 **Decided.** Jaynes is the open engine that anyone can use. The specialists
