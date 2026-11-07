@@ -18,6 +18,10 @@ research to sales.
   the outcome after delivery.
 - A promise wider than the proof can read as hype.
 
+The positioning in one sentence: "An open engine for agent specialists in any
+area. They work alone where they have proven right, and call you everywhere
+else."
+
 **Open.** How the page and the README show which areas have been proven.
 
 ## 2026-11-07: Jaynes is open, the specialists stay private for now
