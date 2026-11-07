@@ -2,6 +2,25 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: What counts as proof that a step got it right
+
+**Decided.** The main proof comes from outside: the real run passed and no
+defect traced to that step appeared for a while afterwards. The person's answer
+counts only when they actually looked, and is used for the samples; there the
+stop asks a concrete question instead of offering only Accept.
+
+**Why.** Today every Accept counts as a correct answer, and many were given
+without reading, so the count said a step was good when nobody had checked it.
+The only correction is sending a run back to an earlier step inside the same
+run. A defect found in real use after delivery never reached the count.
+
+**Tradeoffs.**
+
+- A step earns trust more slowly, since it waits for the time after delivery.
+- Someone has to say which step a later defect came from.
+
+**Open.** How long to wait after delivery, and who traces a defect to its step.
+
 ## 2026-11-07: Where a project's context lives, and how a step gets it
 
 **Decided.** A job title is not the unit of a specialist; it needs finer pieces.
