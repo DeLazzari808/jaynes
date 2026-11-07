@@ -2,6 +2,32 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Proof the maker cannot see
+
+**Decided.** Two parts, both before the delivery stop may rise a level.
+
+- Hidden checks: a separate agent reads only the request, never the work, and
+  writes the cases before the work starts. They sit in the engine's area of
+  files no agent receives. The person sees them in the samples. In software
+  they are usage scenarios; in marketing, what a piece must meet, such as the
+  audience, the promise and what it must not say; in research, the questions
+  the report must answer with a source.
+- A real run, which each role defines for its area: the real command against
+  the real service in software, the screen with real data in design. Where the
+  real run cannot be undone, as spending money in marketing, it always asks and
+  the proof comes from the outcome after delivery.
+
+When a hidden check fails, the maker sees the case described in words, never
+the check itself. After two attempts that still fail, it becomes an exception
+and calls the person.
+
+**Tradeoffs.**
+
+- Each failed attempt tells the maker a little about the hidden cases; two
+  attempts limit how much.
+- The case writer shares the model's blind spots, so the real run stays.
+- One more agent per request costs tokens.
+
 ## 2026-11-07: Levels per stop, and when the count starts over
 
 **Decided.** A stop has three levels:
