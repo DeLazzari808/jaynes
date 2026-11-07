@@ -2,6 +2,22 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-07: Jaynes is open, the specialists stay private for now
+
+**Decided.** Jaynes is the open engine that anyone can use. The specialists
+built on it, with their roles, checks, knowledge and memory, stay private for
+now. Making it easy for anyone to create their own specialists through Jaynes
+comes later.
+
+**Tradeoffs.**
+
+- Someone who installs Jaynes gets the engine and only the example roles, so
+  they must build their own specialists before it does real work for them.
+- Making specialist creation easy becomes a core part of Jaynes, not an extra.
+
+**Open.** What happens to the roles already inside Jaynes, and how Jaynes finds
+private specialists that live outside it.
+
 ## 2026-11-07: What counts as proof that a step got it right
 
 **Decided.** The main proof comes from outside: the real run passed and no
