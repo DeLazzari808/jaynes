@@ -2,8 +2,9 @@
 
 A stop lets an output through when it is accepted, chosen or skipped. That release counts as right only once its
 run delivered and no correction reached it for a while (``SETTLE``, 7 days); a correction of kind error turns it
-into an error, even after that. An error found inside the run, a change at the stop or a return to it, counts at
-once. Only the last release of a stop in a run counts, since only it was delivered.
+into an error, even after that. A delivery a person undid earns no right. An error found inside the run, a change
+at the stop or a return to it, counts at once. Only the last release of a stop in a run counts, since only it was
+delivered.
 
 Nobody looked at a release by an agent or at a small change the role let through, so they never earn a right; a
 correction still counts against them, so the count errs towards asking.
@@ -24,7 +25,8 @@ from jaynes.store import Event
 SETTLE = 7 * 24 * 3600
 BRAKE_ERRORS, BRAKE_LAST = 2, 10
 KINDS = ("error", "preference", "info")  # wrong by what was known; a preference nobody knew; the world changed
-TYPES = ("StopAnswered", "StopSkipped", "RunSentBack", "RunFinished", "DeliveryCorrected")  # what a count reads
+TYPES = ("StopAnswered", "StopSkipped", "RunSentBack", "RunFinished", "DeliveryCorrected",
+         "MergeUndone")  # what a count reads
 
 
 @dataclass
@@ -54,6 +56,7 @@ def items(events: Iterable[Event], now: float, settle: float = SETTLE) -> list[I
     last: dict[tuple[str, str], Item] = {}  # the latest release of a step in a run
     finished: dict[str, tuple[float, str]] = {}
     corrections: dict[tuple[str, str], dict[str, Any]] = {}  # the latest of each, by run and id
+    undone: set[str] = set()  # runs whose merges a person reverted: what they delivered earns no right
 
     def release(item: Item) -> None:
         prev = last.get((item.run_id, item.step))
@@ -94,6 +97,8 @@ def items(events: Iterable[Event], now: float, settle: float = SETTLE) -> list[I
             finished[run] = (e.ts, str(p.get("outcome", "delivered")))
         elif e.type == "DeliveryCorrected":
             corrections[(run, str(p["id"]))] = p
+        elif e.type == "MergeUndone":
+            undone.add(run)
     for (run, cid), p in corrections.items():
         hit = last.get((run, str(p.get("stop") or "")))
         if p.get("kind") == "error" and hit is not None:
@@ -104,7 +109,7 @@ def items(events: Iterable[Event], now: float, settle: float = SETTLE) -> list[I
         end = finished.get(item.run_id)
         if end is None:
             continue  # its run is still going
-        if end[1] == "dismissed" or not item.earns:
+        if end[1] in ("dismissed", "undone") or item.run_id in undone or not item.earns:
             item.state = "none"
         elif now >= end[0] + settle:
             item.state = "right"

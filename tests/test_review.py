@@ -867,3 +867,29 @@ def test_a_braked_stop_says_so_and_how_many_clean_deliveries_release_it(tmp_path
         assert "<span class='chip red'>braked</span>" in get(base + "/role/stopped")
     finally:
         server.shutdown()
+
+
+def test_a_merged_run_says_so_at_its_stop_and_undo_on_its_page_reverts_it(tmp_path: Path) -> None:
+    main = tmp_path / "repo"
+    main.mkdir()
+    (main / "calc.py").write_text("def add(a, b):\n    return a - b\n")
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-qm", "start"]):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=main, check=True)
+    cli.main(["run", "--home", str(tmp_path / "home"), "--role", "tests.merging:ROLE", "--task", "add should add",
+              "--project", str(main), "--runtime", "quick=tests.merging:Agent"])
+    [run] = Store(tmp_path / "home" / "jaynes.sqlite3").runs()
+    assert "a + b" in (main / "calc.py").read_text()  # merged before any answer
+    base, server = serving(tmp_path / "home")
+    try:
+        assert "Already merged into main by itself" in get(f"{base}/stop/{run}/accept")
+        page = get(f"{base}/run/{run}")
+        assert "into main by itself, at" in page and "Undo the merge" in page
+
+        status, _ = post(base + "/undo", {**form(page), "note": "not now"})
+
+        assert status == 303
+        assert "a - b" in (main / "calc.py").read_text()
+        page = get(f"{base}/run/{run}")
+        assert "reverted on main: not now" in page and "Undo the merge" not in page
+    finally:
+        server.shutdown()

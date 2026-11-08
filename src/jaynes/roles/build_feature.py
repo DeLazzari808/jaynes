@@ -369,7 +369,7 @@ def built(out: Built, needs: Witnesses) -> Pass | Fail:
     return Pass()
 
 
-ROLE = role("build-feature")
+ROLE = role("build-feature", merges=True)
 RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read", max_turns=1)
 IDENTITY = ROLE.step("identity", output=Identity, run_by=read_identity, project="read", max_turns=1)
 # written from the task alone, before the work; only Jaynes and the person see it

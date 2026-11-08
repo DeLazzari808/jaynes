@@ -287,6 +287,13 @@ def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
             out["branch"] = made["branch"]
     elif result.status == "blocked":
         out["page"] = f"{page(c.home)}/run/{run_id}"
+    if result.status in ("waiting", "finished"):  # merged alone, or why not
+        from jaynes.conductor import project
+        st = project(c.store.events(run_id=run_id))
+        if st.merged and st.undone is None:
+            out["merged"] = st.merged[-1]["into"]
+        elif st.not_merged is not None:
+            out["not_merged"] = st.not_merged["reason"]
     return out
 
 

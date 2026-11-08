@@ -471,7 +471,7 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
-const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/start", "/setup", "/update", "/restart"];  // no page to GET
+const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/undo", "/start", "/setup", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
@@ -837,6 +837,10 @@ class Review:
         if s.open_stop is not None and s.open_stop[1].get("ends"):
             sub += ('<div class="sub">Accepting ends the run here, with nothing delivered; return it with a note '
                     'to have the agent look again.</div>')
+        if s.open_stop is not None and st.merged and st.undone is None:
+            sub += (f'<div class="sub">Already merged into {esc(str(st.merged[-1]["into"]))} by itself, since every '
+                    'hidden check passed. Accept keeps it; a return corrects it and merges the correction on top; '
+                    'Undo on the run\'s page reverts it.</div>')
         if s.open_stop is not None and s.open_stop[1].get("status") == "braked":
             sub += ('<div class="sub"><span class="chip red">braked</span> Too much of what this stop let through '
                     'turned out wrong lately, so the run waits for you here: nothing after it runs until you answer. '
@@ -1083,7 +1087,7 @@ class Review:
         names = self.names(role, events)
         started = st.started or {}
         # a stop does not hold the run, so a run with stops open can still be working
-        state = (st.outcome if st.outcome in ("ended", "dismissed") else "finished" if st.finished else
+        state = (st.outcome if st.outcome in ("ended", "dismissed", "undone") else "finished" if st.finished else
                  "blocked" if st.blocked else
                  "running" if self.c._held(run_id) else  # pyright: ignore[reportPrivateUsage]
                  "waiting" if any(x.open_stop for x in st.steps.values()) else
@@ -1101,9 +1105,23 @@ class Review:
             label = {"stop": "Open the stop", "blocked": "See why", "idle": "Continue or dismiss"}[w.kind]
             call = (f'<div class="call {w.kind}"><span>{esc(say)}</span><a class="btn go" '
                     f'href="/stop/{q(run_id)}/{q(w.step)}">{label}</a></div>')
+        merges = "".join(f'<tr><td>merged</td><td class="m">into {esc(str(m["into"]))} by itself, at '
+                         f'{esc(str(m["commit"])[:8])}{", a correction on top" if m.get("over") else ""}</td></tr>'
+                         for m in st.merged)
+        if st.not_merged is not None and not st.undone:
+            merges += f'<tr><td>not merged</td><td>{esc(str(st.not_merged["reason"]))}</td></tr>'
+        if st.undone is not None:
+            merges += (f'<tr><td>undone</td><td>reverted on {esc(str(st.undone["into"]))}: '
+                       f'{esc(str(st.undone["note"]))}</td></tr>')
         made = (f'<div class="box"><table class="kv"><tr><td>branch</td><td class="m">{esc(str(st.branch["branch"]))} '
-                f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr></table></div>'
-                if st.branch else "")
+                f'in {esc(str(st.branch["root"]))}, at {esc(str(st.branch["commit"])[:8])}</td></tr>{merges}'
+                f'</table></div>' if st.branch else "")
+        if st.merged and st.undone is None:
+            made += (f'<form class="bar" method="post" action="/undo"><input type="hidden" name="token" '
+                     f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
+                     f'<div class="row"><input type="text" name="note" required placeholder="Why undo it? (needed '
+                     f'to revert the merge on {esc(str(st.merged[-1]["into"]))})"><button class="btn">Undo the '
+                     f'merge</button></div></form>')
         task = str(started.get("task", ""))
         whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{marked(task)}</div></details>'
                  if headline(task) != task else "")
@@ -1563,6 +1581,16 @@ class Review:
                 f'it through; a new preference or new information does not</span></div><div class="box"><table>'
                 f'{"".join(rows)}</table></div></div>')
 
+    def undo(self, fields: dict[str, str]) -> tuple[int, str]:
+        run_id = fields.get("run", "")
+        try:
+            self.c.undo(run_id, fields.get("note", ""), by="person")
+        except AnswerRejected as err:
+            return 400, self.not_found("; ".join(err.reasons))
+        except RunBusy:
+            return 409, self.run_page(run_id)
+        return 303, f"/run/{q(run_id)}"
+
     def correction(self, fields: dict[str, str]) -> tuple[int, str]:
         run_id = fields.get("run", "")
         try:
@@ -1767,9 +1795,14 @@ class Review:
             "RunPaused": lambda: f"quota until {datetime.fromtimestamp(float(p['until'])).strftime('%H:%M')}",
             "RunBlocked": lambda: "; ".join(str(x) for x in p.get("reasons", [])[:2]),
             "RunSentBack": lambda: f"from {p['step']} to {p['to']}, by {p['by']}: {p['note']}",
+            "Merged": lambda: f"into {p['into']} at {str(p['commit'])[:8]}" + (", a correction on top" if p.get("over")
+                                                                               else ""),
+            "MergeSkipped": lambda: f"not merged by itself: {p['reason']}",
+            "MergeUndone": lambda: f"reverted on {p['into']}, by {p['by']}: {p['note']}",
             "DeliveryCorrected": lambda: (f"{p['kind']} in {p['erred']}" + (f", counted at {p['stop']}" if p["kind"] ==
                                           "error" and p.get("stop") else ", not counted") + f", by {p['by']}: {p['note']}"),
-            "RunFinished": lambda: (f"ended at {p['step']}; nothing was delivered" if p.get("outcome") == "ended"
+            "RunFinished": lambda: ("undone: its merge was reverted" if p.get("outcome") == "undone" else
+                                    f"ended at {p['step']}; nothing was delivered" if p.get("outcome") == "ended"
                                     else "dismissed; nothing was delivered" if p.get("outcome") == "dismissed"
                                     else "finished"),
         }.get(ev.type, lambda: "")()
@@ -1941,7 +1974,7 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                     shared.polled = 0.0
                 return self._send(204, b"", "text/plain")
             handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
-                        "/send-back": Review.send_back, "/correction": Review.correction,
+                        "/send-back": Review.send_back, "/correction": Review.correction, "/undo": Review.undo,
                         "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
                         "/restart": Review.restart}
             if path not in handlers:

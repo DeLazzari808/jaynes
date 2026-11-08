@@ -307,6 +307,7 @@ class Role:
     method: str | Path = ""
     steps: list[Step[Any]] = field(default_factory=list[Step[Any]])
     inputs: dict[str, Input] = field(default_factory=dict[str, Input])  # what a run starts with, by name
+    merges: bool = False  # its delivery is a merge, which Jaynes makes alone once every proof passes
 
     def method_text(self) -> str:
         return self.method.read_text() if isinstance(self.method, Path) else self.method
@@ -404,11 +405,13 @@ class Role:
 
 
 def role(name: str, agent: str = "claude", method: str | Path = "",
-         inputs: Mapping[str, Input] | None = None) -> Role:
-    """``method`` is the method text, or a ``Path`` to it, relative paths resolved next to the calling module."""
+         inputs: Mapping[str, Input] | None = None, merges: bool = False) -> Role:
+    """``method`` is the method text, or a ``Path`` to it, relative paths resolved next to the calling module.
+    ``merges`` says the delivery is a merge of the run's branch into the branch it started from, which Jaynes makes
+    by itself once every step whose output is ``jaynes.proof.Proved`` passed."""
     if isinstance(method, Path) and not method.is_absolute():
         method = Path(inspect.stack()[1].filename).resolve().parent / method
-    return Role(name, agent, method, inputs=dict(inputs or {}))
+    return Role(name, agent, method, inputs=dict(inputs or {}), merges=merges)
 
 
 def code_hash(fn: Callable[..., Any]) -> str:

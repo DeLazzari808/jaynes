@@ -31,13 +31,16 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
    Say nothing about Jaynes while it works.
 3. When the run ends it prints one line of JSON. By its `status`:
    - `waiting`: the run went as far as it can without the person. Its `stops` wait for them on the page, and
-     when `branch` is printed the change is already on it. Tell them in one line its `question` and its `page`
-     link, as printed, and how many stops wait when there are more than one; then run `jaynes wait <run>` in the
-     background: it returns once they answered, with a new line of JSON, and you come back to this step with it.
-     Offer the merge only at `finished`: a return still corrects the branch until then.
+     when `branch` is printed the change is already on it. When `merged` is printed, Jaynes already merged it
+     into that branch by itself, since its hidden checks passed: say so in the same line, and never merge or
+     offer to; the files in this folder changed with it, so read a file again before you edit it. Tell them in one line its `question` and its `page` link, as printed, and how many stops wait when
+     there are more than one; then run `jaynes wait <run>` in the background: it returns once they answered, with
+     a new line of JSON, and you come back to this step with it. A return still corrects the branch, and a merged
+     change is merged again on top.
    - `blocked`: tell the person why, from `reasons`, in a sentence or two, with the `page` link.
    - `paused`: the agent's plan ran out; the run continues by itself at `until`.
-   - `finished`: tell the person, in one sentence, that the change is on the branch `jaynes/<run>`, and offer to
-     merge it.
+   - `finished`: when `merged` is printed, tell the person in one sentence that the change is merged into that
+     branch, and that Undo on the run's page reverts it. Otherwise tell them that the change is on the branch
+     `jaynes/<run>`, with `not_merged` in a few words when it is printed, and offer to merge it.
 4. Never answer a stop yourself and never choose for the person: only the person answers, on the page. Never
    open the page's link yourself; Jaynes calls the person to it.

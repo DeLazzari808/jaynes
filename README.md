@@ -34,7 +34,10 @@ were still sent back.
    its evidence wait for you in the review page, all of them at once, or come
    to you in Claude Code's question dialog. A return corrects on top: only
    the steps that used what changed run again. What cannot be undone, and a
-   change to files that run outside the box, waits for your answer.
+   change to files that run outside the box, waits for your answer. A role
+   whose delivery is a merge proves its work with checks written from your
+   request alone, which its maker never sees, and merges by itself once they
+   all pass; Undo reverts it.
 4. **What counts is what happened after delivery.** An accept counts as
    right only once its delivery went 7 days with nobody correcting it; a
    change or a return counts as an error at once, and so does a correction
@@ -100,6 +103,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Answers bound to who gave them and to the evidence shown; floor paths; irreversible steps with idempotency keys | Works |
 | Counts from the outcome: an accept counts once its delivery held 7 days, corrections after delivery (`jaynes correct`, kind changeable on the page), the brake after two errors in ten | Works in tests; no real correction yet |
 | Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
+| Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
@@ -119,8 +123,9 @@ Missing, roughly in order:
   history; a new preference is not yet kept as taste memory; every project
   waits 7 days, not yet a time of its own. A step cannot yet start over from
   scratch, giving its reason, instead of correcting on top.
-- **Halting everything and undoing a delivery.** The brake holds one stop;
-  a button to halt every run, and undoing a merge, come with merging alone.
+- **Halting everything.** The brake holds one stop; a button to halt every
+  run comes next. small-change does not merge alone yet: it has no hidden
+  checks.
 - **A turn past its deadline keeps its work.** The next attempt starts from
   nothing, even when the tests were almost written.
 - **Old runs leave the queue.** A run waiting for two days from a test that

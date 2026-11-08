@@ -65,7 +65,8 @@ def test_a_reading_step_sees_the_last_commit_and_its_check_can_open_the_copy(rep
     assert [p["reasons"] for p in payloads(c, "r1", "TurnRejected")] == [["#000000 is not in src/app.css"]]
     assert seen[-1] == ":root { --bg: #ffffff; }\n"
     assert payloads(c, "r1", "RunStarted")[0]["project"] == {"root": str(repo.resolve()),
-                                                            "base": git(repo, "rev-parse", "HEAD")}
+                                                            "base": git(repo, "rev-parse", "HEAD"),
+                                                            "branch": git(repo, "symbolic-ref", "--short", "HEAD")}
     assert payloads(c, "r1", "BranchCreated") == []  # nothing changed, so no branch
 
 

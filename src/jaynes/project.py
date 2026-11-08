@@ -151,6 +151,73 @@ def branch(root: Path, base: str, name: str, patches: Sequence[tuple[str, bytes]
     return parent
 
 
+class NotMerged(ProjectError):
+    """Why a merge, or its undo, did not land: the person merges or reverts by hand."""
+
+
+def current_branch(root: Path) -> str | None:
+    """The branch checked out at ``root``, or None when HEAD is detached."""
+    done = subprocess.run(["git", "symbolic-ref", "--short", "-q", "HEAD"], cwd=root, capture_output=True)
+    return done.stdout.decode().strip() or None if done.returncode == 0 else None
+
+
+def _tree(root: Path, base: str | None, ours: str, theirs: str) -> str:
+    """The tree of a three-way merge made apart from any checkout, or NotMerged on a conflict."""
+    args = ["git", *SAFE, "merge-tree", "--write-tree", "--no-messages", *(["--merge-base", base] if base else []),
+            ours, theirs]
+    done = subprocess.run(args, cwd=root, capture_output=True)
+    if done.returncode == 1:
+        raise NotMerged("it conflicts with what the branch has now")
+    if done.returncode != 0:
+        raise NotMerged(f"git merge-tree: {done.stderr.decode(errors='replace').strip()[:300]}")
+    return done.stdout.decode().split("\n", 1)[0].strip()
+
+
+def _checked_out(root: Path, branch: str) -> Path | None:
+    """The worktree where ``branch`` is checked out, if any."""
+    where: Path | None = None
+    for line in _git("worktree", "list", "--porcelain", cwd=root).decode().splitlines():
+        if line.startswith("worktree "):
+            where = Path(line[len("worktree "):])
+        elif line == f"branch refs/heads/{branch}":
+            return where
+    return None
+
+
+def _land(root: Path, branch: str, old: str, new: str) -> None:
+    """Move ``branch`` from ``old`` to ``new``. Where it is checked out, only by fast-forward over a clean checkout,
+    so no uncommitted work is touched; elsewhere, only if it still points at ``old``."""
+    where = _checked_out(root, branch)
+    if where is None:
+        _git("update-ref", f"refs/heads/{branch}", new, old, cwd=root)
+        return
+    if _git("status", "--porcelain", "--untracked-files=no", cwd=where).strip():
+        raise NotMerged(f"{where} has changes not committed")
+    done = subprocess.run(["git", *SAFE, "merge", "--ff-only", "-q", new], cwd=where, capture_output=True)
+    if done.returncode != 0:
+        raise NotMerged(f"the checkout at {where} could not move: "
+                        f"{done.stderr.decode(errors='replace').strip()[:300]}")
+
+
+def merge(root: Path, branch: str, commit: str, message: str, base: str | None = None) -> str:
+    """Merge ``commit`` into ``branch`` with a merge commit made apart, and land it (``_land``). ``base`` is what the
+    branch already has of this work, a correction merging only what changed since. Returns the merge commit."""
+    head = _git("rev-parse", "--verify", f"refs/heads/{branch}", cwd=root).decode().strip()
+    tree = _tree(root, base, head, commit)
+    new = _git("commit-tree", tree, "-p", head, "-p", commit, "-m", message, cwd=root).decode().strip()
+    _land(root, branch, head, new)
+    return new
+
+
+def revert(root: Path, branch: str, merged: str, message: str) -> str:
+    """Undo the merge commit ``merged`` on ``branch`` with a new commit, landed as a merge is. Returns it."""
+    head = _git("rev-parse", "--verify", f"refs/heads/{branch}", cwd=root).decode().strip()
+    tree = _tree(root, merged, head, f"{merged}^1")
+    new = _git("commit-tree", tree, "-p", head, "-m", message, cwd=root).decode().strip()
+    _land(root, branch, head, new)
+    return new
+
+
 # Paths that trusted tools run or obey later, outside any box: agents' and editors' settings and instructions, git
 # attributes and hooks, direnv, interpreters and package scripts, test and build entry points, dev containers, CI.
 # ``may_change`` alone never lets them through.

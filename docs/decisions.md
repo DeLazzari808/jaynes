@@ -79,9 +79,16 @@ the area cannot undo, the action already waited for the person.
 specialist that errs often would keep delivering and merging while its work
 passes the checks, and showing a stop on the page stops nothing.
 
-**Built 2026-11-08,** except the button to halt everything and undoing a
-delivery, which come with merging alone: today nothing merges without the
-person. Two errors among a stop's last ten outcomes brake it. A braked stop
+**Built 2026-11-08,** except the button to halt everything, which comes next.
+Merging alone was built the same day, with Alan's choice that it happens as
+soon as the proofs pass, not only once the merge stop has proved itself. A
+role says its delivery is a merge; Jaynes merges into the branch the project
+had checked out when the run started, locally, never pushing, once every
+hidden check passed and nothing holds the run. It lands only on a clean
+checkout, and a conflict or uncommitted changes leave it to the person, said
+on the run's page. A return after the merge corrects on top and merges only
+what changed. Undo on the run's page reverts every merge of the run, with a
+note. Two errors among a stop's last ten outcomes brake it. A braked stop
 asks on every run, even for a small change and when certified, holds the run
 there, and refuses an agent's answer. It is released when the outcomes since
 the brake certify on their own; the errors before the release no longer count

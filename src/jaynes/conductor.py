@@ -40,7 +40,7 @@ from jaynes import project as repo
 from jaynes.gate import Window
 from jaynes.preview import link_dependencies
 from jaynes import inputs as run_inputs
-from jaynes import outcome
+from jaynes import outcome, proof
 from jaynes.role import OUTPUT, Asks, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
 from jaynes.runtime import QuotaExhausted, Runtime, RuntimeFailure, TurnTimeout
 from jaynes.store import Event, Store
@@ -135,6 +135,9 @@ class RunState:
     paused_until: float | None = None
     branch: dict[str, Any] | None = None
     returns: dict[str, int] = field(default_factory=dict[str, int])  # times Jaynes sent a step back, by sender
+    merged: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])  # each merge Jaynes made, oldest first
+    not_merged: dict[str, Any] | None = None  # why the branch as it is now did not merge by itself
+    undone: dict[str, Any] | None = None  # a person reverted the merges
 
     def step(self, name: str) -> StepState:
         return self.steps.setdefault(name, StepState())
@@ -213,6 +216,13 @@ def project(events: Iterable[Event]) -> RunState:
                 st.finished, st.outcome = True, str(p.get("outcome", "delivered"))
             case "BranchCreated":
                 st.branch = p
+            case "Merged":
+                st.merged.append(p)
+                st.not_merged = None
+            case "MergeSkipped":
+                st.not_merged = p
+            case "MergeUndone":
+                st.undone = p
             case _:
                 pass
     return st
@@ -360,7 +370,7 @@ class Conductor:
                                                          self.home / "runs" / run_id / "inputs")
                 if project is not None:
                     root, base = repo.resolve(project)
-                    extra["project"] = {"root": str(root), "base": base}
+                    extra["project"] = {"root": str(root), "base": base, "branch": repo.current_branch(root)}
                 self._emit(run_id, "RunStarted", {**extra, "role": role.name, "task": task,
                                                   "fingerprint": role.fingerprint()})
             elif first.payload["role"] != role.name:
@@ -707,10 +717,77 @@ class Conductor:
             self._emit(run_id, "BranchCreated", {"branch": name, "commit": commit, "root": info["root"],
                                                  "steps": [step for step, _ in patches], "patches": made})
             return None
+        if info and st.branch and role.merges and not later and self._merge_alone(role, run_id, st, info):
+            return None
         if waiting := self._open_before(role, None, st) or (later[0].name if later else None):
             return RunResult("waiting", waiting)  # delivered; it finishes once the person answered
         self._emit(run_id, "RunFinished", {"outcome": "delivered"})
         return None
+
+    def _merge_alone(self, role: Role, run_id: str, st: RunState, info: Mapping[str, Any]) -> bool:
+        """Merge the run's branch into the branch it started from, once every proof passed and nothing holds the run;
+        after a correction, only what changed since the last merge. Says why when it does not. Returns whether it
+        recorded anything."""
+        assert st.branch is not None
+        commit, into = str(st.branch["commit"]), info.get("branch")
+        over = str(st.merged[-1]["from"]) if st.merged else None
+        if st.undone is not None or over == commit:
+            return False
+        proofs = [x for x in role.steps if x.output is not None and issubclass(x.output, proof.Proved)]
+        values = [proof.Proved.model_validate_json(self._object(str(c["output_hash"])))
+                  for x in proofs if (c := st.step(x.name).checked) and c.get("output_hash")]
+        why = ("the run started on no branch" if not into else
+               "its role has no hidden checks" if not proofs else
+               "not every hidden check passed" if len(values) < len(proofs) or not all(v.passed for v in values)
+               else None)
+        merged = ""
+        if why is None:
+            assert into is not None
+            task = str((st.started or {}).get("task", "")).strip().splitlines()[0] if (st.started or {}).get("task") else ""
+            try:
+                merged = repo.merge(Path(info["root"]), str(into), commit,
+                                    f"Merge {st.branch['branch']}: {task}"[:200], base=over)
+            except repo.ProjectError as err:
+                why = str(err)
+        if why is not None:
+            if st.not_merged is not None and st.not_merged == {"from": commit, "reason": why}:
+                return False  # said once for this branch
+            self._emit(run_id, "MergeSkipped", {"from": commit, "reason": why})
+            return True
+        self._emit(run_id, "Merged", {"into": into, "commit": merged, "from": commit, **({"over": over} if over else {})})
+        return True
+
+    def undo(self, run_id: str, note: str, by: By) -> dict[str, Any]:
+        """A person reverts every merge of the run, newest first, with a note saying why; an unfinished run then
+        finishes as undone and never merges again. Refused for an agent, and while a process holds the run."""
+        if by != "person":
+            raise AnswerRejected(["only a person undoes a delivery, from the page"])
+        if not note.strip():
+            raise AnswerRejected(["undoing a delivery needs a note saying why"])
+        with self._lock(run_id):
+            st = project(self.store.events(run_id=run_id))
+            info = cast(dict[str, Any], (st.started or {}).get("project") or {})
+            if not st.merged:
+                raise AnswerRejected([f"nothing of run {run_id} was merged"])
+            if st.undone is not None:
+                raise AnswerRejected([f"run {run_id} was already undone"])
+            into, reverts = str(st.merged[-1]["into"]), list[str]()
+            for m in reversed(st.merged):
+                try:
+                    reverts.append(repo.revert(Path(info["root"]), into, str(m["commit"]),
+                                               f"Revert {str(m['commit'])[:8]}: {note.strip()}"[:200]))
+                except repo.ProjectError as err:
+                    if not reverts:
+                        raise AnswerRejected([f"not undone: {err}"]) from None
+                    break
+            p: dict[str, Any] = {"into": into, "reverted": [m["commit"] for m in reversed(st.merged)][:len(reverts)],
+                                 "commits": reverts, "note": note.strip(), "by": by,
+                                 **({"incomplete": True} if len(reverts) < len(st.merged) else {})}
+            rows: list[tuple[str, dict[str, Any]]] = [("MergeUndone", p)]
+            if not st.finished:
+                rows.append(("RunFinished", {"outcome": "undone"}))
+            self.store.append_all([(kind, x, run_id, self.clock()) for kind, x in rows])
+            return p
 
     def _open_before(self, role: Role, step: Step[Any] | None, st: RunState) -> str | None:
         """The first step before ``step``, or of the role, whose stop waits for the person."""

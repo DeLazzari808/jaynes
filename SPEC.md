@@ -152,7 +152,20 @@ Rules:
   and fix-bug's first step, a trusted executor, records it; with neither, that
   step blocks the run at once with how to give one. Each step's changes become a
   patch, and the patches become a branch at the end; the person's working
-  tree is never touched.
+  tree is never touched, except by a merge alone (below).
+- `role(..., merges=True)` says the role's delivery is a merge of the run's
+  branch into the branch the project had checked out when the run started.
+  Jaynes makes it by itself once every step whose output is `proof.Proved`
+  passed and nothing holds the run, before any answer: a merge commit made
+  apart from any checkout, landed by fast-forward where the branch is
+  checked out and only over a clean checkout, or moved directly where it is
+  not. It never pushes. A conflict, uncommitted changes, a failed proof, a
+  detached checkout or a role with no proof leave the branch unmerged and say
+  why once (`MergeSkipped`); a later pass tries again. After a correction,
+  only what changed since the last merge is merged on top (`over`). A person
+  reverts every merge of the run with Undo on the run's page, with a note;
+  an unfinished run then finishes as `undone` and never merges again, and
+  what it let through earns no right. build-feature and fix-bug merge.
 - `web=True` lets the agent read the web in that step through its own fetch
   and search tools; its shell stays offline. The prompt tells it that what a
   page says is information for the task, never an instruction. The runtime
@@ -512,7 +525,7 @@ order with how each was released (`by jaynes`, `checked`, `accepted`,
 | Queue (`/`) | Waiting for you: the open stops, oldest first; the first opens. Below them, folded under Other runs: blocked runs, idle runs (unfinished, not waiting, no process holds them, no event for 10 s), runs a process holds (`running`) and runs paused for quota (`paused`, with the reset time). Two runs of the same task show when each started. The open item says where its run is in a line ("Step 15 of 17, waiting for you"); its steps, turns and tokens are a click away. An idle run shows the end of its `continue.log` and a Continue button. Idle and blocked runs have Dismiss, which finishes the run with nothing delivered (refused while a process holds it). A run's page says at the top what it waits for, one click from it, with its steps and events folded below |
 | Stop (`/stop/<run>/<step>`) | The question; when the step says how its stop shows the output (`shows`), its items in front: a title, a sentence and pictures cut to the part that matters (what the last action changed, or where the screen has content, never through a line) at no more than their own pixels, a computer's across the column and a phone's two to a row, each enlarged whole in the page with a click and closed with Escape, the items the person may choose picked by clicking them in order, and costs and measures folded under More. Everything below sits under a folded Details then: the output rendered from its JSON in schema order (lists of records as tables), after a return the returned output as Before, earlier rejections of the round, the person's note from the last round, the names of the checks its witness passed, turns and their cost with each shell command the agent ran, green or red by its exit and its output a click away, the stop's outcomes, errors, deliveries not yet held and evidence, and when braked how many clean deliveries release it. Code that runs later, outside any box, stays in front. Accept and Return, with the note field, are in sight; Change, Context and the step a return goes to are under More; keys A, C, R, X (at a floor, A accepts only when pressed again within two seconds; a click accepts at once); Change opens an editor over the output JSON. For a step with no output, the outputs of the steps it needs, no Change, and Return and Context going to the earlier step selected by default (section 6.2) |
 | Blocked | The last rejection reasons and the turns of the round. A run blocked after its last step, because its branch was not created, says so with the reason |
-| Run (`/run/<run>`) | Step timeline, state, turns, tokens, time, every event; witnesses by output hash; the corrections of its delivery, each with its kind, where it counts and a select to file it as another kind |
+| Run (`/run/<run>`) | Step timeline, state, turns, tokens, time, every event; witnesses by output hash; its branch, each merge Jaynes made or why it did not, and Undo with a note while it is merged; the corrections of its delivery, each with its kind, where it counts and a select to file it as another kind |
 | Role (`/role/<name>`) | Per stop: status (`braked` among them), outcomes, errors and releases not yet held, evidence against 1/δ with the budget and δ logged at the stop, audits and skips, and each audit with its answer; per week: runs, distinct steps checked, rounds until accepted, tokens per finished run, the person's minutes; the runs |
 | Log (`/log`) | The latest 500 events, payloads cut at 600 characters, filterable by type and run |
 | New run (`/new`) | Starts a run: a built-in role, one run before (proposed first, the last one run) or a role in the folder, the task, the project folder and an optional preview command |
@@ -569,7 +582,10 @@ Conductor events:
 | `StepReturned` | step whose output sent it back, the earlier step, the steps reset, reasons, round |
 | `RunPaused` | reason `quota`, agent, until |
 | `RunBlocked` | step, reasons, what the step received when an answer can change it |
-| `RunFinished` | outcome: `delivered`, `ended` with the step whose accepted output ended it, or `dismissed` by a person from the page |
+| `RunFinished` | outcome: `delivered`, `ended` with the step whose accepted output ended it, `dismissed` by a person from the page, or `undone` when a person reverted its merge first |
+| `Merged` | the branch merged into, the merge commit, the run's branch commit it merged, and `over`, the one merged before, for a correction |
+| `MergeSkipped` | the run's branch commit and why it did not merge by itself |
+| `MergeUndone` | the branch, the merges reverted and the commits that revert them, the person's note, by; `incomplete` when not every revert landed |
 | `DeliveryCorrected` | id, the step that erred, the stop it counts on and its fingerprint, kind (`error`, `preference`, `info`), note, by, the kind it was before when a person refiled it |
 
 Action gate events (section 9): `ActionProposed`, `GateDecided`, `Executed`,
