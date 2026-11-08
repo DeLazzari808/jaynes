@@ -15,7 +15,7 @@ from jaynes.roles import build_feature as bf
 from jaynes.roles import fix_bug as fb
 from jaynes.roles.references import chrome
 from jaynes.verify import verify
-from tests.fakes import Scripted
+from tests.fakes import Scripted, write
 from tests.test_fix_bug import (  # noqa: F401  # pyright: ignore[reportUnusedImport]
     PYTHON,
     copy,
@@ -189,6 +189,8 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
         repo: Path, tmp_path: Path) -> None:
     assert verify(bf.ROLE) == []
     agent = Scripted(name="claude", plan={
+        ("cases", 1): write({"cases": [{"says": "Multiplying 2 by 3 gives 6", "run": f"{sys.executable} -c "
+                                        "'from calc import mul; assert mul(2, 3) == 6'"}], "untestable": []}),
         ("specify", 1): edit({"tests/test_mul.py": TEST}, spec().model_dump()),
         ("specify", 2): edit({"tests/test_mul.py": TEST}, spec().model_dump()),
         ("build", 1): edit({"tests/test_mul.py": "def test_mul_multiplies():\n    pass\n"},
@@ -217,6 +219,8 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     assert [(x["title"], x["text"], x["more"]) for x in merge["shown"]] == [
         ("What changed", "adds mul.", False),
         ("The agreed example passes", "Jaynes ran its test and the whole suite itself, in a box without internet.", False),
+        ("The hidden check passes", "Written from your request alone before the work, run by Jaynes in a box without "
+                                     "internet.\nPasses: Multiplying 2 by 3 gives 6", False),
         ("Multiplying 2 by 3", "gives 6.", True), ("Files changed", "calc.py.", True)]
     [rejected] = [e.payload for e in c.store.events("TurnRejected", run_id="r1")]
     assert rejected["step"] == "build" and "tests/test_mul.py" in rejected["reasons"][0]

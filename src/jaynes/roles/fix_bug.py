@@ -18,8 +18,8 @@ import re
 
 from pydantic import BaseModel, Field
 
-from jaynes import project, runners, sandbox, suite
-from jaynes.role import Asks, Fail, Pass, Shown, StepContext, Witnesses, role, stop
+from jaynes import project, proof, runners, sandbox, suite
+from jaynes.role import Asks, Back, Fail, Pass, Shown, StepContext, Witnesses, role, stop
 from jaynes.runners import Runner
 
 TESTS = ("**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**", "**/test_*.py", "**/*_test.py",
@@ -209,12 +209,15 @@ def show_fixed(_: None, needs: Witnesses) -> list[Shown]:
     made: Fix = needs[FIX].value
     return [Shown("What changed", sentence(shortened(made.summary))),
             Shown("The bug's tests pass", "Jaynes ran them and the whole suite itself, in a box without internet."),
-            *_examples(found, more=True), changed_files(made.files)]
+            *proof.shown_in(needs, PROVE), *_examples(found, more=True), changed_files(made.files)]
 
 
 ROLE = role("fix-bug")
 # a run that finds no runner blocks at once with how to give one: trying again finds the same files
 RUNNER = ROLE.step("runner", output=Runner, run_by=find_runner, project="read", max_turns=1)
+# written from the task alone, before the work; only Jaynes and the person see it
+CASES = ROLE.step("cases", output=proof.Cases, project="read", hidden=True, check=proof.written,
+                  instructions=proof.WRITE, deadline=1800.0)
 REPRODUCE = ROLE.step(
     "reproduce", output=Reproduction, needs=[RUNNER], project="write", may_change=TESTS, check=fails_for_the_bug,
     stop=stop(0.2), question=ask_about_bug, shows=show_bug, deadline=3600.0,
@@ -239,6 +242,8 @@ FIX = ROLE.step(
                  "change as small as the fix needs. Run the tests and the suite yourself as inputs/runner.json "
                  "says; Jaynes runs them again in a box without internet. If a test expects what the task changes, "
                  "say so in wrong_test; never bend the code to satisfy it, such as adding what the test looks for.")
+PROVE = ROLE.step("prove", output=proof.Proved, needs=[CASES, FIX], run_by=proof.prove, project="read",
+                  effect="read", max_turns=1, back=Back(FIX, proof.failed))
 # fix last among the needs: a return from the merge goes to it
-ROLE.step("accept", needs=[REPRODUCE, FIX], stop=stop(0.05, sampled=False), shows=show_fixed,
+ROLE.step("accept", needs=[REPRODUCE, PROVE, FIX], stop=stop(0.05, sampled=False), shows=show_fixed,
           question=lambda _out, _needs: "Merge this fix?")

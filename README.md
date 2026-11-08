@@ -99,6 +99,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Review page and CLI answers: queue, stops, runs, roles, log; return to an earlier step; dismiss a run; running and paused runs in the queue, a paused run continuing at its reset | Works |
 | Answers bound to who gave them and to the evidence shown; floor paths; irreversible steps with idempotency keys | Works |
 | Counts from the outcome: an accept counts once its delivery held 7 days, corrections after delivery (`jaynes correct`, kind changeable on the page), the brake after two errors in ten | Works in tests; no real correction yet |
+| Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |

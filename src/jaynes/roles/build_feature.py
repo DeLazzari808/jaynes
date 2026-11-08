@@ -28,9 +28,10 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from jaynes import project, runners, screens
+from jaynes import project, proof, runners, screens
 from jaynes.browser import BrowserError, Page, open_page
 from jaynes.role import (
+    Back,
     Blocked,
     Fail,
     Pass,
@@ -346,8 +347,8 @@ def show_built(_: None, needs: Witnesses) -> list[Shown]:
     if not seen and any(e.screen.strip() for e in agreed.examples):
         seen = [Shown("No pictures of the real screens", "This run has no preview; a run with --preview shows them "
                                                          "here, as Jaynes sees them.")]
-    return [Shown("What changed", sentence(fb.shortened(made.summary))), passed, *seen, *unseen,
-            fb.changed_files(made.files)]
+    return [Shown("What changed", sentence(fb.shortened(made.summary))), passed, *proof.shown_in(needs, PROVE),
+            *seen, *unseen, fb.changed_files(made.files)]
 
 
 def built(out: Built, needs: Witnesses) -> Pass | Fail:
@@ -371,6 +372,9 @@ def built(out: Built, needs: Witnesses) -> Pass | Fail:
 ROLE = role("build-feature")
 RUNNER = ROLE.step("runner", output=Runner, run_by=fb.find_runner, project="read", max_turns=1)
 IDENTITY = ROLE.step("identity", output=Identity, run_by=read_identity, project="read", max_turns=1)
+# written from the task alone, before the work; only Jaynes and the person see it
+CASES = ROLE.step("cases", output=proof.Cases, project="read", hidden=True, check=proof.written,
+                  instructions=proof.WRITE, deadline=1800.0)
 SPECIFY = ROLE.step(
     "specify", output=Spec, needs=[RUNNER, IDENTITY], project="write", may_change=fb.TESTS, check=fails_first,
     deadline=3600.0,
@@ -410,6 +414,8 @@ BUILD = ROLE.step(
                  "looks for.")
 LOOK = ROLE.step("look", output=Looked, needs=[SPECIFY, BUILD], run_by=look_at_screens, project="read", effect="read",
                  max_turns=1)
+PROVE = ROLE.step("prove", output=proof.Proved, needs=[CASES, BUILD], run_by=proof.prove, project="read",
+                  effect="read", max_turns=1, back=Back(BUILD, proof.failed))
 # build last among the needs: a return from the merge goes to it
-ROLE.step("accept", needs=[SPECIFY, LOOK, BUILD], stop=stop(0.05, sampled=False), shows=show_built,
+ROLE.step("accept", needs=[SPECIFY, LOOK, PROVE, BUILD], stop=stop(0.05, sampled=False), shows=show_built,
           question=lambda _out, _needs: "Merge this feature?")

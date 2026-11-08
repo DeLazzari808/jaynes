@@ -33,6 +33,9 @@ def python(monkeypatch: pytest.MonkeyPatch) -> None:
 def ran_by(runner: Runner = PYTEST, **more: Checked[Any]) -> dict[str, Checked[Any]]:
     return {"runner": Checked("runner", runner, "h", "c"), **more}
 TEST = "from calc import add\n\n\ndef test_add_adds():\n    assert add(2, 2) == 4, 'add subtracts'\n"
+# the hidden case, written before the work: it runs in the box against the fixed project
+CASES = {"cases": [{"says": "Adding 2 and 2 gives 4",
+                    "run": f"{sys.executable} -c 'from calc import add; assert add(2, 2) == 4'"}], "untestable": []}
 
 
 def git(cwd: Path, *args: str) -> str:
@@ -156,6 +159,7 @@ def test_the_merge_says_what_changed_and_that_the_tests_pass() -> None:
 def test_an_agent_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Path, tmp_path: Path) -> None:
     say = "tests/test_zero.py expects 0 for add(0, 0), which the task changes"
     agent = Scripted(name="claude", plan={
+        ("cases", 1): write(CASES),
         ("reproduce", 1): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
         ("fix", 1): write({"summary": "s", "files": [], "wrong_test": say}),
         ("reproduce", 2): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
@@ -187,6 +191,7 @@ def test_the_role_finds_the_bug_with_a_test_and_then_fixes_it_without_touching_t
     assert verify(fb.ROLE) == []
     found = reproduction().model_dump()
     agent = Scripted(name="claude", plan={
+        ("cases", 1): write(CASES),
         ("reproduce", 1): edit({"tests/test_add.py": TEST}, found),
         ("fix", 1): edit({"tests/test_add.py": "def test_add_adds():\n    pass\n"}, {"summary": "s", "files": []}),
         ("fix", 2): edit({"calc.py": "def add(a, b):\n    return a + b\n"}, {"summary": "adds", "files": ["calc.py"]}),
@@ -258,7 +263,7 @@ def test_when_no_test_shows_the_bug_a_person_decides_and_accepting_ends_the_run_
         repo: Path, tmp_path: Path) -> None:
     assert isinstance(fb.fails_for_the_bug(reproduction(tests=[]), Witnesses(ran_by(), repo, source=repo)), Fail)
     nothing = {"bug": "add adds; the report used the wrong numbers", "reproduced": False}
-    agent = Scripted(name="claude", plan={("reproduce", 1): write(nothing)})
+    agent = Scripted(name="claude", plan={("cases", 1): write(CASES), ("reproduce", 1): write(nothing)})
     c = Conductor(tmp_path / "home", runtimes={"claude": lambda: agent})
     assert c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1", project=repo).step == "reproduce"
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
@@ -284,7 +289,7 @@ def test_with_no_runner_the_run_blocks_at_once_saying_how_to_give_one_and_a_give
     assert len(list(c.store.events("StepStarted", run_id="r1"))) == 1  # the same files would give the same answer
 
     given = c.run(fb.ROLE, "add subtracts", run_id="r2", project=bare, started={"suite": "sh -c 'exit 0'"})
-    assert given.step == "reproduce"  # the scripted agent has no plan: the runner step passed
+    assert given.step == "cases"  # the scripted agent has no plan: the runner step passed
     assert c.output("r2", fb.RUNNER) == Runner(kind="given", suite="sh -c 'exit 0'", each="", found="given at start")
 
 
@@ -293,6 +298,7 @@ def test_the_agent_cannot_narrow_the_suite_a_fix_that_breaks_another_test_is_rej
     found = {**reproduction().model_dump(), "suite": f"{PYTHON} tests/test_add.py"}  # ignored: not in the schema
     breaks = "def add(a, b):\n    return 4 if (a, b) == (2, 2) else 1\n"  # test_add passes, test_zero fails
     agent = Scripted(name="claude", plan={
+        ("cases", 1): write(CASES),
         ("reproduce", 1): edit({"tests/test_add.py": TEST}, found),
         ("fix", 1): edit({"calc.py": breaks}, {"summary": "s", "files": ["calc.py"]}),
         ("fix", 2): edit({"calc.py": "def add(a, b):\n    return a + b\n"}, {"summary": "adds", "files": ["calc.py"]}),

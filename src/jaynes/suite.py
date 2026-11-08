@@ -63,8 +63,9 @@ def reads(work: Path) -> list[Path]:
     return sorted(found)
 
 
-def run(needs: Witnesses, command: str, timeout: float = 600.0) -> Ran:
-    """Run ``command`` from a copy of ``needs.project``. Raises ``sandbox.Unavailable`` where there is no box."""
+def run(needs: Witnesses, command: str, timeout: float = 600.0, env: dict[str, str] | None = None) -> Ran:
+    """Run ``command`` from a copy of ``needs.project``, with ``env`` added. Raises ``sandbox.Unavailable`` where
+    there is no box."""
     assert needs.project is not None, "a project command needs a step that works on the project"
     with tempfile.TemporaryDirectory(prefix="jaynes-suite-") as tmp:
         work, scratch = Path(tmp) / "project", Path(tmp) / "tmp"
@@ -74,7 +75,7 @@ def run(needs: Witnesses, command: str, timeout: float = 600.0) -> Ran:
         if needs.source is not None:
             preview.link_dependencies(needs.source, work)
         argv = sandbox.command(command, sandbox.Box((work, scratch), hidden=needs.hidden, local=True))
-        proc = subprocess.Popen(argv, cwd=work, env={**os.environ, **environment(work, scratch)},
+        proc = subprocess.Popen(argv, cwd=work, env={**os.environ, **environment(work, scratch), **(env or {})},
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, start_new_session=True)
         try:

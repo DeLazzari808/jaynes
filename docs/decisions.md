@@ -196,10 +196,26 @@ When a hidden check fails, the maker sees the case described in words, never
 the check itself. After two attempts that still fail, it becomes an exception
 and calls the person.
 
+**Built 2026-11-08** for build-feature and fix-bug, with Alan's choice that a
+case is a command that passes or fails, never an agent's judgment. The case
+writer reads the task and the project as it was, before any step changes it,
+and no agent step may receive what it wrote; the engine refuses such a role.
+Jaynes serves the changed project with the run's preview in a box without
+internet and runs each case there, so the box is the safe real target of a
+role that reaches no real service. A failing case sends the maker back with
+its sentence, twice at most; then the run goes on, the merge stop shows what
+still fails, and nothing merges by itself. What the request asks that no
+command can check, such as how a screen looks, is listed and proves nothing,
+so such a run merges only with the person's accept. small-change has no
+hidden cases yet: it has no stop to show a case that fails. A project's own
+safe target, for a role that reaches a real service, waits for such a role.
+
 **Tradeoffs.**
 
 - Each failed attempt tells the maker a little about the hidden cases; two
   attempts limit how much.
+- A case can be wrong, such as a word the request did not fix; it sends the
+  maker back twice for nothing and then waits for the person.
 - The case writer shares the model's blind spots, so the real run stays.
 - One more agent per request costs tokens.
 

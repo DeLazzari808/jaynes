@@ -203,6 +203,22 @@ Rules:
   After `rounds` returns in a run, the output goes on as it is and later
   steps, and the person, see what remains. A broken `when` sends nothing
   back.
+- `hidden=True` marks proof the maker cannot see: the step reads only the
+  task, so it needs no earlier step and changes no project, and it comes
+  before every step that changes the project. No agent step may need it;
+  Jaynes's own steps and the person's stops may. `jaynes.proof` gives the
+  pair a role adds: a hidden agent step that writes `Cases` (`proof.WRITE`,
+  `proof.written`), each a sentence and a shell command that exits 0 when
+  the sentence holds, and a trusted step after the work (`proof.prove`) that
+  serves the changed project with the run's preview in a box, runs each
+  command in a box over a copy of the project with the app at
+  `$JAYNES_URL`, and outputs `Proved`. With `back=Back(maker, proof.failed)`
+  a failing case sends the maker back with its sentence alone, never the
+  command. A case that needs the app in a run without a preview is not run
+  and fails the proof without sending anyone back. `Proved.passed` holds
+  when at least one case ran and every case passed; nothing testable from
+  outside is no proof. build-feature and fix-bug have it; their merge stop
+  shows each case's sentence and whether it passed.
 - A check or trusted executor that cannot judge at all, such as a measuring
   tool that failed, raises `Blocked(reason)`: the run blocks with the reason
   at once and no attempt is spent, since the agent is not at fault.

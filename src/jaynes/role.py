@@ -255,6 +255,7 @@ class Step(Generic[T]):
     back: Back | None = None  # when Jaynes sends an earlier step back from this one
     max_files: int = 20  # files a trusted executor may leave
     shows: Callable[[Any, Witnesses], list[Shown]] | None = None  # how the stop shows the output to the person
+    hidden: bool = False  # written from the request alone, before the work; no agent ever receives it
 
     @property
     def executor(self) -> str:
@@ -281,6 +282,8 @@ class Step(Generic[T]):
             parts.append(f"effect:{self.effect}")
         if self.inputs:
             parts.append(f"inputs:{','.join(self.inputs)}")
+        if self.hidden:
+            parts.append("hidden")
         return _sha("\0".join(parts))
 
     def stop_fingerprint(self, model: str, inputs: str = "") -> str:
@@ -317,7 +320,8 @@ class Role:
              web: bool = False, effect: Effect | None = None, ends: Callable[[T], bool] | None = None,
              max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
              inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
-             max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None) -> Step[T]:
+             max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None,
+             hidden: bool = False) -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -357,6 +361,15 @@ class Role:
                              "change, or ['**'] for any")
         if project is not None and output is None:
             raise ValueError(f"step {name!r} works on the project but has no output")
+        if hidden:  # proof the maker cannot see: from the request alone, before the work
+            if output is None or needs or project == "write":
+                raise ValueError(f"step {name!r} is hidden, so it reads only the request: it needs an output, no "
+                                 "earlier step, and may not change the project")
+            if made := [x.name for x in self.steps if x.project == "write"]:
+                raise ValueError(f"step {name!r} is hidden, so it comes before the work; {', '.join(made)} change "
+                                 "the project before it")
+        if output is not None and run_by is None and (seen := [n.name for n in needs if n.hidden]):
+            raise ValueError(f"step {name!r} is run by an agent, which may not receive the hidden {', '.join(seen)}")
         if web and (output is None or run_by is not None):
             raise ValueError(f"step {name!r} reads the web but no agent runs it")
         if effect is not None and effect not in EFFECTS:
@@ -375,7 +388,7 @@ class Role:
                           instructions, max_turns, deadline, cast(Callable[[Any, Witnesses], str] | None, question),
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
                           max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
-                          back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows))
+                          back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows), hidden)
         self.steps.append(s)
         return s
 
