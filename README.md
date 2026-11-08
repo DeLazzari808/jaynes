@@ -35,10 +35,14 @@ were still sent back.
    to you in Claude Code's question dialog. A return corrects on top: only
    the steps that used what changed run again. What cannot be undone, and a
    change to files that run outside the box, waits for your answer.
-4. **Every answer is a label.** A stop you keep accepting without changes
-   becomes sampled: it asks one time in ten. Each change lowers its
-   evidence, and if the evidence falls below the threshold it asks every
-   time again.
+4. **What counts is what happened after delivery.** An accept counts as
+   right only once its delivery went 7 days with nobody correcting it; a
+   change or a return counts as an error at once, and so does a correction
+   found later, on the first stop after the step that erred. A stop that
+   keeps proving right becomes sampled: it asks one time in ten. Two errors
+   among its last ten outcomes brake it: it asks on every run and the run
+   waits for you there, until the deliveries after the brake prove it right
+   again.
 5. **Underneath, every tool action goes through a gate.** Some actions, like
    pushing or deleting history, never run without you.
 
@@ -81,8 +85,8 @@ done = design.step("accept", needs=build, stop=stop(budget=0.05, sampled=False))
 A stop becomes sampled only when its evidence clears a threshold that holds no
 matter how often it is checked: if the true rate at which you change that
 stop's output is at or above its budget, the chance it ever becomes sampled is
-at most 5%. With a 5% budget that takes 88 accepts in a row; with 20%, it
-takes 20. The test is a mixture likelihood ratio, valid at any stopping time
+at most 5%. With a 5% budget that takes 88 clean deliveries in a row; with
+20%, it takes 20. The test is a mixture likelihood ratio, valid at any stopping time
 by Ville's inequality. Details in [SPEC.md](SPEC.md).
 
 ## Status and roadmap
@@ -94,6 +98,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Step conductor for Claude Code (Codex also runs): roles in Python or TOML, write boundary, checks, retries, resume after a crash, quota pause | Works |
 | Review page and CLI answers: queue, stops, runs, roles, log; return to an earlier step; dismiss a run; running and paused runs in the queue, a paused run continuing at its reset | Works |
 | Answers bound to who gave them and to the evidence shown; floor paths; irreversible steps with idempotency keys | Works |
+| Counts from the outcome: an accept counts once its delivery held 7 days, corrections after delivery (`jaynes correct`, kind changeable on the page), the brake after two errors in ten | Works in tests; no real correction yet |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
@@ -107,9 +112,14 @@ Missing, roughly in order:
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
 - **Corrections after delivery.** A return corrects the branch until you
-  answer the last stop; after that, a correction is a new run. A step cannot
-  yet start over from scratch, giving its reason, instead of correcting on
-  top.
+  answer the last stop; after that, a correction is a new run, which the
+  agent records with `jaynes correct` so it counts. The agent finds the
+  delivery from the list `jaynes delivered` prints, not yet from the code's
+  history; a new preference is not yet kept as taste memory; every project
+  waits 7 days, not yet a time of its own. A step cannot yet start over from
+  scratch, giving its reason, instead of correcting on top.
+- **Halting everything and undoing a delivery.** The brake holds one stop;
+  a button to halt every run, and undoing a merge, come with merging alone.
 - **A turn past its deadline keeps its work.** The next attempt starts from
   nothing, even when the tests were almost written.
 - **Old runs leave the queue.** A run waiting for two days from a test that
@@ -263,14 +273,15 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes wait` (returns once you answered a run's stop on the page), `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes wait` (returns once you answered a run's stop on the page), `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes delivered` (the latest deliveries, with their steps and files), `jaynes correct` (records that a delivery was corrected afterwards), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps
 as a cookie; anything else, like an agent with `curl`, can read the page but
 not answer. An answer from `jaynes answer` releases the stop but is recorded
-as an agent's: it never counts as a label, so an agent cannot make a stop
-sampled by accepting its own work, and a floor stop refuses it. An answer in
+as an agent's: what it let through never counts as right, so an agent cannot
+make a stop sampled by accepting its own work, and a floor stop and a braked
+one refuse it. An answer in
 Claude Code's dialog is yours: the plugin, or `jaynes skill`, adds a hook that Claude Code
 runs after the dialog with what you chose, and it records the answer only
 when the dialog showed the stop exactly as `jaynes ask` rendered it. Every answer

@@ -63,7 +63,7 @@ CODE = re.compile(r"`([^`\n]+)`")
 def marked(text: str) -> str:
     """Text an agent or a person wrote, escaped, with what they put between backticks shown as code."""
     return CODE.sub(r"<code>\1</code>", esc(text))
-CHIP = {"certified": "green", "refuted": "red", "floor": "blue"}  # any other status is amber
+CHIP = {"certified": "green", "refuted": "red", "braked": "red", "floor": "blue"}  # any other status is amber
 DEMO = "jaynes.demo:ROLE"
 BUILT_IN = {DEMO: {"scripted": "jaynes.demo:Agent"}, **{ref: {} for ref in roles.BUILT_IN.values()}}
 StageState = Literal["jaynes", "checked", "accepted", "changed", "sampled", "waiting", "blocked", "running", "todo"]
@@ -358,6 +358,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pre-wra
 .bar input[type=text] { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font: inherit; font-size: 14px; padding: 10px 12px; }
 .bar select { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 10px 8px; }
 .bar textarea { width: 100%; min-height: 160px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 10px 12px; }
+form.inline { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+form.inline select { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px; }
+form.inline .btn { padding: 6px 10px; }
 .btn { font-family: var(--mono); font-size: 12.5px; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink); background: var(--panel); cursor: pointer; white-space: nowrap; }
 details.ran summary { cursor: pointer; }
 details.ran pre { margin: 8px 0 0; max-height: 320px; overflow: auto; white-space: pre-wrap; color: var(--dim); }
@@ -468,7 +471,7 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
-const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/start", "/setup", "/update", "/restart"];  // no page to GET
+const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/start", "/setup", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
@@ -834,6 +837,10 @@ class Review:
         if s.open_stop is not None and s.open_stop[1].get("ends"):
             sub += ('<div class="sub">Accepting ends the run here, with nothing delivered; return it with a note '
                     'to have the agent look again.</div>')
+        if s.open_stop is not None and s.open_stop[1].get("status") == "braked":
+            sub += ('<div class="sub"><span class="chip red">braked</span> Too much of what this stop let through '
+                    'turned out wrong lately, so the run waits for you here: nothing after it runs until you answer. '
+                    'It stops holding runs once enough deliveries after the brake have held.</div>')
         if s.note:
             sub += f'<div class="sub">You returned round {s.round - 1} with: {marked(s.note)}</div>'
         shown = cast(list[dict[str, Any]] | None, s.open_stop[1].get("shown")) if s.open_stop else None
@@ -1102,6 +1109,7 @@ class Review:
                  if headline(task) != task else "")
         body = (call + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
                 f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
+                + self._corrections(run_id)
                 + f'<details class="fold"><summary>Details <span>turns, tokens and events</span></summary>'
                 f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
                 f'<div><div class="n">{t.turns}<small>turns</small></div><p>{tokens(t.tokens_in)} tokens in, {tokens(t.tokens_out)} out</p></div>'
@@ -1345,11 +1353,12 @@ class Review:
                 stop_rows.append(f"<tr><td>{esc(step.name)}</td><td class='m'>no runs reached it</td><td></td><td></td><td></td></tr>")
                 continue
             last = decided[-1].payload
-            w = self.c.window(str(last["fingerprint"]))
             assert step.stop is not None
             # budget and delta as logged with the window, falling back to the code for logs before 0.4
             budget, delta = float(last.get("budget", step.stop.budget)), float(last.get("delta", step.stop.delta))
-            status = ("floor" if not step.stop.sampled else "certified" if bounds.certified(w.n, w.k, budget, delta)
+            w = self.c.count(str(last["fingerprint"]), budget, delta)
+            status = ("braked" if w.braked else "floor" if not step.stop.sampled
+                      else "certified" if bounds.certified(w.n, w.k, budget, delta)
                       else "refuted" if bounds.refuted(w.n, w.k, budget, delta) else "undetermined")
             evidence = math.exp(bounds.log_certify_evalue(w.n, w.k, budget)) if w.n else 1.0
             skips = sum(1 for ev in decided if ev.type == "StopSkipped")
@@ -1361,11 +1370,12 @@ class Review:
                                   f'<td class="m">{esc(str(answer))}</td></tr>')
             stop_rows.append(
                 f"<tr><td>{esc(step.name)}</td><td><span class='chip {CHIP.get(status, 'amber')}'>{esc(status)}</span></td>"
-                f"<td class='m'>{w.n} label{'s' if w.n != 1 else ''}, {w.k} error{'s' if w.k != 1 else ''}, budget {budget:.0%}</td>"
+                f"<td class='m'>{w.n} outcome{'s' if w.n != 1 else ''}, {w.k} error{'s' if w.k != 1 else ''}"
+                f"{f', {w.pending} not yet held' if w.pending else ''}, budget {budget:.0%}</td>"
                 f"<td class='m'>{evidence:.2f} of {1 / delta:.0f}</td>"
                 f"<td class='m'>{len(audit_runs)} audits, {skips} skipped</td></tr>")
         stops = (f'<div><div class="label">Stops</div><div class="box"><table><tr><th>step</th><th>status</th>'
-                 f'<th>labels</th><th>evidence</th><th>audits</th></tr>{"".join(stop_rows)}</table></div></div>')
+                 f'<th>outcomes</th><th>evidence</th><th>audits</th></tr>{"".join(stop_rows)}</table></div></div>')
         if audit_rows:
             stops += (f'<div><div class="label">Audits <span>a certified stop that waited by the coin</span></div>'
                       f'<div class="box"><table><tr><th>step</th><th>run</th><th>answer</th></tr>'
@@ -1528,6 +1538,41 @@ class Review:
         continue_in_background(self.c.home, run_id)
         return 303, f"/run/{q(run_id)}"
 
+    def _corrections(self, run_id: str) -> str:
+        """What was corrected in this run's delivery afterwards, each with the kind the agent proposed and a way to
+        file it as another kind: only an error counts."""
+        found = self.c.corrections(run_id)
+        if not found:
+            return ""
+        words = {"error": "error", "preference": "new preference", "info": "new information"}
+        rows: list[str] = []
+        for ts, p in found:
+            where = (f"counted at {p['stop']}" if p.get("stop") else "no stop let it through") \
+                if p["kind"] == "error" else "not counted"
+            options = "".join(f'<option value="{k}"{" selected" if k == p["kind"] else ""}>{v}</option>'
+                              for k, v in words.items())
+            rows.append(
+                f'<tr><td class="m">{datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")}</td>'
+                f'<td><span class="chip {"red" if p["kind"] == "error" else "amber"}">{esc(words[p["kind"]])}</span></td>'
+                f'<td class="m">{esc(p["erred"])}, {esc(where)}</td><td>{esc(p["note"])}</td>'
+                f'<td><form class="inline" method="post" action="/correction"><input type="hidden" name="token" '
+                f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
+                f'<input type="hidden" name="id" value="{esc(p["id"])}"><select name="kind" title="What kind of '
+                f'correction it was">{options}</select><button class="btn">File as</button></form></td></tr>')
+        return (f'<div><div class="label">Corrected after delivery <span>an error counts against the stop that let '
+                f'it through; a new preference or new information does not</span></div><div class="box"><table>'
+                f'{"".join(rows)}</table></div></div>')
+
+    def correction(self, fields: dict[str, str]) -> tuple[int, str]:
+        run_id = fields.get("run", "")
+        try:
+            self.c.reclassify(run_id, fields.get("id", ""), fields.get("kind", ""), by="person")
+        except AnswerRejected as err:
+            return 400, self.not_found("; ".join(err.reasons))
+        except RunBusy:
+            return 409, self.run_page(run_id)
+        return 303, f"/run/{q(run_id)}"
+
     def dismiss(self, fields: dict[str, str]) -> tuple[int, str]:
         run_id = fields.get("run", "")
         try:
@@ -1619,15 +1664,23 @@ class Review:
         need = bounds.labels_to_certify(k, budget, delta)
         if status == "floor":
             third = '<div><div class="n">always</div><p>a floor waits on every run</p></div>'
+        elif status == "braked":
+            after = cast(dict[str, Any], p.get("braked") or {})
+            again = bounds.labels_to_certify(int(after.get("k", 0)), budget, delta)
+            more = "never" if again is None else str(max(again - int(after.get("n", 0)), 0))
+            third = (f'<div><div class="n">{more}</div><p>clean deliveries until it stops holding the run: too many '
+                     'errors lately</p></div>')
         elif status == "certified":
             third = f'<div><div class="n">{sp.audit_rate:.0%}</div><p>an audit: this stop is sampled</p></div>'
         else:
             more = "never" if need is None else str(max(need - n, 0))
-            third = f'<div><div class="n">{more}</div><p>more clean answers needed</p></div>'
+            third = f'<div><div class="n">{more}</div><p>more clean deliveries needed</p></div>'
+        pending = int(p.get("pending", 0))
+        held = f", {pending} delivered and not yet held {self.c.settle / 86400:g} days" if pending else ""
         return (f'<div><div class="label">This stop <span class="chip {CHIP.get(status, "amber")}">{esc(status)}</span>'
                 f'</div><div class="tiles">'
-                f'<div><div class="n">{n}<small>label{"s" if n != 1 else ""}</small></div>'
-                f'<p>{k} error{"s" if k != 1 else ""}, budget {budget:.0%}</p></div>'
+                f'<div><div class="n">{n}<small>outcome{"s" if n != 1 else ""}</small></div>'
+                f'<p>{k} error{"s" if k != 1 else ""}{held}, budget {budget:.0%}</p></div>'
                 f'<div><div class="n">{evidence:.2f}<small>of {1 / delta:.0f}</small></div><p>evidence to sample it</p></div>'
                 f"{third}</div></div>")
 
@@ -1703,7 +1756,7 @@ class Review:
             "TurnRejected": lambda: f"{p['reason']}: " + "; ".join(str(x) for x in p.get("reasons", [])[:2]),
             "TurnInterrupted": lambda: str(p["reason"]),
             "Checked": lambda: f"by {p['source']}" + (f", output {str(p['output_hash'])[:12]}" if p.get("output_hash") else ""),
-            "StopOpened": lambda: f"{p['status']}, {p['n']} labels, {p['k']} errors",
+            "StopOpened": lambda: f"{p['status']}, {p['n']} outcomes, {p['k']} errors",
             "StopSkipped": lambda: ("small change, not asked" if p["status"] == "small" else
                                     f"certified, coin {float(p['coin']):.2f}"),
             "StopAnswered": lambda: (f"{p['answer']} to {p['to']}" + (f" ({p['revises']['label']} for {p['to']})"
@@ -1714,6 +1767,8 @@ class Review:
             "RunPaused": lambda: f"quota until {datetime.fromtimestamp(float(p['until'])).strftime('%H:%M')}",
             "RunBlocked": lambda: "; ".join(str(x) for x in p.get("reasons", [])[:2]),
             "RunSentBack": lambda: f"from {p['step']} to {p['to']}, by {p['by']}: {p['note']}",
+            "DeliveryCorrected": lambda: (f"{p['kind']} in {p['erred']}" + (f", counted at {p['stop']}" if p["kind"] ==
+                                          "error" and p.get("stop") else ", not counted") + f", by {p['by']}: {p['note']}"),
             "RunFinished": lambda: (f"ended at {p['step']}; nothing was delivered" if p.get("outcome") == "ended"
                                     else "dismissed; nothing was delivered" if p.get("outcome") == "dismissed"
                                     else "finished"),
@@ -1886,7 +1941,7 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                     shared.polled = 0.0
                 return self._send(204, b"", "text/plain")
             handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
-                        "/send-back": Review.send_back,
+                        "/send-back": Review.send_back, "/correction": Review.correction,
                         "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
                         "/restart": Review.restart}
             if path not in handlers:

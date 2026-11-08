@@ -360,17 +360,24 @@ its stop closed changes nothing.
 | context | the step reruns with the note; the agent was not at fault | not counted |
 | choose | the chosen items of the output, in the person's order, replace it and are rechecked | correct |
 
-Only answers given while the stop was open count. A stop that was skipped
-produces no label, so labels are either every occurrence
-(mandatory phase) or a uniform random sample (audits). Both are unbiased for
-the stop's error rate.
+The label is not yet the count. An error, a change or a return, counts at
+once. What a stop lets through, accepted, chosen or skipped as certified,
+counts as right only once its run delivered and nothing corrected it for 7
+days (`SETTLE`); until then it is pending. Only the last release of a stop in
+a run counts, since only it was delivered: a release that ran again because
+what its step received changed counts nothing. A dismissed run's releases
+count nothing; the errors found in it still count. The count is so made of
+every delivery, asked or not, and its outcome.
 
 Every answer says who gave it, and only a person's answer is a label:
 
 - **person**: an answer from the review page, which needs the page key
   (section 7). It is counted in the window.
 - **agent**: anything else, such as `jaynes answer` run by an agent. It
-  releases the stop but is never counted, and a floor stop refuses it.
+  releases the stop, but what it let through never counts as right; a
+  correction afterwards still counts against it. A floor stop and a braked
+  one refuse it. A small change the role let through (`asks`) is the same:
+  nobody looked.
 
 From Python, `Conductor.answer` has no default for `by`, so nothing passes for
 a person by omission. When a person sends a run back to an earlier step, the
@@ -387,13 +394,28 @@ Each opened stop records `evidence`, the hash of the output and question it
 shows. An answer that carries it is refused if the stop has shown something
 else since, so a stale page cannot accept what came after it.
 
-A later change by the person to an output that went through unreviewed, for
-example editing a delivered screen, is recorded as an outcome event. It is
-shown on the role page; it does not enter the window in v0.
+A correction after delivery is recorded on the run that delivered
+(`Conductor.correct`, `jaynes correct <run> --step <step> --kind <kind>
+--note <what was wrong>`), with the step whose output was wrong and one of
+three kinds:
+
+- `error`: wrong by what was already known, including a preference already
+  written where the agent could read it. It counts as an error on the first
+  stop at or after that step that let the delivery through, even after the 7
+  days.
+- `preference`: a new preference nobody knew. It does not count.
+- `info`: the world changed or a new fact appeared. It does not count.
+
+The agent making the correction proposes the kind; the person sees it on the
+run's page and can file it as another kind there (`reclassify`), with no
+stop. Only a delivered run takes a correction; while a run is open, a return
+from a stop corrects it. `jaynes delivered [--project dir]` lists the latest
+deliveries with their steps, the files their branch changed and their
+corrections, so the agent finds which one a fix corrects.
 
 ### 6.3 Window
 
-A stop's labels count only under its current fingerprint: hash of the role
+A stop's outcomes count only under its current fingerprint: hash of the role
 name, the step's prompt inputs (method text, instructions, schema), its check
 code, the code of its question function when it has one, the stop's budget and
 δ, and the agent model. Changing any of them opens
@@ -401,7 +423,7 @@ a new window. This is the declared-change half of the stationarity assumption.
 
 ### 6.4 The guarantee
 
-For each stop, with `n` labels and `k` errors in the window:
+For each stop, with `n` outcomes known and `k` errors in the window:
 
 - certify statistic: the mixture likelihood ratio of `q` against the budget
   `b`, with `q` uniform on `[0, b]`;
@@ -441,6 +463,26 @@ Assumption: future runs of a stop resemble its window. Covered by new windows
 on declared changes; undeclared drift is the job of the change detector
 planned in section 11.
 
+Errors are known at once and rights only after 7 days, so at any moment the
+known outcomes hold proportionally more errors than the deliveries do; the
+statistic only waits longer for that. A correction found after the 7 days
+turns a right into an error, which can take a stop's certification back.
+
+### 6.5 The brake
+
+Two errors (`BRAKE_ERRORS`) among a stop's last ten outcomes (`BRAKE_LAST`),
+in the order the stop let them through, brake it. A braked stop asks on every
+run, even for a small change and when it is certified, and holds the run:
+nothing after it runs until the person answers, and only a person may. It is
+released when the outcomes since the brake certify on their own, by the test
+of section 6.4; the errors before the release no longer count towards the
+next brake. Braking needs little proof because braking without need only
+costs waiting. While any stop holds the run, a later step whose inputs changed
+since it ran, such as one built on an output just returned, has its stop
+closed and runs again once the person answered, so no stop offers work on top
+of something already sent back. The stop's `StopOpened` records `braked` with the outcomes and
+errors since the brake.
+
 ## 7. Review page
 
 A local web server started with `jaynes review` (port 8740), bound to
@@ -452,10 +494,10 @@ order with how each was released (`by jaynes`, `checked`, `accepted`,
 | View | Content |
 |---|---|
 | Queue (`/`) | Waiting for you: the open stops, oldest first; the first opens. Below them, folded under Other runs: blocked runs, idle runs (unfinished, not waiting, no process holds them, no event for 10 s), runs a process holds (`running`) and runs paused for quota (`paused`, with the reset time). Two runs of the same task show when each started. The open item says where its run is in a line ("Step 15 of 17, waiting for you"); its steps, turns and tokens are a click away. An idle run shows the end of its `continue.log` and a Continue button. Idle and blocked runs have Dismiss, which finishes the run with nothing delivered (refused while a process holds it). A run's page says at the top what it waits for, one click from it, with its steps and events folded below |
-| Stop (`/stop/<run>/<step>`) | The question; when the step says how its stop shows the output (`shows`), its items in front: a title, a sentence and pictures cut to the part that matters (what the last action changed, or where the screen has content, never through a line) at no more than their own pixels, a computer's across the column and a phone's two to a row, each enlarged whole in the page with a click and closed with Escape, the items the person may choose picked by clicking them in order, and costs and measures folded under More. Everything below sits under a folded Details then: the output rendered from its JSON in schema order (lists of records as tables), after a return the returned output as Before, earlier rejections of the round, the person's note from the last round, the names of the checks its witness passed, turns and their cost with each shell command the agent ran, green or red by its exit and its output a click away, the stop's labels and evidence. Code that runs later, outside any box, stays in front. Accept and Return, with the note field, are in sight; Change, Context and the step a return goes to are under More; keys A, C, R, X (at a floor, A accepts only when pressed again within two seconds; a click accepts at once); Change opens an editor over the output JSON. For a step with no output, the outputs of the steps it needs, no Change, and Return and Context going to the earlier step selected by default (section 6.2) |
+| Stop (`/stop/<run>/<step>`) | The question; when the step says how its stop shows the output (`shows`), its items in front: a title, a sentence and pictures cut to the part that matters (what the last action changed, or where the screen has content, never through a line) at no more than their own pixels, a computer's across the column and a phone's two to a row, each enlarged whole in the page with a click and closed with Escape, the items the person may choose picked by clicking them in order, and costs and measures folded under More. Everything below sits under a folded Details then: the output rendered from its JSON in schema order (lists of records as tables), after a return the returned output as Before, earlier rejections of the round, the person's note from the last round, the names of the checks its witness passed, turns and their cost with each shell command the agent ran, green or red by its exit and its output a click away, the stop's outcomes, errors, deliveries not yet held and evidence, and when braked how many clean deliveries release it. Code that runs later, outside any box, stays in front. Accept and Return, with the note field, are in sight; Change, Context and the step a return goes to are under More; keys A, C, R, X (at a floor, A accepts only when pressed again within two seconds; a click accepts at once); Change opens an editor over the output JSON. For a step with no output, the outputs of the steps it needs, no Change, and Return and Context going to the earlier step selected by default (section 6.2) |
 | Blocked | The last rejection reasons and the turns of the round. A run blocked after its last step, because its branch was not created, says so with the reason |
-| Run (`/run/<run>`) | Step timeline, state, turns, tokens, time, every event; witnesses by output hash |
-| Role (`/role/<name>`) | Per stop: status, labels, evidence against 1/δ with the budget and δ logged at the stop, audits and skips, and each audit with its answer; per week: runs, distinct steps checked, rounds until accepted, tokens per finished run, the person's minutes; the runs |
+| Run (`/run/<run>`) | Step timeline, state, turns, tokens, time, every event; witnesses by output hash; the corrections of its delivery, each with its kind, where it counts and a select to file it as another kind |
+| Role (`/role/<name>`) | Per stop: status (`braked` among them), outcomes, errors and releases not yet held, evidence against 1/δ with the budget and δ logged at the stop, audits and skips, and each audit with its answer; per week: runs, distinct steps checked, rounds until accepted, tokens per finished run, the person's minutes; the runs |
 | Log (`/log`) | The latest 500 events, payloads cut at 600 characters, filterable by type and run |
 | New run (`/new`) | Starts a run: a built-in role, one run before (proposed first, the last one run) or a role in the folder, the task, the project folder and an optional preview command |
 | History (`/history`) | The report of `jaynes history`: how many past tool calls a person approved, by category |
@@ -485,7 +527,9 @@ do it.
 
 The CLI mirrors the essentials: `jaynes queue`, and `jaynes answer <run>
 <step> accept|change|return|context [--note] [--output JSON|@file]`, which
-also continues the run.
+also continues the run. `jaynes delivered` and `jaynes correct` find a
+delivery and record its correction (section 6.2); changing a correction's
+kind is the person's, on the page.
 
 ## 8. Events
 
@@ -503,14 +547,14 @@ Conductor events:
 | `TurnInterrupted` | step, attempt, reason `crash` or `quota`; not an attempt |
 | `Checked` | step, round, attempt, output hash, check hash, source (agent, `jaynes`, `person`), model, what the step received |
 | `InputsChanged` | step, round, the earlier steps whose output or change it received differently; the step runs again on top of its output |
-| `StopOpened` | step, round, status, coin, n, k, log evidence, stop fingerprint, budget, δ, question, evidence hash, floor paths, whether it holds the run |
-| `StopSkipped` | step, status `certified`, coin, stop fingerprint, budget, δ |
+| `StopOpened` | step, round, status (`floor`, `braked`, `certified`, `refuted`, `undetermined`), coin, n, k, pending, log evidence, stop fingerprint, budget, δ, question, evidence hash, floor paths, the outcomes and errors since the brake, whether it holds the run |
+| `StopSkipped` | step, status `certified` with coin, budget and δ, or `small`; stop fingerprint |
 | `StopAnswered` | step, answer, label, note, stop fingerprint, the event that opened the stop, seconds waited, seconds spent, by (`person` or `agent`), the earlier label it revises, the ids chosen |
 | `StepReturned` | step whose output sent it back, the earlier step, the steps reset, reasons, round |
 | `RunPaused` | reason `quota`, agent, until |
 | `RunBlocked` | step, reasons, what the step received when an answer can change it |
 | `RunFinished` | outcome: `delivered`, `ended` with the step whose accepted output ended it, or `dismissed` by a person from the page |
-| `OutcomeObserved` | step, kind `changed_after_delivery`, evidence |
+| `DeliveryCorrected` | id, the step that erred, the stop it counts on and its fingerprint, kind (`error`, `preference`, `info`), note, by, the kind it was before when a person refiled it |
 
 Action gate events (section 9): `ActionProposed`, `GateDecided`, `Executed`,
 `HumanLabeled`, `ModelSeen`.

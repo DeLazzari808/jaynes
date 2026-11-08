@@ -79,12 +79,25 @@ the area cannot undo, the action already waited for the person.
 specialist that errs often would keep delivering and merging while its work
 passes the checks, and showing a stop on the page stops nothing.
 
+**Built 2026-11-08,** except the button to halt everything and undoing a
+delivery, which come with merging alone: today nothing merges without the
+person. Two errors among a stop's last ten outcomes brake it. A braked stop
+asks on every run, even for a small change and when certified, holds the run
+there, and refuses an agent's answer. It is released when the outcomes since
+the brake certify on their own; the errors before the release no longer count
+towards the next brake, so a stop with a loose budget does not brake again at
+once. While a stop holds the run, a later stop whose work was built on what was
+since returned closes, and its step runs again after the answer, so the page
+never offers work on top of something already sent back.
+
 **Tradeoffs.**
 
 - The statistical test alone brakes only on errors in a row: two in a row at a
   5% or 10% budget, three at 20%, while three errors in ten runs would not
   brake. The looser rule to brake covers that, and can brake a stop that was
   fine.
+- Releasing takes at least 7 days, since only a delivery that held counts as
+  right, and as many clean deliveries as certifying takes from zero.
 - Until it brakes, a new specialist's errors reach the main line and have to
   be undone.
 
@@ -271,12 +284,33 @@ the person sees it in the result, with no stop. A delivery earns its right
 answer after a fixed time per project, 7 days by default, and a correction
 found later turns it into an error.
 
+**Built 2026-11-08,** except the time per project, finding the delivery
+from the code's history, and keeping a new preference as taste memory. An
+accept counts as right only once its delivery held 7 days; a change or a
+return counts as an error at once. The agent finds the delivery with `jaynes
+delivered`, which lists the latest ones with their steps and files, and
+records the correction with `jaynes correct`. The run's page shows it with
+its kind, and the person can file it as another kind there. Three rules came
+up while building it:
+
+- Only the last release of a stop in a run counts, since only it was
+  delivered.
+- What an agent released, or a small change the role let through, never
+  earns a right, since nobody looked; a correction still counts against it,
+  so the count errs towards asking.
+- A correction to a run still open is refused: there, a return from a stop
+  corrects it.
+
 **Tradeoffs.**
 
 - The agent can file a real error as a new preference and keep the count too
   optimistic; the person sees the kind in the result, and samples catch part
   of it.
 - A fixed wait ignores how much the delivery was used in that time.
+- A stop now takes at least 7 days to become sampled, where it took one
+  afternoon of accepts.
+- Every project waits the same 7 days for now. A project file of Jaynes's own
+  could set it; the `jaynes.toml` a project may have is the action gate's.
 
 ## 2026-11-07: Jaynes promises specialists of any area
 

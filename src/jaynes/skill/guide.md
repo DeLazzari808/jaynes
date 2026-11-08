@@ -1,6 +1,15 @@
 How to carry out a change through Jaynes. The task is the person's request, or the plan they approved, in full,
 with what was agreed in conversation.
 
+When the request fixes or changes something Jaynes delivered before, first find the run that made it:
+`jaynes delivered --project .` lists the latest deliveries with their steps and the files they changed. When one
+of them made what is being fixed, record it before anything else:
+`jaynes correct <run> --step <the step whose output was wrong> --kind <kind> --note "<what was wrong>"`
+The kind is `error` when it was wrong by what was already known (the task, the code, or a preference already
+written where the agent could read it), `preference` when it is a new preference nobody had written, and `info`
+when the world changed or a new fact appeared. Tell the person in one line which run it corrects and the kind,
+and that they can change the kind on the run's `page`, as printed. Then carry out the fix as below.
+
 1. Pick the role from the task:
    - `small-change` if it is small: a few lines in one or two files, such as a typo, a rename, a value, a message;
    - `fix-bug` if it describes a bug;

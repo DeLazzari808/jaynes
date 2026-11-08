@@ -107,3 +107,31 @@ def test_an_answer_while_a_process_holds_the_run_is_carried_on_once_it_lets_go(t
         assert time.monotonic() < deadline, (tmp_path / "runs" / run / "continue.log").read_text()
         time.sleep(0.05)
     assert "going on once it lets go" in (tmp_path / "runs" / run / "continue.log").read_text()
+
+
+def test_an_agent_finds_a_delivery_and_records_its_correction(tmp_path: Path,
+                                                               capsys: pytest.CaptureFixture[str]) -> None:
+    from tests.stopped import ROLE
+    home = str(tmp_path)
+    cli.main(["run", "--home", home, "--role", "tests.stopped:ROLE", "--task", "Ship the draft",
+              "--runtime", "quick=tests.stopped:Agent"])
+    run = json.loads(capsys.readouterr().out)["run"]
+    with pytest.raises(SystemExit, match="return it from a stop"):
+        cli.main(["correct", "--home", home, run, "--step", "draft", "--kind", "error", "--note", "too long"])
+    Conductor(tmp_path).answer(ROLE, run, "draft", "accept", by="person")
+    cli.main(["run", "--home", home, run])
+    assert json.loads(capsys.readouterr().out)["status"] == "finished"
+
+    cli.main(["delivered", "--home", home])
+    listed = capsys.readouterr().out
+    assert f"{run}  delivered " in listed and "stopped: Ship the draft" in listed
+    assert "    steps: draft (stop), final" in listed
+
+    cli.main(["correct", "--home", home, run, "--step", "draft", "--kind", "error", "--note", "too long"])
+    recorded = json.loads(capsys.readouterr().out)
+    assert (recorded["kind"], recorded["counted_at"]) == ("error", "draft")
+    assert recorded["page"].endswith(f"/run/{run}")
+    cli.main(["delivered", "--home", home])
+    assert "    corrected: error in draft, counted at draft: too long" in capsys.readouterr().out
+    with pytest.raises(SystemExit, match="no step 'ship'"):
+        cli.main(["correct", "--home", home, run, "--step", "ship", "--kind", "error", "--note", "x"])

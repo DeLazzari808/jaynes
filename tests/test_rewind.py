@@ -88,7 +88,7 @@ def test_the_earlier_step_takes_the_label_and_the_later_stop_takes_none(repo: Pa
     c.run(r, "t", "r1")
     direction_fp = next(iter(c.store.events("StopOpened", run_id="r1"))).payload["fingerprint"]
     apply_fp = list(c.store.events("StopOpened", run_id="r1"))[-1].payload["fingerprint"]
-    assert (c.window(direction_fp).n, c.window(direction_fp).k) == (1, 0)
+    assert (c.window(direction_fp).n, c.count(direction_fp).pending) == (0, 1)  # until its delivery holds
 
     c.answer(r, "r1", "apply", "return", note="not this palette", to="direction", by="person")
 

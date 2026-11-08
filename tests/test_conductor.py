@@ -153,7 +153,8 @@ def test_run_waits_at_a_stop_and_continues_after_accept(tmp_path: Path) -> None:
     assert (opened["status"], opened["n"], opened["k"]) == ("undetermined", 0, 0)
     [answered] = payloads(c, "r1", "StopAnswered")
     assert answered["label"] == "correct"
-    assert c.window(opened["fingerprint"]) == Window(1, 0)
+    assert c.window(opened["fingerprint"]) == Window(0, 0)  # right only once the delivery holds (test_outcome)
+    assert c.count(opened["fingerprint"]).pending == 1
     assert c.output("r1", a) == Note(text="a")
 
 
@@ -195,7 +196,8 @@ def test_return_reruns_the_step_with_the_note_and_context_is_not_counted(tmp_pat
     assert c.run(r, "t", run_id="r1").status == "finished"
     assert c.output("r1", a) == Note(text="three")
     fp = payloads(c, "r1", "StopOpened")[0]["fingerprint"]
-    assert c.window(fp) == Window(2, 1)  # return is an error, context is not counted, accept is correct
+    # return is an error at once, context is not counted, the accept is right once the delivery holds
+    assert (c.window(fp), c.count(fp).pending) == (Window(1, 1), 1)
 
 
 def test_answer_without_an_open_stop_is_rejected(tmp_path: Path) -> None:
@@ -214,7 +216,7 @@ def certify(c: Conductor, r: Any, labels: int) -> None:
 
 def test_certified_stop_waits_only_on_the_audit_share(tmp_path: Path) -> None:
     r, _, _ = reviewed(budget=0.3, audit_rate=0.25)
-    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})}, settle=0)
     certify(c, r, 13)  # 13 clean labels certify a 30% budget at delta 5% (SPEC 6.4)
 
     waited = 0
@@ -229,7 +231,7 @@ def test_certified_stop_waits_only_on_the_audit_share(tmp_path: Path) -> None:
 
 def test_floor_waits_every_run_whatever_the_labels(tmp_path: Path) -> None:
     r, _, _ = reviewed(budget=0.3, sampled=False)
-    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})}, settle=0)
     certify(c, r, 20)
     assert c.run(r, "t", run_id="x").status == "waiting"
     assert payloads(c, "x", "StopOpened")[0]["status"] == "floor"
@@ -237,7 +239,7 @@ def test_floor_waits_every_run_whatever_the_labels(tmp_path: Path) -> None:
 
 def test_changing_the_check_opens_a_new_window(tmp_path: Path) -> None:
     r, _, _ = reviewed(budget=0.3)
-    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})}, settle=0)
     certify(c, r, 13)
     r2 = role("rev", agent="fake")
     r2.step("a", output=Note, check=lambda out, _: Pass() if len(out.text) < 99 else Fail("long"), stop=stop(0.3))
@@ -261,14 +263,14 @@ def test_method_file_is_read_relative_to_the_role_module(tmp_path: Path) -> None
     assert agent.prompts[0].startswith("Cite the snapshot for every claim.")
 
 
-def test_a_stop_that_keeps_failing_is_refuted_and_waits(tmp_path: Path) -> None:
+def test_a_stop_that_keeps_failing_is_braked_and_waits(tmp_path: Path) -> None:
     r, _, _ = reviewed(budget=0.05)
     c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted(default=lambda s: {"text": s})})
     for i in range(6):
         c.run(r, "t", run_id=f"w{i}")
         c.answer(r, f"w{i}", "a", "change", output={"text": "fixed"}, by="person")
     assert c.run(r, "t", run_id="x").status == "waiting"
-    assert payloads(c, "x", "StopOpened")[0]["status"] == "refuted"
+    assert payloads(c, "x", "StopOpened")[0]["status"] == "braked"
 
 
 

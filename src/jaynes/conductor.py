@@ -20,7 +20,6 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import inspect
-import itertools
 import json
 import os
 import secrets
@@ -41,6 +40,7 @@ from jaynes import project as repo
 from jaynes.gate import Window
 from jaynes.preview import link_dependencies
 from jaynes import inputs as run_inputs
+from jaynes import outcome
 from jaynes.role import OUTPUT, Asks, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
 from jaynes.runtime import QuotaExhausted, Runtime, RuntimeFailure, TurnTimeout
 from jaynes.store import Event, Store
@@ -295,8 +295,9 @@ def start_in_background(home: Path, run_id: str, ref: str, task: str, runtimes: 
 
 
 def holds(opened: Mapping[str, Any]) -> bool:
-    """Whether an open stop holds the run until the person answers: a change to paths that run outside any box, or
-    an output that ends the run. Any other stop shows its output and the run goes on with it."""
+    """Whether an open stop holds the run until the person answers: a change to paths that run outside any box, an
+    output that ends the run, or a stop braked after too many errors. Any other stop shows its output and the run
+    goes on with it."""
     return bool(opened.get("holds") or opened.get("floor_paths") or opened.get("ends"))
 
 
@@ -333,12 +334,13 @@ def new_run_id() -> str:
 
 class Conductor:
     def __init__(self, home: Path, runtimes: Mapping[str, Callable[[], Runtime]] | None = None,
-                 clock: Callable[[], float] = time.time) -> None:
+                 clock: Callable[[], float] = time.time, settle: float = outcome.SETTLE) -> None:
         self.home = Path(home).resolve()  # git runs from the copies, so a relative home would point elsewhere
         self.home.mkdir(parents=True, exist_ok=True)
         self.store = Store(self.home / "jaynes.sqlite3")
         self.runtimes = dict(runtimes or {})
         self.clock = clock
+        self.settle = settle  # how long a delivery holds before what its stops let through counts as right
 
     # public ---------------------------------------------------------------------
 
@@ -418,6 +420,9 @@ class Conductor:
                 raise AnswerRejected([f"the stop at {step!r} changed since it was shown; reload it and answer again"])
             if by == "agent" and opened["status"] == "floor":
                 raise AnswerRejected([f"the stop at {step!r} is a floor: only a person answers it, from the page"])
+            if by == "agent" and opened["status"] == "braked":
+                raise AnswerRejected([f"the stop at {step!r} is braked after too many errors: only a person "
+                                      "answers it, from the page"])
             target = next(x for x in role.steps if x.name == step)
             value: BaseModel | None = None
             if answer == "choose":
@@ -559,22 +564,67 @@ class Conductor:
             return True
 
     def window(self, fingerprint: str) -> Window:
-        """Labels a person recorded under a stop fingerprint, across all runs, with later revisions of earlier ones."""
-        weight = {"correct": (1, 0), "error": (1, 1)}  # context, none and skipped count nothing
-        n = k = 0
-        # sums, so the order of the two kinds does not matter
-        for e in itertools.chain(self.store.events("StopAnswered"), self.store.events("RunSentBack")):
-            p = e.payload
-            if p.get("by") == "agent":
-                continue
-            if e.type == "StopAnswered" and p.get("fingerprint") == fingerprint:
-                dn, dk = weight.get(p["label"], (0, 0))
-                n, k = n + dn, k + dk
-            r = p.get("revises")
-            if r and r["fingerprint"] == fingerprint:
-                (on, ok), (nn, nk) = weight.get(r["was"], (0, 0)), weight.get(r["label"], (0, 0))
-                n, k = n - on + nn, k - ok + nk
-        return Window(n, k)
+        """The outcomes known under a stop fingerprint, across all runs, and how many were errors (``outcome``)."""
+        c = self.count(fingerprint)
+        return Window(c.n, c.k)
+
+    def count(self, fingerprint: str, budget: float | None = None, delta: float = 0.05) -> outcome.Count:
+        """A stop's count: outcomes, errors, releases still waiting for their delivery to hold, and, given the
+        stop's budget and delta, whether too many errors lately brake it."""
+        found = outcome.items(self.store.events_of(outcome.TYPES), self.clock(), self.settle)
+        return outcome.count(found, fingerprint, budget, delta)
+
+    def correct(self, role: Role, run_id: str, erred: str, kind: str, note: str, by: By,
+                via: str | None = None) -> dict[str, Any]:
+        """Record that a delivery was corrected afterwards: ``erred`` is the step whose output was wrong, ``kind``
+        whether it was an error by what was already known, a new preference, or new information. Only an error
+        counts, on the first stop at or after ``erred`` that let the delivery through. ``via`` is the run that
+        makes the correction, when there is one. Returns what was recorded."""
+        if kind not in outcome.KINDS:
+            raise AnswerRejected([f"kind is one of {', '.join(outcome.KINDS)}, not {kind!r}"])
+        if by not in get_args(By):
+            raise ValueError(f"by is person or agent, not {by!r}")
+        if not note.strip():
+            raise AnswerRejected(["a correction needs a note saying what was wrong"])
+        names = [x.name for x in role.steps]
+        if erred not in names:
+            raise AnswerRejected([f"{role.name} has no step {erred!r}; its steps are {', '.join(names)}"])
+        with self._lock(f"{run_id}.answers"):
+            st = project(self.store.events(run_id=run_id))
+            if st.started is None:
+                raise AnswerRejected([f"no run {run_id}"])
+            if not st.finished or st.outcome == "dismissed":
+                raise AnswerRejected([f"run {run_id} delivered nothing" + ("" if st.finished else
+                                      " yet; while it runs, return it from a stop instead")])
+            stop = next((x.name for x in role.steps[names.index(erred):]
+                         if x.stop is not None and st.step(x.name).released is not None), None)
+            p: dict[str, Any] = {"id": secrets.token_hex(4), "erred": erred, "stop": stop, "kind": kind,
+                                 "note": note.strip(), "by": by, **({"via": via} if via else {}),
+                                 **({"fingerprint": st.step(stop).released["fingerprint"]}  # type: ignore[index]
+                                    if stop else {})}
+            self._emit(run_id, "DeliveryCorrected", p)
+            return p
+
+    def reclassify(self, run_id: str, correction: str, kind: str, by: By) -> dict[str, Any]:
+        """Change the kind of a correction, as a person does on the page when the agent filed it wrong."""
+        if kind not in outcome.KINDS:
+            raise AnswerRejected([f"kind is one of {', '.join(outcome.KINDS)}, not {kind!r}"])
+        with self._lock(f"{run_id}.answers"):
+            was = next((e.payload for e in reversed(list(self.store.events("DeliveryCorrected", run_id=run_id)))
+                        if e.payload["id"] == correction), None)
+            if was is None:
+                raise AnswerRejected([f"run {run_id} has no correction {correction!r}"])
+            p = {**was, "kind": kind, "by": by, "was": was["kind"]}
+            self._emit(run_id, "DeliveryCorrected", p)
+            return p
+
+    def corrections(self, run_id: str) -> list[tuple[float, dict[str, Any]]]:
+        """The corrections of a run's delivery, each as it stands now, with when it was first recorded."""
+        found: dict[str, tuple[float, dict[str, Any]]] = {}
+        for e in self.store.events("DeliveryCorrected", run_id=run_id):
+            first = found.get(str(e.payload["id"]))
+            found[str(e.payload["id"])] = (first[0] if first else e.ts, e.payload)
+        return list(found.values())
 
     # one action per call ------------------------------------------------------
 
@@ -614,6 +664,14 @@ class Conductor:
                 continue
             if s.open_stop is not None:
                 if holds(s.open_stop[1]):
+                    # what ran ahead on work that was since returned waits too: its stop closes, and it runs again
+                    # once the person answered here, instead of offering what was built on the returned work
+                    for x in role.steps[role.steps.index(step) + 1:]:
+                        xs = st.step(x.name)
+                        if xs.checked is not None and (changed := self._changed(role, x, xs, st)):
+                            self._emit(run_id, "InputsChanged", {"step": x.name, "round": xs.round,
+                                                                 "changed": changed})
+                            return None
                     return RunResult("waiting", step.name)
                 continue  # shown to the person; the run goes on with the agent's output
             if s.checked is not None:
@@ -898,15 +956,19 @@ class Conductor:
     def _decide_stop(self, run_id: str, step: Step[Any], s: StepState, st: RunState) -> None:
         assert step.stop is not None and s.checked is not None
         fp = step.stop_fingerprint(str(s.checked["model"]), run_inputs.fingerprint(st.started or {}, step.inputs))
-        w = self.window(fp)
-        n, k = w.n, w.k
         sp = step.stop
+        c = self.count(fp, sp.budget, sp.delta)
+        n, k = c.n, c.k
         later = list(s.checked.get("floor") or [])  # paths that run later: a person sees them every time
         ending = self._ends(step, s)  # only a person ends a run early
-        if not later and not ending and step.asks is not None and not self._asks(step, s):
+        if not later and not ending and not c.braked and step.asks is not None and not self._asks(step, s):
             self._emit(run_id, "StopSkipped", {"step": step.name, "status": "small", "fingerprint": fp})
             return
-        if not sp.sampled or later or ending:
+        if later or ending:
+            status = "floor"
+        elif c.braked:  # too many errors lately: it asks on every run, and the run waits for it
+            status = "braked"
+        elif not sp.sampled:
             status = "floor"
         elif bounds.certified(n, k, sp.budget, sp.delta):
             status = "certified"
@@ -922,11 +984,12 @@ class Conductor:
         question, shown = self._question(step, s, st), self._shown(step, s, st)
         self._emit(run_id, "StopOpened", {
             "step": step.name, "round": s.round, "status": status, "coin": u, "n": n, "k": k,
-            "log_e": bounds.log_certify_evalue(n, k, sp.budget) if n else 0.0, "fingerprint": fp,
-            "budget": sp.budget, "delta": sp.delta, "question": question,
+            "pending": c.pending, "log_e": bounds.log_certify_evalue(n, k, sp.budget) if n else 0.0,
+            "fingerprint": fp, "budget": sp.budget, "delta": sp.delta, "question": question,
             "evidence": evidence_hash(s.checked, question, shown), **({"floor_paths": later} if later else {}),
             **({"ends": True} if ending else {}), **({"shown": shown} if shown else {}),
-            **({"holds": True} if later or ending else {})})
+            **({"braked": {"n": c.after[0], "k": c.after[1]}} if status == "braked" else {}),
+            **({"holds": True} if later or ending or status == "braked" else {})})
 
     # helpers ------------------------------------------------------------------
 

@@ -201,7 +201,7 @@ def test_paths_that_run_later_turn_even_a_certified_stop_into_a_floor(repo: Path
     r = role("paint", agent="fake")
     r.step("apply", output=Note, project="write", may_change=["**"], stop=stop(0.3, audit_rate=0.0))
     agent = Same(edits({"src/app.css": ":root { --bg: #000; }\n"}, {"text": "dark"}))
-    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent})
+    c = Conductor(tmp_path / "home", runtimes={"fake": lambda: agent}, settle=0)
     for i in range(13):  # certify the stop, which then never asks (audit rate 0)
         assert c.run(r, "t", f"w{i}", project=repo).status == "waiting"
         c.answer(r, f"w{i}", "apply", "accept", by="person")

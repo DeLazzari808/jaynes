@@ -364,6 +364,64 @@ def cmd_answer(args: argparse.Namespace) -> None:
     print(json.dumps({"run": args.run, "step": args.step, "answer": answer, "continuing": True}))
 
 
+def cmd_delivered(args: argparse.Namespace) -> None:
+    """Runs that delivered, newest first: what each was asked, its steps (stops marked), what it changed and its
+    corrections, so an agent asked to fix something finds which delivery the fix corrects."""
+    from jaynes import project as repo
+    from jaynes.conductor import Conductor, project
+    from jaynes.review import headline
+    c = Conductor(_home(args))
+    root = None
+    if args.project:
+        try:
+            root = str(repo.resolve(Path(args.project))[0])
+        except repo.ProjectError as err:
+            sys.exit(str(err))
+    shown = 0
+    for run_id in reversed(c.store.runs()):
+        events = list(c.store.events(run_id=run_id))
+        st = project(events)
+        if st.started is None or not st.finished or st.outcome == "dismissed":
+            continue
+        if root is not None and cast(dict[str, Any], st.started.get("project") or {}).get("root") != root:
+            continue
+        when = max(e.ts for e in events if e.type == "RunFinished")
+        steps = list(dict.fromkeys(str(e.payload["step"]) for e in events if e.type in ("StepStarted", "Checked")))
+        stops = {str(e.payload["step"]) for e in events if e.type in ("StopOpened", "StopSkipped")}
+        print(f"{run_id}  delivered {time.strftime('%Y-%m-%d %H:%M', time.localtime(when))}  "
+              f"{st.started['role']}: {headline(str(st.started.get('task', '')))}")
+        print("    steps: " + ", ".join(f"{x} (stop)" if x in stops else x for x in steps))
+        if st.branch:
+            files = sorted({line.split(" b/", 1)[1] for _, h in st.branch.get("patches", [])
+                            for line in (c.home / "objects" / f"{h}.patch").read_text(errors="replace").splitlines()
+                            if line.startswith("diff --git ") and " b/" in line})
+            print(f"    branch {st.branch['branch']}: " + ", ".join(files))
+        for _, p in c.corrections(run_id):
+            print(f"    corrected: {p['kind']} in {p['erred']}" + (f", counted at {p['stop']}" if p["kind"] == "error"
+                                                                    and p.get("stop") else "") + f": {p['note']}")
+        shown += 1
+        if shown >= args.limit:
+            break
+    if not shown:
+        print("nothing was delivered" + (f" in {root}" if root else ""))
+
+
+def cmd_correct(args: argparse.Namespace) -> None:
+    from jaynes.ask import page
+    from jaynes.conductor import AnswerRejected, Conductor, RunBusy
+    c = Conductor(_home(args))
+    r, _, _, _ = _started(c, args.run)
+    try:
+        p = c.correct(r, args.run, args.step, args.kind, args.note or "", by="agent")
+    except AnswerRejected as err:
+        sys.exit("correction not recorded: " + "; ".join(err.reasons))
+    except RunBusy:
+        sys.exit(f"run {args.run} is busy in another process; try again in a moment")
+    print(json.dumps({"run": args.run, "correction": p["id"], "kind": p["kind"],
+                      "counted_at": p["stop"] if p["kind"] == "error" else None,
+                      "page": f"{page(c.home)}/run/{args.run}"}))
+
+
 def cmd_output(args: argparse.Namespace) -> None:
     from jaynes.conductor import Conductor
     c = Conductor(_home(args))
@@ -544,6 +602,18 @@ def main(argv: list[str] | None = None) -> int:
     u = sub.add_parser("update", help="install the newest Jaynes, if there is one")
     u.add_argument("--home")
     sub.add_parser("version")
+    dl = sub.add_parser("delivered", help="runs that delivered, newest first, with their steps, files and corrections")
+    dl.add_argument("--project", help="only runs on the git repository that holds this folder")
+    dl.add_argument("--limit", type=int, default=10)
+    dl.add_argument("--home")
+    cr = sub.add_parser("correct", help="record that a delivery was corrected afterwards, and why")
+    cr.add_argument("run", help="the run that delivered what is being corrected")
+    cr.add_argument("--step", required=True, help="the step whose output was wrong")
+    cr.add_argument("--kind", required=True, choices=["error", "preference", "info"],
+                    help="error: wrong by what was already known; preference: a new one nobody had written; "
+                         "info: the world changed or a new fact appeared. Only an error counts")
+    cr.add_argument("--note", required=True, help="what was wrong, in a sentence")
+    cr.add_argument("--home")
     o = sub.add_parser("output", help="the checked output of a step of a run, as JSON")
     o.add_argument("run")
     o.add_argument("step")
@@ -575,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
      "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
-     "guide": cmd_guide}[args.cmd](args)
+     "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct}[args.cmd](args)
     return 0
 
 

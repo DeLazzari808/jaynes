@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -111,6 +111,13 @@ class Store:
         if where:
             q += " where " + " and ".join(where)
         for seq, ts, t, aid, sess, payload, rid in self.db.execute(q + " order by seq", args):
+            yield Event(seq, ts, t, aid, sess, json.loads(payload), rid)
+
+    def events_of(self, types: Sequence[str]) -> Iterator[Event]:
+        """Events of any of ``types``, in log order."""
+        q = ("select seq, ts, type, action_id, session, payload, run_id from events where type in "
+             f"({','.join('?' * len(types))}) order by seq")
+        for seq, ts, t, aid, sess, payload, rid in self.db.execute(q, list(types)):
             yield Event(seq, ts, t, aid, sess, json.loads(payload), rid)
 
     def max_seq(self) -> int:

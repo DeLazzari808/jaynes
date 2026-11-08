@@ -99,7 +99,7 @@ def test_a_stop_answered_from_the_page_continues_the_run(served: tuple[str, Path
     assert "accepted" in run_page and "finished" in run_page
     assert 'class="stages"' in run_page and 'class="timeline"' not in run_page
     role_page = get(base + "/role/stopped")
-    assert re.search(r"draft.*?1 label", role_page, re.S)
+    assert re.search(r"draft.*?0 outcomes, 0 errors, 1 not yet held", role_page, re.S)  # until it holds
     assert "StopAnswered" in get(f"{base}/log?run={run}")
 
 
@@ -813,5 +813,57 @@ def test_after_an_accept_the_page_opens_the_runs_next_stop(tmp_path: Path) -> No
             raise AssertionError("expected a redirect")
         except urllib.error.HTTPError as err:
             assert err.code == 303 and err.headers["Location"] == f"/stop/{run}/draft"
+    finally:
+        server.shutdown()
+
+
+def finish(base: str, home: Path, run: str) -> None:
+    status, _ = post(base + "/answer", {**form(get(base + "/")), "answer": "accept", "note": ""})
+    assert status == 303
+    store = Store(home / "jaynes.sqlite3")
+    deadline = time.monotonic() + 30
+    while not list(store.events("RunFinished", run_id=run)):
+        assert time.monotonic() < deadline, (home / "runs" / run / "continue.log").read_text()
+        time.sleep(0.05)
+
+
+def test_a_correction_shows_on_the_run_and_the_person_files_it_as_another_kind(served: tuple[str, Path, str]) -> None:
+    from tests.stopped import ROLE
+    base, home, run = served
+    finish(base, home, run)
+    Conductor(home).correct(ROLE, run, "draft", "error", "the draft named the wrong client", by="agent")
+
+    page = get(f"{base}/run/{run}")
+    assert "Corrected after delivery" in page and "the draft named the wrong client" in page
+    assert 'chip red">error</span>' in page and "draft, counted at draft" in page
+
+    status, _ = post(base + "/correction", {**form(page), "kind": "preference"})
+
+    assert status == 303
+    page = get(f"{base}/run/{run}")
+    assert 'chip amber">new preference</span>' in page and "draft, not counted" in page
+    [(_, now)] = Conductor(home).corrections(run)
+    assert (now["kind"], now["by"], now["was"]) == ("preference", "person", "error")
+
+
+def test_a_braked_stop_says_so_and_how_many_clean_deliveries_release_it(tmp_path: Path) -> None:
+    from tests.stopped import ROLE
+    c = Conductor(tmp_path)
+    for _ in range(2):
+        cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "t",
+                  "--runtime", "quick=tests.stopped:Agent"])
+        run = Store(tmp_path / "jaynes.sqlite3").runs()[-1]
+        c.answer(ROLE, run, "draft", "return", note="wrong", by="person")
+        c.dismiss(run)
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "t",
+              "--runtime", "quick=tests.stopped:Agent"])
+    run = Store(tmp_path / "jaynes.sqlite3").runs()[-1]
+    base, server = serving(tmp_path)
+    try:
+        page = get(f"{base}/stop/{run}/draft")
+        assert 'chip red">braked</span>' in page
+        assert "clean deliveries until it stops holding the run" in page
+        assert "nothing after it runs until you answer" in page
+        assert "<span class='chip red'>braked</span>" in get(base + "/role/stopped")
     finally:
         server.shutdown()
