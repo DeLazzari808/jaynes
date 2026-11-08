@@ -218,6 +218,19 @@ the role.
   delivery is in that area.
 - A specialist is several roles with knowledge, memory and a track record.
 
+The engine offers slots and a role fills them with its own code, so someone
+using Jaynes never has to change the engine, send it a change or keep a
+modified copy. A role already decides, in its own code, a stop's question,
+whether it asks at all, the options to choose and what it shows, as well as its
+checks. Every "the role says" decided this day is a slot too: what a real run
+is, how to find a corrected delivery, the doubt signals of its area, which
+actions cannot be undone and how to undo. Where the engine cannot show
+something, such as a sound or a video, the role sends its own view, a page the
+Jaynes page shows in an isolated frame that cannot reach the person's key; the
+answer still goes through the engine's buttons, so the engine alone records
+right and wrong. The engine changes only when a slot that serves everyone is
+missing, and that is work for whoever maintains Jaynes, not for its users.
+
 When someone corrects a delivery afterwards, the count of the stop behind it
 changes. That rule is the engine's. How to find which delivery a correction
 touched is the role's: the code history in software, the screen in design, the
@@ -280,8 +293,8 @@ comes later.
 
 The roles already inside Jaynes stay as public examples at their current
 level. From now on specialist work happens in the private repository, and Jaynes
-gets only engine improvements: anything a role needs from the engine is public,
-the role itself is private. Removing the roles was rejected, because the
+gets only engine improvements: the slots a role fills are public, the role
+itself is private. Removing the roles was rejected, because the
 repository history is public and removing them would not make them private.
 
 **Open.** How Jaynes finds private specialists that live outside it when the
