@@ -116,10 +116,12 @@ class StepState:
     checked: dict[str, Any] | None = None
     previous: dict[str, Any] | None = None  # checked output a person returned
     open_stop: tuple[float, dict[str, Any]] | None = None
+    opened_seq: int | None = None  # the event that opened the stop, so an answer to a stop since closed is ignored
     resolved: bool = False  # the stop was skipped, accepted or changed
     released: dict[str, Any] | None = None  # how the stop was released: its fingerprint and label, or skipped
     note: str | None = None
     note_from: str | None = None  # the step whose check sent this one back, when Jaynes did rather than a person
+    changed: tuple[str, ...] = ()  # when it runs again because what it received changed: the steps it came from
     reasons: tuple[str, ...] = ()
 
 
@@ -165,15 +167,17 @@ def project(events: Iterable[Event]) -> RunState:
                 s.checked = p
             case "StopOpened":
                 assert s is not None
-                s.open_stop = (e.ts, p)
+                s.open_stop, s.opened_seq = (e.ts, p), e.seq
             case "StopSkipped":
                 assert s is not None
                 s.resolved = True
                 s.released = {"fingerprint": p["fingerprint"], "label": "skipped"}
             case "StopAnswered":
                 assert s is not None
+                if s.open_stop is None or p.get("opened", s.opened_seq) != s.opened_seq:
+                    continue  # the stop closed while the person answered it, since what it showed changed
                 s.open_stop = None
-                if p.get("to"):  # an earlier step returned from this stop: it and every step after it run again
+                if p.get("to"):  # an earlier step returned from this stop: it runs again, and what it changes
                     _reset(st, p["to"], p["reset"], p.get("note"))
                 elif p["answer"] in ("accept", "change", "choose"):
                     s.resolved = True
@@ -184,7 +188,16 @@ def project(events: Iterable[Event]) -> RunState:
                     s.attempts = 0
                     s.previous, s.checked = s.checked, None
                     s.note = p.get("note")
-                    s.reasons = ()
+                    s.reasons, s.changed = (), ()
+            case "InputsChanged":  # what the step received changed since its output: it runs again on top of it
+                assert s is not None
+                s.round += 1
+                s.attempts = 0
+                s.open_stop, s.resolved, s.released, s.reasons = None, False, None, ()
+                s.previous, s.checked = s.checked, None
+                s.note, s.note_from, s.changed = None, None, tuple(p["changed"])
+                if p.get("unblocks"):  # it was the blocked step: it tries again on what it receives now
+                    st.blocked = None
             case "StepReturned":  # Jaynes sent an earlier step back with what this one's output found
                 assert s is not None
                 st.returns[str(p["step"])] = st.returns.get(str(p["step"]), 0) + 1
@@ -209,15 +222,19 @@ fold = project  # for scopes where ``project`` names a folder
 
 
 def _reset(st: RunState, to: str, names: Iterable[str], note: str | None, sender: str | None = None) -> None:
-    """``to`` and every step after it run again; ``to`` keeps its output as previous, with the note."""
+    """``to`` runs again with the note, its output kept as previous so it corrects on top of it. The other steps
+    in ``names`` run again only if what they receive changes; one with no output yet, such as the step that
+    blocked, starts its attempts afresh."""
     for name in names:
         x = st.step(name)
-        x.round += 1
-        x.attempts = 0
-        x.open_stop, x.resolved, x.released, x.reasons = None, False, None, ()
-        x.previous, x.note = (x.checked, note) if name == to else (None, None)
-        x.note_from = sender if name == to else None
-        x.checked = None
+        if name == to:
+            x.round += 1
+            x.attempts = 0
+            x.open_stop, x.resolved, x.released, x.reasons = None, False, None, ()
+            x.previous, x.note, x.note_from, x.changed = x.checked, note, sender, ()
+            x.checked = None
+        elif x.checked is None:
+            x.attempts, x.reasons = 0, ()
 
 
 # --- workspace -----------------------------------------------------------------
@@ -275,6 +292,12 @@ def start_in_background(home: Path, run_id: str, ref: str, task: str, runtimes: 
           if value for arg in (flag, value)]
     on += [arg for name, value in (inputs or {}).items() for arg in ("--input", f"{name}={value}")]
     return continue_in_background(home, run_id, "--role", ref, "--task", task, *overrides, *on)
+
+
+def holds(opened: Mapping[str, Any]) -> bool:
+    """Whether an open stop holds the run until the person answers: a change to paths that run outside any box, or
+    an output that ends the run. Any other stop shows its output and the run goes on with it."""
+    return bool(opened.get("holds") or opened.get("floor_paths") or opened.get("ends"))
 
 
 def evidence_hash(checked: Mapping[str, Any], question: str | None, shown: list[dict[str, Any]] | None = None) -> str:
@@ -360,6 +383,9 @@ class Conductor:
         ``evidence``, the hash of what was shown, refuses the answer if the stop has shown something else since.
         ``via`` names where a person answered when it was not the page, such as ``terminal``.
         ``choose`` keeps the ``chosen`` items of the output, in that order, at a step that lets the person choose.
+
+        It takes the run's lock for answers, not the run's own, so it is recorded while a process runs the run;
+        that process sees it at its next action.
         """
         if answer not in LABELS:
             raise ValueError(f"unknown answer {answer!r}")
@@ -382,7 +408,7 @@ class Conductor:
             need = return_to(role, step)
             if role.steps[names.index(to)].run_by is not None and need and role.steps[names.index(need)].run_by is None:
                 raise AnswerRejected([f"{to!r} is run by Jaynes, which cannot read a note; return to {need!r}"])
-        with self._lock(run_id):
+        with self._lock(f"{run_id}.answers"):
             st = project(self.store.events(run_id=run_id))
             s = st.step(step)
             if s.open_stop is None:
@@ -416,14 +442,16 @@ class Conductor:
                     raise AnswerRejected(failures)
             back: dict[str, Any] = {}
             if to is not None:
-                was = st.step(to).released
+                was, still = st.step(to).released, st.step(to).open_stop
+                if was is None and still is not None:  # its stop is open: the error is counted there
+                    was = {"fingerprint": still[1]["fingerprint"], "label": "none"}
                 back = {"to": to, "reset": names[names.index(to):names.index(step) + 1],
                         "revises": was and {"fingerprint": was["fingerprint"], "was": was["label"],
                                             "label": LABELS[answer]}}
             rows: list[tuple[str, dict[str, Any]]] = [("StopAnswered", {
                 "step": step, "answer": answer, "label": "none" if to else LABELS[answer], "note": note,
                 "fingerprint": opened["fingerprint"], "seconds_waited": round(self.clock() - opened_at, 3),
-                "seconds_spent": seconds_spent, "by": by, **({"via": via} if via else {}),
+                "seconds_spent": seconds_spent, "by": by, "opened": s.opened_seq, **({"via": via} if via else {}),
                 **({"chosen": list(chosen or [])} if answer == "choose" else {}), **back})]
             if value is not None:  # the edit and its witness are one write, so a crash cannot drop the edit
                 assert s.checked is not None
@@ -497,15 +525,16 @@ class Conductor:
             for name, (opened_at, payload) in opened:
                 items.append(Waiting(run_id, "stop", name, opened_at, role, task, payload.get("question"),
                                      evidence=payload.get("evidence"), here=here))
-            if st.blocked is not None or opened:
+            if st.blocked is not None:
                 continue
+            # a stop does not hold the run, so beside its stops a run can be working or paused
             step = next((str(ev.payload["step"]) for ev in reversed(events) if "step" in ev.payload), "")
             if st.paused_until is not None and st.paused_until > self.clock():
                 since = max(e.ts for e in events if e.type == "RunPaused")
                 items.append(Waiting(run_id, "paused", step, since, role, task, until=st.paused_until))
             elif self._held(run_id):
                 items.append(Waiting(run_id, "running", step, events[-1].ts, role, task))
-            elif self.clock() - events[-1].ts >= idle_after:
+            elif not opened and self.clock() - events[-1].ts >= idle_after:
                 items.append(Waiting(run_id, "idle", step, events[-1].ts, role, task, here=here))
         order = ("stop", "blocked", "idle", "running", "paused")
         return sorted(items, key=lambda w: (order.index(w.kind), w.since))
@@ -515,7 +544,7 @@ class Conductor:
         out: list[tuple[str, float]] = []
         for run_id in self.store.unfinished_runs():
             st = project(self.store.events(run_id=run_id))
-            if st.finished or st.blocked is not None or any(x.open_stop for x in st.steps.values()):
+            if st.finished or st.blocked is not None:  # an open stop holds nothing: a paused run with one goes on
                 continue
             if st.paused_until is not None and st.paused_until <= self.clock() and not self._held(run_id):
                 out.append((run_id, st.paused_until))
@@ -552,7 +581,7 @@ class Conductor:
     def _advance(self, role: Role, run_id: str, st: RunState) -> RunResult | None:
         if st.finished:
             return RunResult("finished")
-        if st.blocked is not None:
+        if st.blocked is not None and st.blocked.get("received") is None:  # blocked for what no answer changes
             return RunResult("blocked", st.blocked["step"], reasons=tuple(st.blocked["reasons"]))
         for step in role.steps:
             s = st.step(step.name)
@@ -564,25 +593,50 @@ class Conductor:
                         f"the irreversible step {step.name} was running when Jaynes stopped and may have acted; "
                         f"check what it did under idempotency key {s.in_flight['key']} before running it again"]})
                 return None
+        later: list[Step[Any]] = []  # steps that wait for an answer they need, and the steps that need them
         for step in role.steps:
             s = st.step(step.name)
+            if st.blocked is not None and step.name == st.blocked["step"]:
+                # a stop does not hold the run, so it can block while an earlier stop waits; an answer there that
+                # changes what the blocked step receives lets it try again
+                if changed := _differs(st.blocked["received"], self._received(role, step, st)):
+                    self._emit(run_id, "InputsChanged", {"step": step.name, "round": s.round, "changed": changed,
+                                                         "unblocks": True})
+                    return None
+                return RunResult("blocked", step.name, reasons=tuple(st.blocked["reasons"]))
+            if s.checked is not None and (changed := self._changed(role, step, s, st)):
+                self._emit(run_id, "InputsChanged", {"step": step.name, "round": s.round, "changed": changed})
+                return None
             if s.checked is not None and (step.stop is None or s.resolved):
                 if s.resolved and self._ends(step, s):  # a person accepted an output that ends the run
                     self._emit(run_id, "RunFinished", {"outcome": "ended", "step": step.name})
                     return None
                 continue
             if s.open_stop is not None:
-                return RunResult("waiting", step.name)
+                if holds(s.open_stop[1]):
+                    return RunResult("waiting", step.name)
+                continue  # shown to the person; the run goes on with the agent's output
             if s.checked is not None:
                 self._decide_stop(run_id, step, s, st)
                 return None
+            # a stop with no output passes on only the person's answer: what needs it runs once they answered, and
+            # so does what needs that, or works on a project it may still change
+            if any(n.output is None and not st.step(n.name).resolved for n in step.needs) \
+                    or any(n in later for n in step.needs) or (step.project and any(x.project == "write" for x in later)):
+                later.append(step)
+                continue
             if s.attempts >= step.max_turns:
-                self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": list(s.reasons)})
+                self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": list(s.reasons),
+                                                  "received": self._received(role, step, st)})
                 return None
+            if step.effect == "irreversible" and (before := self._open_before(role, step, st)):
+                return RunResult("waiting", before)  # what cannot be undone waits for every answer before it
             return self._execute(role, run_id, step, s, st)
         info = (st.started or {}).get("project")
-        patches = self.patches(role, st)
-        if info and patches and st.branch is None:
+        made = [[x.name, str(c["patch"])] for x in role.steps if (c := st.step(x.name).checked) and c.get("patch")]
+        # made before the answers, and made again when a correction changes it
+        if info and (made if st.branch is None else st.branch.get("patches", made) != made):
+            patches = self.patches(role, st)
             task = str((st.started or {}).get("task", ""))
             name = f"jaynes/{run_id}"
             try:
@@ -593,16 +647,51 @@ class Conductor:
                                                   "reasons": [f"the branch was not created: {err}"]})
                 return None
             self._emit(run_id, "BranchCreated", {"branch": name, "commit": commit, "root": info["root"],
-                                                 "steps": [step for step, _ in patches]})
+                                                 "steps": [step for step, _ in patches], "patches": made})
             return None
+        if waiting := self._open_before(role, None, st) or (later[0].name if later else None):
+            return RunResult("waiting", waiting)  # delivered; it finishes once the person answered
         self._emit(run_id, "RunFinished", {"outcome": "delivered"})
         return None
 
+    def _open_before(self, role: Role, step: Step[Any] | None, st: RunState) -> str | None:
+        """The first step before ``step``, or of the role, whose stop waits for the person."""
+        for x in role.steps:
+            if x is step:
+                break
+            if st.step(x.name).open_stop is not None:
+                return x.name
+        return None
+
+    def _received(self, role: Role, step: Step[Any], st: RunState) -> dict[str, str]:
+        """What a step is handed: each need's output and files, and for a step on the project, every earlier
+        step's change to it."""
+        out = {n.name: "{}:{}".format((c := st.step(n.name).checked or {}).get("output_hash"),
+                                      json.dumps(c.get("files"), sort_keys=True)) for n in step.needs}
+        for n in step.needs:  # a stop with no output passes on only the person's answer, in its round
+            if n.output is None:
+                out[n.name] += f":{st.step(n.name).round}:{st.step(n.name).resolved}"
+        if step.project:
+            for x in role.steps[:role.steps.index(step)]:
+                c = st.step(x.name).checked
+                if c and c.get("patch"):
+                    out[f"project:{x.name}"] = str(c["patch"])
+        return out
+
+    def _changed(self, role: Role, step: Step[Any], s: StepState, st: RunState) -> list[str]:
+        """The earlier steps whose output or change reached this step differently than when it was checked."""
+        was = (s.checked or {}).get("received")
+        if was is None:  # checked before Jaynes recorded what a step received
+            return []
+        return _differs(was, self._received(role, step, st))
+
     def _execute(self, role: Role, run_id: str, step: Step[Any], s: StepState, st: RunState) -> RunResult | None:
         needs = self._witnesses(step, st)
+        received = self._received(role, step, st)
         if step.output is None:
             self._emit(run_id, "Checked", {"step": step.name, "round": s.round, "attempt": 0, "output_hash": None,
-                                           "check_hash": step.check_hash(), "source": "none", "model": "none"})
+                                           "check_hash": step.check_hash(), "source": "none", "model": "none",
+                                           "received": received})
             return None
         if step.run_by is None:
             until = self._paused_until(step.agent)
@@ -619,6 +708,7 @@ class Conductor:
         files = self._need_files(step, st)
         ws, scratch = self._workspace(run_id, step, s, needs, files)
         tracker = None
+        on_top: bool | None = None  # whether the step's previous change to the project is applied in its copy
         if step.project:
             assert info is not None
             try:
@@ -630,6 +720,8 @@ class Conductor:
             tracker = repo.Tracker(ws.parent / "project.git", ws / "project")
             # installed dependencies, so the agent can run the project's tests; never part of what it changed
             tracker.exclude(link_dependencies(Path(info["root"]), ws / "project"))
+            if step.project == "write" and s.previous and s.previous.get("patch"):  # corrected on top of it
+                on_top = repo.apply(ws / "project", self._patch(str(s.previous["patch"])))
             needs = self._witnesses(step, st, ws / "project", Path(info["root"]))
         before = manifest(ws, skip="project")
         key, effect = "", {}
@@ -647,7 +739,8 @@ class Conductor:
                 value = step.run_by(StepContext(run_id, task, needs, ws, key, dict(st.started or {}),
                                                 self._history(run_id)))
             except Blocked as err:  # it could not judge at all; no attempt is spent on what is nobody's fault here
-                self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]]})
+                self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]],
+                                                  "received": received})
                 return None
             except Exception as err:  # a trusted executor failed; it counts as a rejected turn
                 acted = [f"it may have acted; check under idempotency key {key}"] if key else []
@@ -672,8 +765,8 @@ class Conductor:
                 web: dict[str, Any] = {"web": True} if step.web else {}
                 if step.max_messages and "max_messages" in inspect.signature(runtime.turn).parameters:
                     web["max_messages"] = step.max_messages  # a runtime that counts no messages has no such limit
-                turn = runtime.turn(ws, scratch, self.prompt(role, step, task, s, files, st.started), step.deadline,
-                                    **web)
+                turn = runtime.turn(ws, scratch, self.prompt(role, step, task, s, files, st.started, on_top),
+                                    step.deadline, **web)
             except QuotaExhausted as q:
                 until = q.until if q.until and q.until > self.clock() else self.clock() + UNKNOWN_RESET
                 self._emit(run_id, "TurnInterrupted", {"step": step.name, "attempt": attempt, "reason": "quota"})
@@ -727,7 +820,7 @@ class Conductor:
         try:
             failures = self._check(step, value, needs)
         except Blocked as err:
-            self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]],
+            self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]], "received": received,
                                               **({"asks": True} if isinstance(err, Asks) else {})})
             return None
         if failures:
@@ -735,6 +828,7 @@ class Conductor:
             return None
         carry: dict[str, Any] = {"patch": self._store(patch, ".patch") if patch else None, "changed": touched,
                                  "workspace": str(ws), **({"floor": later} if later else {})} if tracker else {}
+        carry["received"] = received
         if kept:
             carry["files"] = kept
         rows = [self._witness(step, s, value, source=step.executor, model=model, attempt=attempt, carry=carry)]
@@ -831,7 +925,8 @@ class Conductor:
             "log_e": bounds.log_certify_evalue(n, k, sp.budget) if n else 0.0, "fingerprint": fp,
             "budget": sp.budget, "delta": sp.delta, "question": question,
             "evidence": evidence_hash(s.checked, question, shown), **({"floor_paths": later} if later else {}),
-            **({"ends": True} if ending else {}), **({"shown": shown} if shown else {})})
+            **({"ends": True} if ending else {}), **({"shown": shown} if shown else {}),
+            **({"holds": True} if later or ending else {})})
 
     # helpers ------------------------------------------------------------------
 
@@ -881,7 +976,8 @@ class Conductor:
 
     def prompt(self, role: Role, step: Step[Any], task: str, s: StepState,
                files: Mapping[str, Mapping[str, str]] | None = None,
-               started: Mapping[str, Any] | None = None) -> str:
+               started: Mapping[str, Any] | None = None, on_top: bool | None = None) -> str:
+        """``on_top`` says whether the step's previous change to the project is applied in its copy, when it has one."""
         lines: list[str] = []
         if method := role.method_text():
             lines += [method.rstrip(), ""]
@@ -902,8 +998,13 @@ class Conductor:
             lines += [f"- inputs/{n.name}.json: the checked output of step {n.name}" for n in step.needs]
             lines += [f"- inputs/{n}/{f}: a file from step {n}" for n, fs in (files or {}).items() for f in fs]
             if s.previous:
-                who = f"Jaynes sent back from {s.note_from}" if s.note_from else "the person returned"
-                lines.append(f"- inputs/previous.json: your previous output for this step, which {who}")
+                who = (f"which Jaynes sent back from {s.note_from}" if s.note_from else
+                       "made before what you receive changed" if s.changed else "which the person returned")
+                lines.append(f"- inputs/previous.json: your previous output for this step, {who}")
+            if on_top is not None:
+                lines.append("- inputs/previous.patch: your previous changes to the project, " + (
+                    "already applied in project/" if on_top else
+                    "which no longer apply to project/ as it is now; redo there what still holds"))
             lines.append("")
         if step.project:
             lines += ["The project is in project/: a copy of its repository at the last commit, with the changes of "
@@ -925,12 +1026,17 @@ class Conductor:
         lines += [f"Write exactly one file, {OUTPUT}, in the current directory: one JSON document valid against "
                   "this JSON Schema:", "", json.dumps(step.schema(), indent=1), "",
                   f"Do not create, change or delete {other}. Nobody can answer questions during this turn."]
-        if s.note and s.note_from:
+        if s.changed:
+            lines += ["", f"You did this step before, and since then the output of {', '.join(s.changed)} changed. "
+                      "Correct your earlier work on top: adjust it to what changed and keep what still holds."]
+        elif s.note and s.note_from:
             lines += ["", f"Jaynes sent the previous output back: step {s.note_from} found what follows. Fix it, "
                       "or say in your output why it stays:", s.note]
         elif s.note:
             lines += ["", "The person returned the previous output with this note, which outweighs your own "
                       "reading of the inputs:", s.note]
+            if s.previous:
+                lines += ["Correct your earlier work on top: change what the note asks and keep the rest."]
         if s.reasons:
             lines += ["", "Your previous attempt was rejected. Fix exactly this:"]
             lines += [f"- {r}" for r in s.reasons[:30]]
@@ -956,6 +1062,8 @@ class Conductor:
                 shutil.copyfile(self.home / "objects" / obj, ws / "inputs" / name / rel)
         if s.previous and s.previous.get("output_hash"):
             (ws / "inputs" / "previous.json").write_bytes(self._object(str(s.previous["output_hash"])))
+        if step.project == "write" and s.previous and s.previous.get("patch"):
+            (ws / "inputs" / "previous.patch").write_bytes(self._patch(str(s.previous["patch"])))
         for d, _, names in os.walk(ws):
             for f in names:
                 os.chmod(Path(d) / f, 0o444)  # a hint only; the manifest comparison is the guard
@@ -992,7 +1100,7 @@ class Conductor:
                  attempt: int = 0, carry: Mapping[str, Any] | None = None) -> tuple[str, dict[str, Any]]:
         """Store the output and return its ``Checked`` event, not yet recorded. ``carry`` holds the project change."""
         h = self._store(canonical(value), ".json")
-        project_change = {k: carry[k] for k in ("patch", "changed", "workspace", "files", "floor")
+        project_change = {k: carry[k] for k in ("patch", "changed", "workspace", "files", "floor", "received")
                           if k in carry} if carry else {}
         return "Checked", {"step": step.name, "round": s.round, "attempt": attempt, "output_hash": h,
                            "check_hash": step.check_hash(), "source": source, "model": model, **project_change}
@@ -1067,6 +1175,9 @@ class Conductor:
     def _object(self, h: str) -> bytes:
         return (self.home / "objects" / f"{h}.json").read_bytes()
 
+    def _patch(self, h: str) -> bytes:
+        return (self.home / "objects" / f"{h}.patch").read_bytes()
+
     def _paused_until(self, agent: str) -> float | None:
         until = None
         for e in self.store.events("RunPaused"):
@@ -1092,6 +1203,11 @@ class Conductor:
             except BlockingIOError:
                 raise RunBusy(run_id) from None
             yield
+
+
+def _differs(was: Mapping[str, str], now: Mapping[str, str]) -> list[str]:
+    """The earlier steps whose output or change a step received differently, from two records of what it received."""
+    return sorted({k.removeprefix("project:") for k in was.keys() | now.keys() if was.get(k) != now.get(k)})
 
 
 def _schema_reasons(err: ValidationError) -> list[str]:

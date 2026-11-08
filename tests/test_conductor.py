@@ -169,9 +169,11 @@ def test_change_replaces_the_output_after_rechecking_it(tmp_path: Path) -> None:
 
     assert c.run(r, "t", run_id="r1").status == "finished"
     assert c.output("r1", a) == Note(text="better")
-    assert [p["source"] for p in payloads(c, "r1", "Checked")] == ["fake", "person", "fake"]
+    # b ran on the agent's a before the answer, and again on the person's
+    assert [(p["step"], p["source"]) for p in payloads(c, "r1", "Checked")] == [
+        ("a", "fake"), ("b", "fake"), ("a", "person"), ("b", "fake")]
     assert payloads(c, "r1", "StopAnswered")[0]["label"] == "error"
-    ws = tmp_path / "runs/r1/b/turn-1/workspace"
+    ws = tmp_path / "runs/r1/b/turn-2/workspace"
     assert json.loads((ws / "inputs/a.json").read_text()) == {"text": "better"}
 
 
@@ -184,7 +186,8 @@ def test_return_reruns_the_step_with_the_note_and_context_is_not_counted(tmp_pat
 
     c.answer(r, "r1", "a", "return", note="shorter please", by="person")
     assert c.run(r, "t", run_id="r1") == RunResult("waiting", "a")
-    assert "shorter please" in agent.prompts[-1] and "inputs/previous.json" in agent.prompts[-1]
+    again = [p for p in agent.prompts if "# Step: a\n" in p][-1]
+    assert "shorter please" in again and "inputs/previous.json" in again
     c.answer(r, "r1", "a", "context", note="the data was stale", by="person")
     assert c.run(r, "t", run_id="r1") == RunResult("waiting", "a")
     c.answer(r, "r1", "a", "accept", by="person")

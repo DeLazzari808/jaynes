@@ -40,8 +40,8 @@ Runs started from Python, without a role reference, are answered from Python.
 | Answer | The person's response at a stop: `accept`, `change`, `return`, or `context` |
 | Label | The statistical reading of an answer: `accept` is correct; `change` and `return` are errors; `context` is not counted |
 | Budget | The error rate a stop may have once it stops being mandatory |
-| Mandatory stop | A stop that waits for the person on every run |
-| Sampled stop | A stop certified within its budget; it waits only on a random share of runs (`audit_rate`) |
+| Mandatory stop | A stop shown to the person on every run |
+| Sampled stop | A stop certified within its budget; it is shown only on a random share of runs (`audit_rate`) |
 | Window | The labels of a stop that count, those recorded under its current fingerprint (section 6.3) |
 | Floor | A stop or an action that never runs without a person |
 
@@ -315,13 +315,40 @@ The conductor computes the stop's status from its window:
 
 | Status | Condition | Behaviour |
 |---|---|---|
-| floor | `sampled=False`, or the round's output changed a floor path | waits every run |
-| certified | certify statistic ≥ 1/δ | waits with probability `audit_rate`, otherwise continues |
-| refuted | refute statistic ≥ 1/δ | waits every run; flagged on the role page |
-| undetermined | neither | waits every run |
+| floor | `sampled=False`, or the round's output changed a floor path | shown every run |
+| certified | certify statistic ≥ 1/δ | shown with probability `audit_rate`, otherwise skipped |
+| refuted | refute statistic ≥ 1/δ | shown every run; flagged on the role page |
+| undetermined | neither | shown every run |
 
 The coin is a deterministic hash of the run id and step name, so a replay
 reproduces every decision.
+
+A stop that is shown does not hold the run (decided 2026-11-07, the person on
+the loop). The run goes on with the agent's output, makes its branch, and waits
+only for the answers: it finishes once every stop is answered. Three things do
+wait for the person:
+
+- a stop over a change to a floor path, or over an output that would end the
+  run (`holds` in `StopOpened`);
+- an irreversible step, which runs only once every stop before it is answered;
+- a step that needs a stop with no output, since all that stop passes on is the
+  person's answer, and every step that needs that step, or works on the project
+  after it.
+
+Each `Checked` records what its step received: each need's output and files,
+and for a step on the project, every earlier step's change. A step whose
+received no longer matches runs again (`InputsChanged`), correcting on top: it
+gets its previous output, and its previous change to the project already
+applied in its copy when it still applies. So after a return, only the steps
+that used what changed run again, and their checks with them; a rerun that
+gives the same output changes nothing after it. When the changes differ from
+those on the branch, the branch is made again. A run can now block while an
+earlier stop waits; `RunBlocked` records what the blocked step received, and
+when an answer changes it, the step tries again (`InputsChanged` with
+`unblocks`). A block no answer changes, such as an irreversible step that was
+running when Jaynes stopped, stays until the person sends the run back. Answers take a lock of their
+own, so a person answers while a process runs the run; an answer recorded after
+its stop closed changes nothing.
 
 ### 6.2 Answers and labels
 
@@ -329,12 +356,12 @@ reproduces every decision.
 |---|---|---|
 | accept | continues with the output as is | correct |
 | change | the person's edited output replaces the agent's and is rechecked | error |
-| return | the step reruns with the person's note in the prompt | error |
+| return | the step reruns with the person's note in the prompt, on top of its previous output; or, with an earlier step named, that step does, and the error counts on its stop | error |
 | context | the step reruns with the note; the agent was not at fault | not counted |
 | choose | the chosen items of the output, in the person's order, replace it and are rechecked | correct |
 
-Only answers given while the stop was waiting count. A stop that continued
-without waiting produces no label, so labels are either every occurrence
+Only answers given while the stop was open count. A stop that was skipped
+produces no label, so labels are either every occurrence
 (mandatory phase) or a uniform random sample (audits). Both are unbiased for
 the stop's error rate.
 
@@ -474,13 +501,14 @@ Conductor events:
 | `TurnFinished` | step, attempt, files changed, tokens in and out from the runtime meter and the part of tokens in read back from the cache, model, seconds; on a web step, what it read; the shell commands the turn ran as the runtime saw them (the last 50, each with whether it exited 0 and the last 2000 characters of its output) |
 | `TurnRejected` | step, attempt, reason: `write_boundary`, `schema`, `check`, `deadline`, `runtime`, `executor`; reasons |
 | `TurnInterrupted` | step, attempt, reason `crash` or `quota`; not an attempt |
-| `Checked` | step, round, attempt, output hash, check hash, source (agent, `jaynes`, `person`), model |
-| `StopOpened` | step, round, status, coin, n, k, log evidence, stop fingerprint, budget, δ, question, evidence hash, floor paths |
+| `Checked` | step, round, attempt, output hash, check hash, source (agent, `jaynes`, `person`), model, what the step received |
+| `InputsChanged` | step, round, the earlier steps whose output or change it received differently; the step runs again on top of its output |
+| `StopOpened` | step, round, status, coin, n, k, log evidence, stop fingerprint, budget, δ, question, evidence hash, floor paths, whether it holds the run |
 | `StopSkipped` | step, status `certified`, coin, stop fingerprint, budget, δ |
-| `StopAnswered` | step, answer, label, note, stop fingerprint, seconds waited, seconds spent, by (`person` or `agent`), the earlier label it revises, the ids chosen |
+| `StopAnswered` | step, answer, label, note, stop fingerprint, the event that opened the stop, seconds waited, seconds spent, by (`person` or `agent`), the earlier label it revises, the ids chosen |
 | `StepReturned` | step whose output sent it back, the earlier step, the steps reset, reasons, round |
 | `RunPaused` | reason `quota`, agent, until |
-| `RunBlocked` | step, reasons |
+| `RunBlocked` | step, reasons, what the step received when an answer can change it |
 | `RunFinished` | outcome: `delivered`, `ended` with the step whose accepted output ended it, or `dismissed` by a person from the page |
 | `OutcomeObserved` | step, kind `changed_after_delivery`, evidence |
 

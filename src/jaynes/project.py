@@ -70,6 +70,16 @@ def prepare(root: Path, base: str, patches: Sequence[bytes], dest: Path, *, cach
                  env={"GIT_CEILING_DIRECTORIES": str(dest.parent)})
 
 
+def apply(dest: Path, patch: bytes) -> bool:
+    """Apply ``patch`` to the copy in ``dest`` whole, or leave it as it was when the patch no longer fits."""
+    try:
+        _git("apply", "--binary", "--whitespace=nowarn", "-", cwd=dest, data=patch,
+             env={"GIT_CEILING_DIRECTORIES": str(dest.parent)})
+    except ProjectError:
+        return False
+    return True
+
+
 class Tracker:
     """Records what a step changed in its copy, from a git directory the agent cannot reach."""
 

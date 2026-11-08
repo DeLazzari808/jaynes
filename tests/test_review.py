@@ -140,10 +140,20 @@ def test_time_spent_counts_from_the_first_view_across_reloads(served: tuple[str,
     assert answered["seconds_spent"] >= 1.2
 
 
-def test_an_answer_while_another_process_holds_the_run_is_refused(served: tuple[str, Path, str]) -> None:
+def test_an_answer_while_another_process_runs_the_run_is_recorded(served: tuple[str, Path, str]) -> None:
     base, home, run = served
     fields = form(get(base + "/"))
-    with (home / "runs" / f"{run}.lock").open("a") as fh:
+    with (home / "runs" / f"{run}.lock").open("a") as fh:  # the run goes on while its stops wait
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        status, _ = post(base + "/answer", {**fields, "answer": "accept"})
+    assert status == 303
+    assert len(list(Store(home / "jaynes.sqlite3").events("StopAnswered", run_id=run))) == 1
+
+
+def test_an_answer_while_another_answer_is_being_recorded_is_refused(served: tuple[str, Path, str]) -> None:
+    base, home, run = served
+    fields = form(get(base + "/"))
+    with (home / "runs" / f"{run}.answers.lock").open("a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         status, body = post(base + "/answer", {**fields, "answer": "accept"})
     assert status == 409 and "busy" in body
@@ -785,3 +795,23 @@ def test_backticks_in_what_agents_write_are_shown_as_code(tmp_path: Path) -> Non
     finally:
         server.shutdown()
     assert "add <code>mul</code> to calc" in page and "`mul`" not in page
+
+
+def test_after_an_accept_the_page_opens_the_runs_next_stop(tmp_path: Path) -> None:
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.two_stops:ROLE", "--task", "t",
+              "--runtime", "quick=tests.two_stops:Agent"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    base, server = serving(tmp_path)
+    try:
+        first = get(base + "/")
+        assert "Waiting for you" in first and f'href="/stop/{run}/draft"' in first  # both stops at once
+        assert "The run went on with this without waiting for you" in first
+        fields = urllib.parse.urlencode({**form(first), "answer": "accept"}).encode()
+        opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPCookieProcessor(JAR))
+        try:
+            opener.open(urllib.request.Request(base + "/answer", data=fields), timeout=10)
+            raise AssertionError("expected a redirect")
+        except urllib.error.HTTPError as err:
+            assert err.code == 303 and err.headers["Location"] == f"/stop/{run}/draft"
+    finally:
+        server.shutdown()

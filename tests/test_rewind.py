@@ -71,7 +71,7 @@ def test_returning_an_earlier_step_reruns_it_with_the_note_and_every_step_after_
     assert result.status == "waiting" and result.step == "direction"
     assert seen["previous"] == {"text": "#ff5a1f"}
     assert agent.counts["read"] == 1  # steps before the returned one keep their output
-    assert "the orange is too loud" in agent.prompts[-1]
+    assert "the orange is too loud" in [p for p in agent.prompts if "# Step: direction\n" in p][-1]
     c.answer(r, "r1", "direction", "accept", by="person")
     assert c.run(r, "t", "r1").step == "apply"
     c.answer(r, "r1", "apply", "accept", by="person")
@@ -157,7 +157,7 @@ def test_a_run_blocked_by_an_earlier_steps_mistake_goes_back_to_that_step_with_t
     result = c.run(r, "t", "r1")
     assert (result.status, result.step) == ("waiting", "spec")
     assert seen["previous"] == {"text": "bob ranks 4 of 4"}
-    assert "he ranks 3 of 4" in agent.prompts[-1]
+    assert "he ranks 3 of 4" in [p for p in agent.prompts if "# Step: spec\n" in p][-1]
     assert (c.window(spec_fp).n, c.window(spec_fp).k) == (1, 1)  # the accept turned out wrong
     c.answer(r, "r1", "spec", "accept", by="person")
     assert c.run(r, "t", "r1").status == "finished"

@@ -48,7 +48,7 @@ from pygments.util import ClassNotFound
 from jaynes import bounds, install, role_file, roles, sandbox, skill, update, verify
 from jaynes import project as repo
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
-                              continue_in_background, new_run_id, project, return_to, start_in_background)
+                              continue_in_background, holds, new_run_id, project, return_to, start_in_background)
 from jaynes.history import Report, past_calls, report
 from jaynes import inputs as run_inputs
 from jaynes.preview import Previews
@@ -710,7 +710,7 @@ class Review:
         items = self.queue()
         now = self.c.clock()
         starts = {w.run_id: next(iter(self.c.store.events("RunStarted", run_id=w.run_id))).ts for w in items}
-        tasks = [w.task for w in items]
+        tasks = [w.task for w in {w.run_id: w for w in items}.values()]  # one per run: a run lists each of its stops
         waiting: list[str] = []
         others: list[str] = []
         unfold = False
@@ -828,6 +828,9 @@ class Review:
         sub = (f'<div class="sub">{len(rejected)} earlier attempt{"s" if len(rejected) != 1 else ""} '
                f'rejected by Jaynes before you saw it: {esc(rejected[-1].payload["reasons"][0])}</div>'
                if rejected and rejected[-1].payload.get("reasons") else "")
+        if s.open_stop is not None and not holds(s.open_stop[1]):
+            sub += ('<div class="sub">The run went on with this without waiting for you. A return corrects on top of '
+                    'what it did: only what used it runs again.</div>')
         if s.open_stop is not None and s.open_stop[1].get("ends"):
             sub += ('<div class="sub">Accepting ends the run here, with nothing delivered; return it with a note '
                     'to have the agent look again.</div>')
@@ -855,7 +858,8 @@ class Review:
         else:
             outputs.append(self._output("Output", value, f"round {s.round}"))
             if s.previous:
-                outputs.append(self._output("Before", self._value_of(s.previous, target), f"round {s.round - 1}, returned"))
+                why = f"before {', '.join(s.changed)} changed" if s.changed else "returned"
+                outputs.append(self._output("Before", self._value_of(s.previous, target), f"round {s.round - 1}, {why}"))
         if shown:
             parts.append(self._shown(run_id, st, [x for x in shown if not x.get("more")], items))
             more = [x for x in shown if x.get("more")]
@@ -1071,10 +1075,12 @@ class Review:
         role = self.role_of(run_id)
         names = self.names(role, events)
         started = st.started or {}
+        # a stop does not hold the run, so a run with stops open can still be working
         state = (st.outcome if st.outcome in ("ended", "dismissed") else "finished" if st.finished else
-                 "blocked" if st.blocked else "waiting" if any(x.open_stop for x in st.steps.values()) else
-                 "paused" if st.paused_until and st.paused_until > self.c.clock() else
-                 "running" if self.c._held(run_id) else "idle")  # pyright: ignore[reportPrivateUsage]
+                 "blocked" if st.blocked else
+                 "running" if self.c._held(run_id) else  # pyright: ignore[reportPrivateUsage]
+                 "waiting" if any(x.open_stop for x in st.steps.values()) else
+                 "paused" if st.paused_until and st.paused_until > self.c.clock() else "idle")
         t = totals(events)
         crumbs = (f'<div class="crumbs"><a href="/role/{q(str(started.get("role", "")))}">{esc(str(started.get("role", "")))}</a>/'
                   f'<b>{marked(headline(str(started.get("task", ""))))}</b><span class="r">{esc(run_id)}</span></div>')
@@ -1447,9 +1453,14 @@ class Review:
         except AnswerRejected as err:
             return 400, self.stop_page(run_id, step, "not recorded: " + "; ".join(err.reasons), fields)
         except RunBusy:
-            return 409, self.stop_page(run_id, step, "the run is busy in another process; try again in a moment", fields)
-        continue_in_background(self.c.home, run_id)
-        return 303, f"/run/{q(run_id)}"
+            return 409, self.stop_page(run_id, step, "busy: another answer to this run is being recorded; try again "
+                                       "in a moment", fields)
+        continue_in_background(self.c.home, run_id)  # when a process already runs it, that one goes on with this
+        # after an accept, the run's next stop; any other answer changes an output, and the stops after it may be
+        # made again, so the run's page
+        following = next((w for w in self.queue() if w.run_id == run_id and w.kind == "stop" and w.step != step),
+                          None) if answer == "accept" else None
+        return 303, f"/stop/{q(run_id)}/{q(following.step)}" if following else f"/run/{q(run_id)}"
 
     def start(self, fields: dict[str, str]) -> tuple[int, str]:
         ref = fields.get("ref", "").strip() or fields.get("role", "")

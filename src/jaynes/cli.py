@@ -245,13 +245,26 @@ def cmd_run(args: argparse.Namespace) -> None:
     from jaynes.review import ensure_page
     skill.refresh()
     ensure_page(c.home)  # the person sees the run, and is called at its stops, wherever it started
-    try:
-        result = c.run(r, task, run_id, started=started,
-                       project=Path(args.project) if args.project and args.role else None)
-    except ProjectError as err:
-        sys.exit(str(err))
-    except InputError as err:
-        sys.exit("\n".join(err.reasons))
+    from jaynes.conductor import RunBusy
+    told = False
+    while True:
+        try:
+            result = c.run(r, task, run_id, started=started,
+                           project=Path(args.project) if args.project and args.role else None)
+            break
+        except ProjectError as err:
+            sys.exit(str(err))
+        except InputError as err:
+            sys.exit("\n".join(err.reasons))
+        except RunBusy:
+            # a stop does not hold the run, so an answer can come while a process runs it; this one goes on once
+            # that one lets go, so an answer it may not have seen is never left without a process
+            if args.role:
+                raise
+            if not told:
+                print(f"run {run_id} is running in another process; going on once it lets go", file=sys.stderr)
+                told = True
+            time.sleep(2)
     if result.status in ("waiting", "blocked"):
         ensure_page(c.home)  # in case it was closed while the run worked
     print(json.dumps(_where(c, run_id, result), ensure_ascii=False))
@@ -262,10 +275,16 @@ def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
     from jaynes.ask import page
     out: dict[str, Any] = {"run": run_id, "status": result.status, "step": result.step, "until": result.until,
                            "reasons": list(result.reasons)}
-    if result.status == "waiting":
-        w = next((x for x in c.queue() if x.run_id == run_id and x.kind == "stop"), None)
+    if result.status == "waiting":  # as far as it goes without the person: its stops wait, its branch is made
+        from jaynes.conductor import project
+        stops = [x for x in c.queue() if x.run_id == run_id and x.kind == "stop"]
+        w = next((x for x in stops if x.step == result.step), stops[0] if stops else None)
         out["question"] = w.question if w else None
         out["page"] = f"{page(c.home)}/stop/{run_id}/{result.step}"
+        out["stops"] = len(stops)
+        made = project(c.store.events(run_id=run_id)).branch
+        if made:
+            out["branch"] = made["branch"]
     elif result.status == "blocked":
         out["page"] = f"{page(c.home)}/run/{run_id}"
     return out

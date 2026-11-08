@@ -171,7 +171,9 @@ def test_an_agent_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Pat
     assert [e.payload for e in c.store.events("TurnRejected", run_id="r1")] == []  # no attempt spent on it
 
     c.send_back(fb.ROLE, "r1", "reproduce", note="the test should expect 1", by="person")
-    assert c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1").step == "reproduce"
+    c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1")
+    assert "the test should expect 1" in [p for p in agent.prompts if "# Step: reproduce\n" in p][-1]
+    assert ("stop", "reproduce") in [(w.kind, w.step) for w in c.queue()]
 
 
 def test_a_fix_with_a_long_summary_is_refused(repo: Path, tmp_path: Path) -> None:

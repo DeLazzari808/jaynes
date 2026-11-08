@@ -29,9 +29,12 @@ were still sent back.
    step and can only write that step's output. The next step starts
    when the check passes. Evidence the agent could fake, like the references
    captured from the web, is produced by Jaynes.
-3. **Where the method needs you, the run stops.** The question and its
-   evidence come to you in Claude Code's question dialog, or wait for you in
-   the review page.
+3. **Where the method needs you, it shows you, and goes on.** The run
+   continues with the agent's choice and delivers its branch; the question and
+   its evidence wait for you in the review page, all of them at once, or come
+   to you in Claude Code's question dialog. A return corrects on top: only
+   the steps that used what changed run again. What cannot be undone, and a
+   change to files that run outside the box, waits for your answer.
 4. **Every answer is a label.** A stop you keep accepting without changes
    becomes sampled: it asks one time in ten. Each change lowers its
    evidence, and if the evidence falls below the threshold it asks every
@@ -103,6 +106,10 @@ Missing, roughly in order:
 
 - **Published package.** Not on PyPI yet; install from GitHub (below).
 - **A first real case**, measured against the first user's baseline.
+- **Corrections after delivery.** A return corrects the branch until you
+  answer the last stop; after that, a correction is a new run. A step cannot
+  yet start over from scratch, giving its reason, instead of correcting on
+  top.
 - **A turn past its deadline keeps its work.** The next attempt starts from
   nothing, even when the tests were almost written.
 - **Old runs leave the queue.** A run waiting for two days from a test that

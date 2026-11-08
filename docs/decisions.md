@@ -134,10 +134,32 @@ A return corrects on top, not from scratch:
 - The agent of the returned step may start that step from scratch, saying why,
   and the reason shows in the result.
 
+**Built 2026-11-08,** except starting over from scratch with a reason, and a
+return after delivery. A stop is shown and the run goes on to its branch; it
+finishes once every stop is answered, so the merge stays with the person.
+Each step records what it received, and only a step whose inputs changed runs
+again, with its earlier output and its earlier change already applied. Answers
+are recorded while the run runs. Still waiting for the person: a change to the
+paths that run outside any box, an output that would end the run, and an
+irreversible step. Two rules came up while building it:
+
+- A stop with no output of its own passes on only the person's answer, so a
+  step that needs it waits for that answer. The rest of the run does not. In
+  screen-design, the step that turns the owner's notes into rules runs after
+  the merge is answered, not before with no notes.
+- At a stop where the person chooses among items, the run goes on with all of
+  them in the agent's order, and runs again on the ones chosen. In
+  screen-design that maps and walks every moment offered, then the chosen ones
+  again.
+- A run can now block at a later step while an earlier stop waits. When the
+  person's answer there changes what the blocked step receives, it tries
+  again by itself.
+
 **Tradeoffs.**
 
 - Correcting on top can leave leftovers of a wrong path when the error was at
   the base; starting over is allowed only with a stated reason.
+- Running ahead of a choice costs tokens on what the person will drop.
 - A misunderstood goal is built in full before anyone sees it.
 - More results pile up for the person, so the queue and a way to halt and undo
   matter more.

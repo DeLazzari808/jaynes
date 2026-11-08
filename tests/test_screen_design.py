@@ -91,6 +91,35 @@ STATUS = ('document.getElementById("who").textContent = "Picked by " + b.picked_
           'document.getElementById("who").textContent = "Picked by " + b.picked_by + " \\u00b7 Status: " + b.status;')
 
 
+# the agent maps what every moment it offered needs: a stop does not hold the run, so the steps after the moments run
+# on all of them before the owner chooses, and again on the chosen
+MEMBER = {"id": "O3", "name": "member", "aliases": ["members"], "meaning": "who suggested a book",
+          "screen": {"absent": True}, "storage": {"source": {"file": BOOKS, "match": '"picked_by"'}},
+          "count": {"query": {"endpoint": BOOKS, "items": "books", "count": "distinct", "field": "picked_by"},
+                    "value": 2}, "gap": "never on the list", "links": []}
+M2_PATH = {"moment": "M2", "steps": [{"action": "open", "to": "/index.html"},
+                                     {"action": "clickText", "text": "The Salt Road"}]}
+M2_HOLDS = {"moment": "M2", "outcome": "no_break", "reason": "the book's page says who picked it"}
+
+
+def offered(ws: Path) -> list[str]:
+    return [m["id"] for m in json.loads((ws / "inputs" / "moments.json").read_text())["moments"]]
+
+
+def object_map(ws: Path) -> None:
+    write({"objects": OBJECTS["objects"] + ([MEMBER] if "M2" in offered(ws) else [])})(ws)
+
+
+def paths(ws: Path) -> None:
+    by = {x["moment"]: x for x in [*PATHS["paths"], M2_PATH]}
+    write({"paths": [by[m] for m in offered(ws)]})(ws)
+
+
+def breaks(ws: Path) -> None:
+    by = {x["moment"]: x for x in [*BREAKS["moments"], M2_HOLDS]}
+    write({"moments": [by[m] for m in offered(ws)]})(ws)
+
+
 def build(ws: Path) -> None:
     app = ws / "project" / "app.js"
     app.write_text(app.read_text().replace(*STATUS))
@@ -105,7 +134,7 @@ def heuristics(ws: Path) -> None:
 
 
 DEFAULT: dict[str, Action] = {
-    "moments": write(MOMENTS), "object-map": write(OBJECTS), "paths": write(PATHS), "breaks": write(BREAKS),
+    "moments": write(MOMENTS), "object-map": object_map, "paths": paths, "breaks": breaks,
     "requirements": write(REQUIREMENTS), "test": write(TEST), "implement": build,
     "review": write({"defects": [], "unverified": ["the phone layout of a long title"]}), "heuristics": heuristics}
 
@@ -274,6 +303,7 @@ def test_the_walkthrough_refuses_posts_and_the_listed_gets_and_breaks_cite_captu
 def test_a_requirement_citing_no_break_or_out_of_order_is_refused(lantern: Lantern) -> None:
     breaks = {"moments": [
         {"moment": "M1", "outcome": "break", "breaks": [{"id": "B1", "where": "no status", "captures": ["M1-s02"]}]},
+        M2_HOLDS,  # the run maps every moment offered before the owner chooses
         {"moment": "M3", "outcome": "break", "breaks": [{"id": "B2", "where": "no state", "captures": ["M3-s02"]}]}]}
     reqs = json.loads(json.dumps(REQUIREMENTS))
     second = dict(reqs["requirements"][0], id="R2", break_id="B2")
@@ -290,9 +320,8 @@ def test_the_slice_test_must_fail_before_the_change(lantern: Lantern) -> None:
     passing["slice"]["end"]["text"] = "Picked by Tomas"  # already there
     plan = {("requirements", 1): write(passing)}
     plan.update({("test", n): write(dict(TEST, failure="anything")) for n in (1, 2, 3)})
-    c, run, _ = lantern.start(Agent(plan))
-    out = go(c, run, "requirements") if to_requirements(c, run).step == "requirements" else None
-    assert out is not None and (out.status, out.step) == ("blocked", "test")
+    c, run, out = lantern.start(Agent(plan))  # no stop holds it: it blocks at the test before anyone answers
+    assert (out.status, out.step) == ("blocked", "test")
     assert "the path already reaches the ending on the product as it is; it must fail before the change" in out.reasons
 
 
@@ -316,7 +345,8 @@ def test_a_measured_violation_goes_back_to_implement_and_stays_in_sight(lantern:
     out = go(c, run, "requirements")
     assert (out.status, out.step) == ("waiting", "accept")
     back = [e.payload for e in c.store.events("StepReturned", run_id=run)]
-    assert [(b["step"], b["to"]) for b in back] == [("measure", "implement"), ("measure", "implement")]
+    # the second build changed nothing, so there was nothing new to measure: the run went on with the failure
+    assert [(b["step"], b["to"]) for b in back] == [("measure", "implement")]
     assert "measure spacing: 13px is off the spacing scale" in agent.prompts["implement"][1]
     [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "accept"]
     assert "Before you do: 1 measure failing, under More." in opened["question"]
@@ -389,7 +419,8 @@ def test_the_object_map_never_stops(lantern: Lantern) -> None:
     assert sd.OBJECTS.stop is None
     c, run, _ = lantern.start(Agent())
     to_requirements(c, run)
-    assert [e.payload["step"] for e in c.store.events("StopOpened", run_id=run)] == ["moments", "requirements"]
+    stops = {e.payload["step"] for e in c.store.events("StopOpened", run_id=run)}
+    assert stops == {"moments", "requirements", "accept"}
 
 
 def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lantern) -> None:
@@ -410,7 +441,7 @@ def test_each_stop_shows_sentences_and_pictures_the_owner_judges(lantern: Lanter
     assert req["text"] == "A book's place says whether the club read it. Built now."
     [pic] = req["pictures"]
     assert (pic["file"], pic["caption"]) == ("M1-s02.png", "on the screen today") and pic["region"][2] < 1440
-    [opened] = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "requirements"]
+    opened = [e.payload for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "requirements"][-1]
     assert opened["question"] == "Approve these changes? The one marked built now is made first; the rest wait."
     go(c, run, "requirements")
     accept = shown("accept")
@@ -429,7 +460,8 @@ def test_no_question_names_a_slice_a_route_or_a_capture(lantern: Lantern) -> Non
     to_requirements(c, run)
     go(c, run, "requirements")
     questions = [e.payload["question"] for e in c.store.events("StopOpened", run_id=run)]
-    assert questions[-1].startswith("Keep this change? ")
+    accept = [e.payload["question"] for e in c.store.events("StopOpened", run_id=run) if e.payload["step"] == "accept"]
+    assert accept[-1].startswith("Keep this change? ")
     for q in questions:
         assert "slice" not in q.lower() and "/" not in q and "M1" not in q and "R1" not in q, q
 

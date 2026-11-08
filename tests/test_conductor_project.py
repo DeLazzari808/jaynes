@@ -111,7 +111,7 @@ def test_a_changing_step_is_limited_to_its_globs_and_its_patch_reaches_the_next_
     assert (repo / "src" / "app.css").read_text() == ":root { --bg: #ffffff; }\n"  # the checkout is untouched
 
 
-def test_a_returned_step_starts_again_from_the_earlier_steps_without_its_own_patch(
+def test_a_returned_step_starts_from_its_own_patch_and_its_new_patch_replaces_it(
         repo: Path, tmp_path: Path) -> None:
     r = role("paint", agent="fake")
     r.step("apply", output=Note, project="write", may_change=["**"], stop=stop(0.1))
@@ -127,7 +127,7 @@ def test_a_returned_step_starts_again_from_the_earlier_steps_without_its_own_pat
     assert c.run(r, "t", "r1", project=repo).status == "waiting"
     c.answer(r, "r1", "apply", "return", note="warmer", by="person")
     assert c.run(r, "t", "r1").status == "waiting"
-    assert seen == [":root { --bg: #ffffff; }\n"]
+    assert seen == [":root { --bg: #000000; }\n"]  # it corrects on top of what it did
     c.answer(r, "r1", "apply", "accept", by="person")
     assert c.run(r, "t", "r1").status == "finished"
     assert git(repo, "show", "jaynes/r1:src/app.css") == ":root { --bg: #202020; }"

@@ -93,7 +93,8 @@ def drive(c: Conductor, r: Role, script: Script) -> str:
         if result.status != "waiting":
             return result.status
         assert result.step is not None
-        round_ = int(list(c.store.events("StopOpened", run_id="r"))[-1].payload["round"])
+        round_ = int([e for e in c.store.events("StopOpened", run_id="r")
+                      if e.payload["step"] == result.step][-1].payload["round"])
         a = script.answer(result.step, round_)
         c.answer(r, "r", result.step, a, note="n", output={"text": "edited"} if a == "change" else None, by="person")
     raise AssertionError("run did not settle")
@@ -122,10 +123,11 @@ def crash_after(c: Conductor, writes: int) -> None:
 
 
 def normalized(c: Conductor) -> list[tuple[str, dict[str, Any]]]:
-    """Events without timings, and without each interrupted turn (its StepStarted through TurnInterrupted)."""
+    """Events without timings or positions in the log, and without each interrupted turn (its StepStarted through
+    TurnInterrupted)."""
     out: list[tuple[str, dict[str, Any]]] = []
     for e in c.store.events(run_id="r"):
-        p = {k: v for k, v in e.payload.items() if k not in ("seconds", "seconds_waited")}
+        p = {k: v for k, v in e.payload.items() if k not in ("seconds", "seconds_waited", "opened")}
         if e.type == "TurnInterrupted":
             while out[-1][0] != "StepStarted" or out[-1][1]["step"] != p["step"]:
                 out.pop()
@@ -145,14 +147,15 @@ def test_conductor_invariants(r: Role, data: st.DataObject) -> None:
         events = list(c.store.events(run_id="r"))
         steps = {s.name: s for s in r.steps}
 
-        done: set[str] = set()
+        done: dict[str, bool] = {}  # whether the step's latest output needs nothing more of the person
+        last: dict[str, dict[str, Any]] = {}  # the latest Checked of each step
         started: dict[tuple[str, int], str] = {}  # (step, attempt) -> drawn behaviour of the open turn
         turns: dict[tuple[str, int], int] = {}
         for e in events:
             p = e.payload
             if e.type == "StepStarted":
-                # no step starts without the checked, reviewed outputs of the steps it needs
-                assert all(n.name in done for n in steps[p["step"]].needs), (p, done)
+                # no step starts without the checked outputs of the steps it needs; a stop no longer holds it
+                assert all(n.name in last for n in steps[p["step"]].needs), (p, last)
                 started[(p["step"], p["attempt"])] = script.turns[(p["step"], p["round"], p["attempt"])]
                 key = (p["step"], p["round"])
                 turns[key] = turns.get(key, 0) + 1
@@ -165,15 +168,21 @@ def test_conductor_invariants(r: Role, data: st.DataObject) -> None:
                 data_bytes = (Path(tmp) / "objects" / f"{p['output_hash']}.json").read_bytes()
                 assert hashlib.sha256(data_bytes).hexdigest() == p["output_hash"]
                 assert isinstance(not_bad(Note.model_validate(json.loads(data_bytes)), Witnesses({})), Pass)
-                if steps[p["step"]].stop is None:
-                    done.add(p["step"])
+                last[p["step"]] = p
+                if p["source"] != "person":  # a person's edit is their answer, recorded just before it
+                    done[p["step"]] = steps[p["step"]].stop is None
             elif e.type == "StopSkipped" or (e.type == "StopAnswered" and p["answer"] in ("accept", "change")):
-                done.add(p["step"])
+                done[p["step"]] = True
 
         for (name, _), n in turns.items():
             assert n <= steps[name].max_turns
         if final == "finished":
-            assert done == set(steps)
+            # every stop over the delivered outputs was answered or skipped
+            assert done == dict.fromkeys(steps, True)
+            # and every step ran on the outputs delivered with it: a correction left nothing out of date
+            for name, s in steps.items():
+                assert {n.name: last[name]["received"][n.name].split(":")[0] for n in s.needs} == \
+                    {n.name: last[n.name]["output_hash"] for n in s.needs}, name
         else:
             assert final == "blocked"
             assert events[-1].type == "RunBlocked"

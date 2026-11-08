@@ -46,7 +46,8 @@ def test_choosing_keeps_the_chosen_items_in_the_persons_order_as_an_accept(tmp_p
     [answered] = [e.payload for e in c.store.events("StopAnswered")]
     assert (answered["label"], answered["chosen"]) == ("correct", ["M3", "M1"])
     assert c.run(PICK, "t", rid).status == "finished"
-    given = next((tmp_path / "runs").glob("*/use/turn-1/workspace/inputs/moments.json")).read_text()
+    # use ran on all four before the person chose, and again on the chosen
+    given = next((tmp_path / "runs").glob("*/use/turn-2/workspace/inputs/moments.json")).read_text()
     assert given.index("M3") < given.index("M1") and "M2" not in given
 
 
@@ -83,7 +84,9 @@ LOOP.step("accept", needs=[REVIEW], stop=stop(0.05, sampled=False))
 def test_jaynes_sends_a_step_back_with_what_was_found_and_stops_after_its_rounds(tmp_path: Path) -> None:
     agent = Scripted(plan={("review", 1): write({"defects": ["the title is cut"]}),
                            ("review", 2): write({"defects": ["the button is grey"]}),
-                           ("review", 3): write({"defects": ["still grey"]})},
+                           ("review", 3): write({"defects": ["still grey"]}),
+                           ("build", 2): write({"summary": "fixed the title"}),
+                           ("build", 3): write({"summary": "fixed the button"})},
                      default=lambda s: {"summary": "made it"})
     c = Conductor(tmp_path, {"fake": lambda: agent})
     assert c.run(LOOP, "t").status == "waiting"  # at accept, after two rounds back
@@ -159,22 +162,21 @@ def test_a_trusted_step_hears_what_people_said_and_jaynes_sent_back_and_what_eac
     build = r.step("build", output=Built, stop=stop(0.2, sampled=False))
     review = r.step("review", output=Review, needs=[build],
                     back=Back(to=build, when=lambda out, _: list(out.defects), rounds=1))
-    r.step("notes", output=Heard, needs=[review], run_by=listen)
-    agent = Scripted(plan={("review", 1): write({"defects": ["cut title"]})},
-                     default=lambda s: {"summary": "x"} if s == "build" else {"defects": []})
+    r.step("notes", output=Heard, needs=[review, build], run_by=listen)
+    agent = Scripted(plan={("review", 1): write({"defects": ["cut title"]}),
+                           **{("build", n): write({"summary": f"x{n}"}) for n in (1, 2, 3)}},
+                     default=lambda s: {"defects": []})
     c = Conductor(tmp_path, {"fake": lambda: agent})
-    c.run(r, "t")
+    c.run(r, "t")  # the stop does not hold it: review sends build back, and notes runs on the second build
     rid = c.store.runs()[0]
     c.answer(r, rid, "build", "return", note="use the brand colour", by="person")
     c.run(r, "t", rid)
-    c.answer(r, rid, "build", "accept", by="person")
-    c.run(r, "t", rid)
     c.answer(r, rid, "build", "accept", note="fine now", by="person")
     assert c.run(r, "t", rid).status == "finished"
-    [ctx] = heard
+    first, ctx = heard  # once on the second build, again on the third
+    assert [n.answer for n in first.history.notes] == ["back"]
     notes = [(n.step, n.answer, n.by, n.note, n.reasons) for n in ctx.history.notes]
-    assert notes == [("build", "return", "person", "use the brand colour", ()),
-                     ("build", "back", "jaynes", "sent back from review", ("cut title",)),
-                     ("build", "accept", "person", "fine now", ())]
+    assert notes == [("build", "back", "jaynes", "sent back from review", ("cut title",)),
+                     ("build", "return", "person", "use the brand colour", ())]
     cost = {x.step: x for x in ctx.history.cost}
     assert (cost["build"].turns, cost["build"].tokens_new, cost["build"].tokens_cached) == (3, 330, 0)

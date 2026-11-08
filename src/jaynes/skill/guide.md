@@ -21,9 +21,11 @@ with what was agreed in conversation.
    Jaynes works from the project's last commit: uncommitted changes are not in the run.
    Say nothing about Jaynes while it works.
 3. When the run ends it prints one line of JSON. By its `status`:
-   - `waiting`: the person answers on the page. Tell them in one line its `question` and its `page` link, as
-     printed, then run `jaynes wait <run>` in the background: it returns once they answered, with a new line of
-     JSON, and you come back to this step with it.
+   - `waiting`: the run went as far as it can without the person. Its `stops` wait for them on the page, and
+     when `branch` is printed the change is already on it. Tell them in one line its `question` and its `page`
+     link, as printed, and how many stops wait when there are more than one; then run `jaynes wait <run>` in the
+     background: it returns once they answered, with a new line of JSON, and you come back to this step with it.
+     Offer the merge only at `finished`: a return still corrects the branch until then.
    - `blocked`: tell the person why, from `reasons`, in a sentence or two, with the `page` link.
    - `paused`: the agent's plan ran out; the run continues by itself at `until`.
    - `finished`: tell the person, in one sentence, that the change is on the branch `jaynes/<run>`, and offer to

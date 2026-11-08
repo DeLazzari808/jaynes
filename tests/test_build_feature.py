@@ -198,18 +198,21 @@ def test_the_role_asks_at_the_tests_and_the_merge_and_the_code_never_touches_the
     c = Conductor(tmp_path / "home", runtimes={"claude": lambda: agent})
     first = c.run(bf.ROLE, "add mul(a, b)", run_id="r1", project=repo)
     assert (first.status, first.step) == ("waiting", "agree")
-    [opened] = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
+    # neither stop held it: the build ran on the agent's examples, and both wait for the person at once
+    opened, merge = [e.payload for e in c.store.events("StopOpened", run_id="r1")]
+    assert (opened["step"], merge["step"]) == ("agree", "accept")
     assert opened["question"] == "Do these examples show what you asked for?"
     assert [x["title"] for x in opened["shown"]] == ["Multiplying 2 by 3", "What the tests cover"]
+    assert git(repo, "show", "jaynes/r1:calc.py") == MUL.strip()  # delivered before any answer
 
     c.answer(bf.ROLE, "r1", "agree", "return", note="show 2 by 4 too", to="specify", by="person")
     again = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
     assert (again.status, again.step) == ("waiting", "agree")
     assert "show 2 by 4 too" in agent.prompts[-1]
+    assert agent.counts["build"] == 2  # the examples came back the same, so the build stands
     c.answer(bf.ROLE, "r1", "agree", "accept", by="person")
     last = c.run(bf.ROLE, "add mul(a, b)", run_id="r1")
     assert (last.status, last.step) == ("waiting", "accept")
-    merge = [e.payload for e in c.store.events("StopOpened", run_id="r1")][-1]
     assert merge["question"] == "Merge this feature?"  # the summary is shown below, never as the heading
     assert [(x["title"], x["text"], x["more"]) for x in merge["shown"]] == [
         ("What changed", "adds mul.", False),

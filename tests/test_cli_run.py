@@ -91,3 +91,19 @@ def test_a_built_in_role_is_started_by_its_name(tmp_path: Path, capsys: pytest.C
 def test_an_unknown_role_name_lists_the_built_in_ones(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="visual-identity, redesign"):
         cli.main(["run", "--home", str(tmp_path), "--role", "landing-page", "--task", "t"])
+
+
+def test_an_answer_while_a_process_holds_the_run_is_carried_on_once_it_lets_go(tmp_path: Path) -> None:
+    run = json.loads(jaynes(tmp_path, "run", "--role", "tests.stopped:ROLE", "--task", "t",
+                            "--runtime", "quick=tests.stopped:Agent"))["run"]
+    c = Conductor(tmp_path)
+    store = Store(tmp_path / "jaynes.sqlite3")
+    with c._lock(run):  # pyright: ignore[reportPrivateUsage]
+        jaynes(tmp_path, "answer", run, "draft", "accept")  # recorded at once; the run goes on in the background
+        time.sleep(1.5)
+        assert list(store.events("RunFinished", run_id=run)) == []  # it waits for the process holding the run
+    deadline = time.monotonic() + 30
+    while not list(store.events("RunFinished", run_id=run)):
+        assert time.monotonic() < deadline, (tmp_path / "runs" / run / "continue.log").read_text()
+        time.sleep(0.05)
+    assert "going on once it lets go" in (tmp_path / "runs" / run / "continue.log").read_text()

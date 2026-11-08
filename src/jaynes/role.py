@@ -219,9 +219,9 @@ class Shown:
 class Back:
     """Jaynes sends an earlier step back, with what it found, when a checked output says so.
 
-    ``when(output, needs)`` returns what was found, one reason each; empty means go on. ``to`` and every step after
-    it run again, with the reasons in ``to``'s prompt, at most ``rounds`` times in a run; after that the run goes on
-    and the later steps, and the person, see what remains.
+    ``when(output, needs)`` returns what was found, one reason each; empty means go on. ``to`` runs again with the
+    reasons in its prompt, and after it every step whose inputs changed, at most ``rounds`` times in a run; after
+    that the run goes on and the later steps, and the person, see what remains.
     """
 
     to: Step[Any]
