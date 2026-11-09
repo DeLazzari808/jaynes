@@ -167,7 +167,9 @@ marketplace, and press Enter to install it for your user.
 
 Then work as usual: talk the change through with the agent and approve the
 plan ("go ahead", "do it"). The agent hands it to Jaynes by itself; you can
-also ask for a task "with Jaynes". The first time, the agent installs the
+also ask for a task "with Jaynes", or say "without Jaynes" for one the agent
+should make itself. To turn Jaynes off in a project, run
+`claude plugin disable jaynes@jaynes --scope local` there. The first time, the agent installs the
 `jaynes` command with uv. It picks the role and starts the run; a small
 change goes through with the suite and no stop. At each stop the agent shows you the
 question and its evidence in Claude Code's question dialog, and you answer
