@@ -2,6 +2,25 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-09: The software roles stay public and keep improving
+
+**Decided.** The roles that build software (build-feature, fix-bug and
+small-change) stay in Jaynes and keep getting better there. The other
+specialists, such as the design roles (visual-identity, screen-design and
+redesign), still move to the private repository, and their copies in Jaynes
+stay as examples at their current level. This changes the 2026-11-07 decision
+for the software roles only.
+
+**Why.** Whoever installs Jaynes gets software roles that do real work on day
+one instead of examples, and these roles are where the engine's new parts, such
+as the hidden cases and the merge alone, are proven.
+
+**Tradeoffs.**
+
+- The best software roles are public, so anyone can copy them.
+- What a role learns from a real project stays in that project, never in the
+  role, since the repository is public.
+
 ## 2026-11-07: A safe real target, and where a step's error counts
 
 Found by walking an invented request end to end: reminders by message one day
@@ -377,6 +396,8 @@ level. From now on specialist work happens in the private repository, and Jaynes
 gets only engine improvements: the slots a role fills are public, the role
 itself is private. Removing the roles was rejected, because the
 repository history is public and removing them would not make them private.
+
+**Changed 2026-11-09:** the software roles stay public and keep improving.
 
 **Open.** How Jaynes finds private specialists that live outside it when the
 person asks for a change.
