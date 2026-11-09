@@ -79,8 +79,10 @@ the area cannot undo, the action already waited for the person.
 specialist that errs often would keep delivering and merging while its work
 passes the checks, and showing a stop on the page stops nothing.
 
-**Built 2026-11-08,** except the button to halt everything, which comes next.
-Merging alone was built the same day, with Alan's choice that it happens as
+**Built 2026-11-08.** Halt all, in the page's sidebar, stops every run before
+its next step and every merge; anyone may halt, an agent too with `jaynes
+halt`, and only the person resumes. A turn already under way finishes, and
+what it made waits. Merging alone was built the same day, with Alan's choice that it happens as
 soon as the proofs pass, not only once the merge stop has proved itself. A
 role says its delivery is a merge; Jaynes merges into the branch the project
 had checked out when the run started, locally, never pushing, once every

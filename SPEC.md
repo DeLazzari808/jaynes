@@ -560,6 +560,13 @@ also continues the run. `jaynes delivered` and `jaynes correct` find a
 delivery and record its correction (section 6.2); changing a correction's
 kind is the person's, on the page.
 
+Halt all, in the page's sidebar, halts everything: each run returns `halted`
+before its next step, a merge waits, and quota resets continue nothing. A turn
+already under way finishes, and what it made waits too. Answers are still
+recorded. Anyone may halt, an agent with `jaynes halt`, since it only makes
+things wait; only a person resumes, with Resume in the same place, which
+continues every unfinished run no process holds.
+
 ## 8. Events
 
 One SQLite table, append-only, one row per event with sequence, time, type,
@@ -586,6 +593,8 @@ Conductor events:
 | `Merged` | the branch merged into, the merge commit, the run's branch commit it merged, and `over`, the one merged before, for a correction |
 | `MergeSkipped` | the run's branch commit and why it did not merge by itself |
 | `MergeUndone` | the branch, the merges reverted and the commits that revert them, the person's note, by; `incomplete` when not every revert landed |
+| `Halted` | no run: by and a note; every run stops before its next step and merges nothing |
+| `Resumed` | no run: by, always a person; the halt is lifted |
 | `DeliveryCorrected` | id, the step that erred, the stop it counts on and its fingerprint, kind (`error`, `preference`, `info`), note, by, the kind it was before when a person refiled it |
 
 Action gate events (section 9): `ActionProposed`, `GateDecided`, `Executed`,

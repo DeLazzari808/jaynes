@@ -359,6 +359,9 @@ pre { margin: 0; font-family: var(--mono); font-size: 12px; white-space: pre-wra
 .bar select { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 10px 8px; }
 .bar textarea { width: 100%; min-height: 160px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 10px 12px; }
 form.inline { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+form.halt { padding: 10px 20px 0; display: flex; justify-content: flex-end; }
+form.halt .btn { padding: 6px 10px; font-size: 12px; }
+form.halted { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid var(--red); border-radius: 4px; display: grid; gap: 8px; font-size: 13px; color: var(--ink); }
 form.inline select { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px; }
 form.inline .btn { padding: 6px 10px; }
 .btn { font-family: var(--mono); font-size: 12.5px; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink); background: var(--panel); cursor: pointer; white-space: nowrap; }
@@ -471,7 +474,7 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
-const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/undo", "/start", "/setup", "/update", "/restart"];  // no page to GET
+const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/undo", "/halt", "/resume", "/start", "/setup", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
@@ -756,8 +759,16 @@ class Review:
         if others:
             body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
                      f'<span>{len(others)}</span></summary>{"".join(others)}</details>')
+        token = f'<input type="hidden" name="token" value="{esc(self.shared.token)}">'
+        halt = self.c.halted()
+        stopped = (f'<form class="halted" method="post" action="/resume">{token}<span><b>Everything is halted.</b> '
+                   'No step runs and nothing merges until you resume.</span><button class="btn solid">Resume'
+                   '</button></form>' if halt is not None else
+                   f'<form class="halt" method="post" action="/halt">{token}<button class="btn" title="Stop every run '
+                   'before its next step, and every merge, until you resume">Halt all</button></form>')
         return ('<aside><div class="brand"><a href="/">Jaynes</a> <span>review</span><nav>'
                 '<a href="/">Queue</a><a href="/new">New run</a><a href="/roles">Roles</a><a href="/history">History</a><a href="/log">Log</a><a href="/setup">Setup</a></nav></div>'
+                f'{stopped}'
                 f'<div class="qhead" data-waiting="{len(waiting)}"><span>Waiting for you</span>'
                 '<button id="notify" class="hidden" type="button">Notify me</button>'
                 f'<span>{len(waiting)}</span></div>'
@@ -831,7 +842,7 @@ class Review:
         sub = (f'<div class="sub">{len(rejected)} earlier attempt{"s" if len(rejected) != 1 else ""} '
                f'rejected by Jaynes before you saw it: {esc(rejected[-1].payload["reasons"][0])}</div>'
                if rejected and rejected[-1].payload.get("reasons") else "")
-        if s.open_stop is not None and not holds(s.open_stop[1]):
+        if s.open_stop is not None and not holds(s.open_stop[1]) and not (st.merged and st.undone is None):
             sub += ('<div class="sub">The run went on with this without waiting for you. A return corrects on top of '
                     'what it did: only what used it runs again.</div>')
         if s.open_stop is not None and s.open_stop[1].get("ends"):
@@ -974,7 +985,7 @@ class Review:
             row = f'<div class="pics">{"".join(pics)}</div>' if pics else ""
             ident = str(x.get("id") or "")
             pick = ident in choosable
-            text = f"<p>{marked(str(x['text']))}</p>" if x.get("text") else ""
+            text = f"<p>{marked(str(x['text'])).replace(chr(10), '<br>')}</p>" if x.get("text") else ""
             cards.append(f'<div class="card{" pick" if pick else ""}"' + (f' data-id="{esc(ident)}" tabindex="0"' if pick else "")
                          + '><div class="txt">' + ('<i class="n"></i>' if pick else "")
                          + f'<div><b>{marked(str(x["title"]))}</b>{text}</div></div>{row}</div>')
@@ -1581,6 +1592,19 @@ class Review:
                 f'it through; a new preference or new information does not</span></div><div class="box"><table>'
                 f'{"".join(rows)}</table></div></div>')
 
+    def halt(self, fields: dict[str, str]) -> tuple[int, str]:
+        self.c.halt(by="person", note=fields.get("note", ""))
+        return 303, "/"
+
+    def resume_all(self, fields: dict[str, str]) -> tuple[int, str]:
+        try:
+            runs = self.c.resume(by="person")
+        except AnswerRejected:
+            return 303, "/"  # resumed already, from another tab
+        for run_id in runs:
+            continue_in_background(self.c.home, run_id)
+        return 303, "/"
+
     def undo(self, fields: dict[str, str]) -> tuple[int, str]:
         run_id = fields.get("run", "")
         try:
@@ -1975,6 +1999,7 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                 return self._send(204, b"", "text/plain")
             handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
                         "/send-back": Review.send_back, "/correction": Review.correction, "/undo": Review.undo,
+                        "/halt": Review.halt, "/resume": Review.resume_all,
                         "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
                         "/restart": Review.restart}
             if path not in handlers:

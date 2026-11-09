@@ -62,7 +62,7 @@ MAX_RAN = 50  # commands kept per turn
 
 @dataclass(frozen=True)
 class RunResult:
-    status: Literal["finished", "waiting", "blocked", "paused"]
+    status: Literal["finished", "waiting", "blocked", "paused", "halted"]
     step: str | None = None
     until: float | None = None
     reasons: tuple[str, ...] = ()
@@ -376,6 +376,8 @@ class Conductor:
             elif first.payload["role"] != role.name:
                 raise ValueError(f"run {run_id} belongs to role {first.payload['role']!r}")
             while True:
+                if self.halted() is not None:  # nothing runs and nothing merges until a person resumes
+                    return RunResult("halted")
                 result = self._advance(role, run_id, fold(self.store.events(run_id=run_id)))
                 if result is not None:
                     return result
@@ -554,9 +556,35 @@ class Conductor:
         order = ("stop", "blocked", "idle", "running", "paused")
         return sorted(items, key=lambda w: (order.index(w.kind), w.since))
 
+    def halted(self) -> dict[str, Any] | None:
+        """The halt in force, with when it began, while no person resumed since: no run takes a step or merges."""
+        last = None
+        for e in self.store.events_of(("Halted", "Resumed")):
+            last = e
+        return {**last.payload, "since": last.ts} if last is not None and last.type == "Halted" else None
+
+    def halt(self, by: By, note: str = "") -> None:
+        """Halt everything: each run stops before its next step and merges nothing. Anyone may halt, since it only
+        makes things wait; a turn already under way finishes, and what it made waits too."""
+        if by not in get_args(By):
+            raise ValueError(f"by is person or agent, not {by!r}")
+        if self.halted() is None:
+            self.store.append_all([("Halted", {"by": by, "note": note.strip()}, None, self.clock())])
+
+    def resume(self, by: By) -> list[str]:
+        """A person lifts the halt. Returns the unfinished runs no process holds, for the caller to continue."""
+        if by != "person":
+            raise AnswerRejected(["only a person resumes, from the page"])
+        if self.halted() is None:
+            raise AnswerRejected(["nothing is halted"])
+        self.store.append_all([("Resumed", {"by": by}, None, self.clock())])
+        return [r for r in self.store.unfinished_runs() if not self._held(r)]
+
     def due(self) -> list[tuple[str, float]]:
         """Runs whose quota pause has ended and that no process continues yet, with the reset they waited for."""
         out: list[tuple[str, float]] = []
+        if self.halted() is not None:
+            return out
         for run_id in self.store.unfinished_runs():
             st = project(self.store.events(run_id=run_id))
             if st.finished or st.blocked is not None:  # an open stop holds nothing: a paused run with one goes on

@@ -104,6 +104,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Counts from the outcome: an accept counts once its delivery held 7 days, corrections after delivery (`jaynes correct`, kind changeable on the page), the brake after two errors in ten | Works in tests; no real correction yet |
 | Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
 | Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
+| Halt all on the page (and `jaynes halt`): no run takes a step or merges until you resume | Works in tests |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
@@ -123,9 +124,10 @@ Missing, roughly in order:
   history; a new preference is not yet kept as taste memory; every project
   waits 7 days, not yet a time of its own. A step cannot yet start over from
   scratch, giving its reason, instead of correcting on top.
-- **Halting everything.** The brake holds one stop; a button to halt every
-  run comes next. small-change does not merge alone yet: it has no hidden
-  checks.
+- **small-change merging alone.** It has no hidden checks yet, so the
+  person still merges it.
+- **Halting a turn under way.** Halt all stops every run before its next
+  step; a turn already running finishes first.
 - **A turn past its deadline keeps its work.** The next attempt starts from
   nothing, even when the tests were almost written.
 - **Old runs leave the queue.** A run waiting for two days from a test that
@@ -279,7 +281,7 @@ Everything else happens in the page:
 
 The same from a terminal or an agent: `jaynes demo`, `jaynes history`,
 `jaynes simulate`, `jaynes policy` (prints the built-in policy), `jaynes queue`,
-`jaynes answer`, `jaynes wait` (returns once you answered a run's stop on the page), `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes delivered` (the latest deliveries, with their steps and files), `jaynes correct` (records that a delivery was corrected afterwards), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
+`jaynes answer`, `jaynes wait` (returns once you answered a run's stop on the page), `jaynes ask`, `jaynes output` (a step's checked output, as JSON), `jaynes delivered` (the latest deliveries, with their steps and files), `jaynes correct` (records that a delivery was corrected afterwards), `jaynes halt` (halts every run until you resume on the page), `jaynes guide`, `jaynes update` and `jaynes version`. `jaynes --help` lists them all.
 
 Only you answer as a person. The page answers only in a browser opened with
 the link `jaynes` prints when it starts (it opens it for you), which it keeps

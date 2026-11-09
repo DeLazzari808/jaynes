@@ -14,7 +14,7 @@ the command, twice at most; then the run goes on, the failures show at the stop,
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 
 from pydantic import BaseModel, Field
@@ -90,7 +90,7 @@ def _uses_url(command: str) -> bool:
 
 
 @contextmanager
-def _served(ctx: StepContext) -> Iterator[str]:
+def _served(ctx: StepContext) -> Generator[str]:
     """The changed project served in a box, when the run has a preview; else nothing."""
     if not ctx.started.get("preview") or ctx.needs.project is None:
         yield ""

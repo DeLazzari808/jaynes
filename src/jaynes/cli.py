@@ -285,7 +285,7 @@ def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
         made = project(c.store.events(run_id=run_id)).branch
         if made:
             out["branch"] = made["branch"]
-    elif result.status == "blocked":
+    elif result.status in ("blocked", "halted"):
         out["page"] = f"{page(c.home)}/run/{run_id}"
     if result.status in ("waiting", "finished"):  # merged alone, or why not
         from jaynes.conductor import project
@@ -411,6 +411,15 @@ def cmd_delivered(args: argparse.Namespace) -> None:
             break
     if not shown:
         print("nothing was delivered" + (f" in {root}" if root else ""))
+
+
+def cmd_halt(args: argparse.Namespace) -> None:
+    """Halt everything, as the page's Halt all does; only the person resumes, on the page."""
+    from jaynes.ask import page
+    from jaynes.conductor import Conductor
+    c = Conductor(_home(args))
+    c.halt(by="agent", note=args.note or "")
+    print(json.dumps({"halted": True, "page": page(c.home)}))
 
 
 def cmd_correct(args: argparse.Namespace) -> None:
@@ -613,6 +622,10 @@ def main(argv: list[str] | None = None) -> int:
     dl.add_argument("--project", help="only runs on the git repository that holds this folder")
     dl.add_argument("--limit", type=int, default=10)
     dl.add_argument("--home")
+    hl = sub.add_parser("halt", help="halt every run before its next step, and every merge, until the person "
+                                     "resumes on the page")
+    hl.add_argument("--note", help="why, in a sentence")
+    hl.add_argument("--home")
     cr = sub.add_parser("correct", help="record that a delivery was corrected afterwards, and why")
     cr.add_argument("run", help="the run that delivered what is being corrected")
     cr.add_argument("--step", required=True, help="the step whose output was wrong")
@@ -652,7 +665,7 @@ def main(argv: list[str] | None = None) -> int:
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
      "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
-     "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct}[args.cmd](args)
+     "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct, "halt": cmd_halt}[args.cmd](args)
     return 0
 
 
