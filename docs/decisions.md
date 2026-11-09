@@ -2,6 +2,34 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-09: A guard against the irreversible comes with the plugin
+
+**Decided.**
+
+- Installing the plugin turns on a guard in every Claude Code session, not
+  only in Jaynes runs. It comes in the plugin's own hooks and updates with it,
+  so Jaynes never touches the person's settings. A switch in Setup turns it off.
+- It holds only what cannot be undone in git and GitHub: push, reset --hard,
+  git clean, branch -D, tag -d, creating, merging or closing a pull request,
+  and creating, deleting or archiving a repository. Publishing a package,
+  deploying and sending messages stay out for now.
+- It asks instead of blocking: Claude Code's permission prompt opens and the
+  person approves with one key. Where nobody can answer, as in a Jaynes run,
+  the question becomes a block.
+- Repositories owned by the person's GitHub user pass freely; Jaynes finds the
+  user with gh. Each person sets their own list of owners in Setup, since
+  Jaynes serves anyone.
+- It stops the agent from editing its own files.
+- The full action gate stays optional in Setup; the guard is the floor that
+  always applies.
+
+**Tradeoffs.**
+
+- An agent can still change the guard by a path it does not catch, such as a
+  script. The real lock is the system's, which only the person sets.
+- When hooks disagree, the stricter one wins, so a hand-written hook that
+  blocks the same actions hides the guard's question and has to go.
+
 ## 2026-11-09: The software roles stay public and keep improving
 
 **Decided.** The roles that build software (build-feature, fix-bug and
