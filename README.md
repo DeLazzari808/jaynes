@@ -105,6 +105,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
 | Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
 | Halt all on the page (and `jaynes halt`): no run takes a step or merges until you resume | Works in tests |
+| The page's home in four parts: what holds a run waits for you, the samples the runs went past, what was delivered since your last visit with its hidden checks, and what runs now; the browser opens by itself only for what holds a run | Works in tests and on a scratch page |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |

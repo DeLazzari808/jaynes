@@ -85,10 +85,16 @@ class Waiting:
     until: float | None = None  # when a paused run's quota resets
     here: bool = False  # started from an agent's terminal, which asks its stops there instead of the page
     asks: bool = False  # blocked because only the person can decide: it waits for them as a stop does
+    holds: bool = False  # a stop the run cannot go on without; any other stop is a sample, which the run went past
 
     @property
     def needs_person(self) -> bool:
         return self.kind in ("stop", "blocked", "idle")
+
+    @property
+    def holding(self) -> bool:
+        """Nothing in the run goes on until the person acts: a stop that holds it, or a run blocked or left idle."""
+        return self.kind in ("blocked", "idle") or (self.kind == "stop" and self.holds)
 
     @property
     def waits(self) -> bool:
@@ -519,9 +525,10 @@ class Conductor:
             return None
         return step.output.model_validate_json(self._object(str(checked["output_hash"])))
 
-    def queue(self, idle_after: float = 10.0) -> list[Waiting]:
+    def queue(self, idle_after: float = 10.0, steps: Callable[[str], list[str] | None] | None = None) -> list[Waiting]:
         """Stops waiting, then blocked runs, then idle runs, each oldest first: what needs the person comes first.
-        After them, runs a process holds and runs paused for quota, which need nobody.
+        After them, runs a process holds and runs paused for quota, which need nobody. ``steps`` gives a run's steps
+        in role order, when its role is known, to tell a stop that holds its run from one it went past.
 
         A run counts as idle only after ``idle_after`` seconds without events, so one that a background
         process is about to pick up after an answer does not flicker into the queue.
@@ -539,17 +546,24 @@ class Conductor:
                                      reasons=tuple(st.blocked["reasons"]), here=here,
                                      asks=bool(st.blocked.get("asks"))))
             opened = [(name, s.open_stop) for name, s in st.steps.items() if s.open_stop is not None]
+            paused = st.paused_until is not None and st.paused_until > self.clock()
+            running = not paused and self._held(run_id)
+            # a stop holds its run when it says so, or when nothing runs it and a step is left that has not run:
+            # it waits for these answers. Once every step ran, or the run made its branch, they only let it finish
+            names = steps(run_id) if steps is not None else None
+            left = names is None or any(st.step(n).checked is None and st.step(n).open_stop is None for n in names)
+            waits = not paused and not running and st.branch is None and left
             for name, (opened_at, payload) in opened:
                 items.append(Waiting(run_id, "stop", name, opened_at, role, task, payload.get("question"),
-                                     evidence=payload.get("evidence"), here=here))
+                                     evidence=payload.get("evidence"), here=here, holds=holds(payload) or waits))
             if st.blocked is not None:
                 continue
             # a stop does not hold the run, so beside its stops a run can be working or paused
             step = next((str(ev.payload["step"]) for ev in reversed(events) if "step" in ev.payload), "")
-            if st.paused_until is not None and st.paused_until > self.clock():
+            if paused:
                 since = max(e.ts for e in events if e.type == "RunPaused")
                 items.append(Waiting(run_id, "paused", step, since, role, task, until=st.paused_until))
-            elif self._held(run_id):
+            elif running:
                 items.append(Waiting(run_id, "running", step, events[-1].ts, role, task))
             elif not opened and self.clock() - events[-1].ts >= idle_after:
                 items.append(Waiting(run_id, "idle", step, events[-1].ts, role, task, here=here))

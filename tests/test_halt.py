@@ -70,13 +70,13 @@ def test_an_agent_halts_from_the_terminal_and_the_person_resumes_from_the_page(
     assert json.loads(capsys.readouterr().out)["halted"] is True
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
         assert "Everything is halted." in page and "Halt all" not in page
 
         status, _ = post(base + "/resume", form(page))
 
         assert status == 303
-        page = get(base + "/")
+        page = get(base + "/next")
         assert "Everything is halted." not in page and "Halt all" in page
         status, _ = post(base + "/halt", form(page))
         assert status == 303 and (Conductor(tmp_path).halted() or {})["by"] == "person"

@@ -82,6 +82,8 @@ installed Jaynes without the private company need it? If so, it is Jaynes.
   person and when.
 - Jaynes warns the person outside the page only when something is held.
 
+**Built 2026-11-09.** The page's home has the four parts: what holds a run (a stop a step left still needs, a stop that says it holds, a blocked or idle run), the samples (a stop the run went past, or one that only lets it finish), what was delivered since the person's last visit, and what runs now. A visit is their looks at the home page less than half an hour apart. The browser opens by itself, and the tab counts and notifies, only for what holds a run; `/next` opens what to answer first. The plan of runs of each request waits for runs that make plans.
+
 ## 2026-11-07: Waiting is the brake, not the default
 
 **Decided.** When a stop's count shows too many errors, its runs wait for the

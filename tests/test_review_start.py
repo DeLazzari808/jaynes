@@ -63,7 +63,7 @@ def test_the_demo_role_can_be_started_from_the_page_and_stops_for_you(served: tu
     while not list(store.events("StopOpened", run_id=run)):
         assert time.monotonic() < deadline, (home / "runs" / run / "continue.log").read_text()
         time.sleep(0.05)
-    assert "Are they the right fixes?" in get(base + "/")
+    assert "Are they the right fixes?" in get(base + "/next")
 
 
 def test_roles_already_run_are_offered_with_their_runtimes(served: tuple[str, Path]) -> None:
@@ -398,7 +398,7 @@ def test_a_role_file_starts_from_the_page_and_a_broken_one_says_why(served: tupl
     while not list(store.events("StopOpened", run_id=run)):
         assert time.monotonic() < deadline, (home / "runs" / run / "continue.log").read_text()
         time.sleep(0.05)
-    assert "Ship &#x27;buy milk&#x27;?" in get(base + "/")
+    assert "Ship &#x27;buy milk&#x27;?" in get(base + "/next")
 
     broken = role_file.write(tmp_path / "broken", role_file.ROLE.replace("max_turns", "max_turn"))
     status, body = post(base + "/start", {**form(page), "role": "", "ref": str(broken), "task": "t"})

@@ -77,7 +77,7 @@ def form(page: str) -> dict[str, str]:
 
 def test_a_stop_answered_from_the_page_continues_the_run(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    page = get(base + "/")
+    page = get(base + "/next")
     assert "Ship &#x27;draft one&#x27;?" in page  # the question, escaped
     assert "draft" in page and "write the draft" in page
     # the open queue item unfolds into the run's stages, marking where it waits and how earlier ones were released
@@ -94,7 +94,7 @@ def test_a_stop_answered_from_the_page_continues_the_run(served: tuple[str, Path
         time.sleep(0.05)
     [answered] = [e.payload for e in store.events("StopAnswered", run_id=run)]
     assert answered["label"] == "correct" and answered["seconds_spent"] is not None
-    assert "Nothing is waiting" in get(base + "/")
+    assert "Nothing is waiting" in get(base + "/next")
     run_page = get(f"{base}/run/{run}")
     assert "accepted" in run_page and "finished" in run_page
     assert 'class="stages"' in run_page and 'class="timeline"' not in run_page
@@ -105,7 +105,7 @@ def test_a_stop_answered_from_the_page_continues_the_run(served: tuple[str, Path
 
 def test_change_from_the_page_is_checked_and_replaces_the_output(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    fields = form(get(base + "/"))
+    fields = form(get(base + "/next"))
     status, body = post(base + "/answer", {**fields, "answer": "change", "output": "not json"})
     assert status == 400 and "not JSON" in body
     status, _ = post(base + "/answer", {**fields, "answer": "change", "output": json.dumps({"text": "draft two"})})
@@ -116,14 +116,14 @@ def test_change_from_the_page_is_checked_and_replaces_the_output(served: tuple[s
 
 def test_return_without_a_note_is_refused(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    status, body = post(base + "/answer", {**form(get(base + "/")), "answer": "return", "note": "  "})
+    status, body = post(base + "/answer", {**form(get(base + "/next")), "answer": "return", "note": "  "})
     assert status == 400 and "needs a note" in body
     assert list(Store(home / "jaynes.sqlite3").events("StopAnswered", run_id=run)) == []
 
 
 def test_answers_from_another_site_are_refused(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    fields = form(get(base + "/"))
+    fields = form(get(base + "/next"))
     assert post(base + "/answer", {**fields, "token": "guess", "answer": "accept"})[0] == 403
     assert post(base + "/answer", {**fields, "answer": "accept"}, {"Origin": "https://evil.example"})[0] == 403
     assert post(base + "/answer", {**fields, "answer": "accept"}, {"Host": "evil.example"})[0] == 403
@@ -132,9 +132,9 @@ def test_answers_from_another_site_are_refused(served: tuple[str, Path, str]) ->
 
 def test_time_spent_counts_from_the_first_view_across_reloads(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    get(base + "/")
+    get(base + "/next")
     time.sleep(1.2)
-    status, _ = post(base + "/answer", {**form(get(base + "/")), "answer": "accept"})
+    status, _ = post(base + "/answer", {**form(get(base + "/next")), "answer": "accept"})
     assert status == 303
     [answered] = [e.payload for e in Store(home / "jaynes.sqlite3").events("StopAnswered", run_id=run)]
     assert answered["seconds_spent"] >= 1.2
@@ -142,7 +142,7 @@ def test_time_spent_counts_from_the_first_view_across_reloads(served: tuple[str,
 
 def test_an_answer_while_another_process_runs_the_run_is_recorded(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    fields = form(get(base + "/"))
+    fields = form(get(base + "/next"))
     with (home / "runs" / f"{run}.lock").open("a") as fh:  # the run goes on while its stops wait
         fcntl.flock(fh, fcntl.LOCK_EX)
         status, _ = post(base + "/answer", {**fields, "answer": "accept"})
@@ -152,7 +152,7 @@ def test_an_answer_while_another_process_runs_the_run_is_recorded(served: tuple[
 
 def test_an_answer_while_another_answer_is_being_recorded_is_refused(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    fields = form(get(base + "/"))
+    fields = form(get(base + "/next"))
     with (home / "runs" / f"{run}.answers.lock").open("a") as fh:
         fcntl.flock(fh, fcntl.LOCK_EX)
         status, body = post(base + "/answer", {**fields, "answer": "accept"})
@@ -172,8 +172,9 @@ def test_an_idle_run_can_be_continued_from_the_page(served: tuple[str, Path, str
     store = Store(home / "jaynes.sqlite3")
     store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
-    queue = get(base + "/")  # answered, but nothing continued it: the run is idle, which waits for nobody's answer
-    assert "Nothing is waiting for you" in queue and "Other runs" in queue
+    home_ = get(base + "/")  # answered, but nothing continued it: the run is idle, and nothing goes on until you act
+    waiting = home_.partition("<h2>To look at</h2>")[0]
+    assert f'href="/stop/{run}/draft"' in waiting and "not running" in waiting and "Other runs" not in home_
     assert f'href="/stop/{run}/draft">Continue or dismiss' in get(f"{base}/run/{run}")  # one click from its page
     page = get(f"{base}/stop/{run}/draft")
     assert "not running" in page
@@ -195,14 +196,14 @@ def test_an_idle_run_can_be_dismissed_from_the_page_and_the_queue_moves_on(serve
     status, _ = post(base + "/dismiss", {**form(page)}, jar=None)
     assert status == 403 and not list(store.events("RunFinished", run_id=run))  # only the person's browser
     status, _ = post(base + "/dismiss", {**form(page)})
-    assert status == 303 and "Nothing is waiting" in get(base + "/")
+    assert status == 303 and "Nothing is waiting" in get(base + "/next")
     shown = get(f"{base}/run/{run}")
     assert '<div class="n">dismissed</div>' in shown and "dismissed; nothing was delivered" in shown
 
 
 def test_after_an_answer_the_page_follows_the_run_it_continues(served: tuple[str, Path, str]) -> None:
     base, _, run = served
-    fields = urllib.parse.urlencode({**form(get(base + "/")), "answer": "return", "note": "shorter"}).encode()
+    fields = urllib.parse.urlencode({**form(get(base + "/next")), "answer": "return", "note": "shorter"}).encode()
     try:
         build_opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPCookieProcessor(JAR))
         build_opener.open(urllib.request.Request(base + "/answer", data=fields), timeout=10)
@@ -217,10 +218,10 @@ def test_a_stop_offers_to_return_an_earlier_step_and_the_answer_goes_there(tmp_p
     [run] = Store(tmp_path / "jaynes.sqlite3").runs()
     base, server = serving(tmp_path)
     try:
-        post(base + "/answer", {**form(get(base + "/")), "answer": "accept"})
+        post(base + "/answer", {**form(get(base + "/next")), "answer": "accept"})
         store = Store(tmp_path / "jaynes.sqlite3")
         deadline = time.monotonic() + 30
-        while '<option value="outline">' not in (page := get(base + "/")):
+        while '<option value="outline">' not in (page := get(base + "/next")):
             assert time.monotonic() < deadline, (tmp_path / "runs" / run / "continue.log").read_text()
             time.sleep(0.05)
         assert '<option value="outline">outline</option>' in page
@@ -299,7 +300,7 @@ def test_the_link_sets_the_key_and_leaves_the_address_bar(served: tuple[str, Pat
 
 def test_an_answer_from_the_page_is_the_person_and_carries_what_was_shown(served: tuple[str, Path, str]) -> None:
     base, home, run = served
-    fields = form(get(base + "/"))
+    fields = form(get(base + "/next"))
     assert fields["evidence"]
     status, body = post(base + "/answer", {**fields, "evidence": "0" * 16, "answer": "accept"})
     assert status == 400 and "reload" in body
@@ -453,7 +454,7 @@ def test_a_floor_stop_marks_its_answers_so_one_key_does_not_accept_it(tmp_path: 
 
 def test_a_sampled_stop_answers_on_one_key(served: tuple[str, Path, str]) -> None:
     base, _, _ = served
-    assert '<form id="answer" class="bar" method="post" action="/answer">' in get(base + "/")
+    assert '<form id="answer" class="bar" method="post" action="/answer">' in get(base + "/next")
 
 
 def test_a_paused_run_shows_in_the_queue_and_continues_by_itself_when_its_quota_resets(tmp_path: Path) -> None:
@@ -465,7 +466,7 @@ def test_a_paused_run_shows_in_the_queue_and_continues_by_itself_when_its_quota_
     base = f"http://127.0.0.1:{server.server_address[1]}"
     get(f"{base}/?key={server.key}")
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
         assert '<span class="chip amber">paused</span>' in page and f'href="/run/{run}"' in page
         assert '<div class="qhead" data-waiting="0"><span>Waiting for you</span>' in page
         assert 'id="answer"' not in page and "Nothing is waiting" in page
@@ -488,29 +489,31 @@ def test_a_stop_while_no_tab_is_open_opens_the_page_and_an_open_tab_is_left_to_n
     try:
         get(f"{base}/?key={server.key}")
         get(base + "/seq")  # a tab is open
-        cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "one",
-                  "--runtime", "quick=tests.stopped:Agent"])
+        cli.main(["run", "--home", str(tmp_path), "--role", "tests.held:ROLE", "--task", "one",
+                  "--runtime", "quick=tests.held:Agent"])
         time.sleep(5)
         assert opened == []
         post(base + "/bye", {})  # the tab closed
-        cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "two",
-                  "--runtime", "quick=tests.stopped:Agent"])
+        cli.main(["run", "--home", str(tmp_path), "--role", "tests.held:ROLE", "--task", "two",
+                  "--runtime", "quick=tests.held:Agent"])
         deadline = time.monotonic() + 10
         while not opened:
             assert time.monotonic() < deadline
             time.sleep(0.1)
-        assert opened == [server.link]
+        assert opened == [server.at("/next")]  # at what to answer
     finally:
         server.shutdown()
 
 
 def test_a_tab_sees_the_count_in_its_title_and_which_start_of_the_server_it_belongs_to(
         served: tuple[str, Path, str]) -> None:
-    base, _, _ = served
-    page = get(base + "/")
+    base, home, _ = served
+    page = get(base + "/next")
     boot = re.search(r'<body data-boot="([^"]+)">', page)
     assert boot and get(base + "/seq").split(" ")[1] == boot.group(1)
-    assert '<div class="qhead" data-waiting="1">' in page and 'id="notify"' in page
+    assert '<div class="qhead" data-waiting="0">' in page and 'id="notify"' in page  # a sample counts for nothing
+    cli.main(["run", "--home", str(home), "--role", "tests.held:ROLE", "--task", "t", "--runtime", "quick=tests.held:Agent"])
+    assert '<div class="qhead" data-waiting="1">' in get(base + "/")  # what holds a run counts
 
 
 def test_the_page_offers_a_newer_jaynes_and_a_restart_after_an_update(
@@ -521,12 +524,12 @@ def test_the_page_offers_a_newer_jaynes_and_a_restart_after_an_update(
     old = Installed("https://github.com/alk0x1/jaynes", "1" * 40)
     monkeypatch.setattr(update, "RUNNING", old)
     monkeypatch.setattr(update, "installed", lambda: old)
-    assert "A newer Jaynes" not in get(base + "/")
+    assert "A newer Jaynes" not in get(base + "/next")
     assert server.shared
     server.shared.latest = "2" * 40
-    assert "A newer Jaynes is out." in get(base + "/") and 'action="/update"' in get(base + "/")
+    assert "A newer Jaynes is out." in get(base + "/next") and 'action="/update"' in get(base + "/next")
     monkeypatch.setattr(update, "installed", lambda: Installed(old.url, "2" * 40))
-    page = get(base + "/")
+    page = get(base + "/next")
     assert "Jaynes was updated to 2222222." in page and 'action="/restart"' in page
     server.shutdown()
 
@@ -557,7 +560,7 @@ def test_a_person_chooses_among_the_items_from_the_page(tmp_path: Path) -> None:
     [run] = Store(tmp_path / "jaynes.sqlite3").runs()
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
         assert 'name="chosen"' in page and 'class="card pick" data-id="M1"' in page and "moment 1" in page
         status, body = post(base + "/answer", {**form(page), "answer": "choose", "chosen": "M9"})
         assert status == 400 and "&#x27;M9&#x27; is not one of" in body
@@ -574,7 +577,7 @@ def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_deta
     [run] = Store(tmp_path / "jaynes.sqlite3").runs()
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
     finally:
         server.shutdown()
     front, _, details = page.partition('<details class="fold"><summary>Details')
@@ -594,15 +597,16 @@ def test_a_stop_shows_what_the_person_judges_in_front_and_its_output_behind_deta
     assert 'data-a="return"' in sight and 'data-a="accept"' in sight  # in sight, with the note
 
 
-def test_an_empty_queue_says_when_runs_are_blocked_and_opens_them(served: tuple[str, Path, str]) -> None:
+def test_a_blocked_run_waits_for_the_person_with_its_reason_and_opens_from_next(served: tuple[str, Path, str]) -> None:
     base, home, run = served
     store = Store(home / "jaynes.sqlite3")
     store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
     store.append("RunBlocked", {"step": "final", "reasons": ["every attempt failed"]}, run_id=run)
-    page = get(base + "/")
-    assert "1 run is blocked" in page and "Runs that stop or block will appear here" not in page
-    assert '<details class="others" open>' in page
+    waiting = get(base + "/").partition("<h2>To look at</h2>")[0]
+    assert '<div class="qhead" data-waiting="1">' in waiting and "every attempt failed" in waiting
+    assert f'class="hrow blocked holds" href="/stop/{run}/final"' in waiting
+    assert "every attempt failed" in get(base + "/next") and 'action="/send-back"' in get(base + "/next")
 
 
 def test_a_run_that_asks_the_person_waits_for_them_and_says_who_needs_them(served: tuple[str, Path, str]) -> None:
@@ -611,14 +615,15 @@ def test_a_run_that_asks_the_person_waits_for_them_and_says_who_needs_them(serve
     store.append("StopAnswered", {"step": "draft", "answer": "accept", "label": "correct", "note": None,
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=run)
     store.append("RunBlocked", {"step": "final", "asks": True, "reasons": ["a test must change: `add` is old"]}, run_id=run)
-    page = get(base + "/")
+    page = get(base + "/next")
     assert '<div class="qhead" data-waiting="1">' in page
     assert "The agent needs you at final" in page and "<code>add</code>" in page
     assert "Every attempt of the round was rejected" not in page and 'action="/send-back"' in page
     assert '<details class="fold"><summary>What the agent did</summary>' in page  # the question opens alone
 
 
-def test_only_stops_wait_for_the_person_and_the_same_task_twice_is_told_apart(served: tuple[str, Path, str]) -> None:
+def test_a_blocked_run_waits_for_the_person_a_stop_after_every_step_ran_is_a_sample_and_the_same_task_twice_is_told_apart(
+        served: tuple[str, Path, str]) -> None:
     base, home, run = served
     cli.main(["run", "--home", str(home), "--role", "tests.stopped:ROLE", "--task", "write the draft",
               "--runtime", "quick=tests.stopped:Agent"])
@@ -628,9 +633,9 @@ def test_only_stops_wait_for_the_person_and_the_same_task_twice_is_told_apart(se
                                   "fingerprint": "x", "seconds_waited": 0, "seconds_spent": 0}, run_id=blocked)
     store.append("RunBlocked", {"step": "final", "reasons": ["every attempt failed"]}, run_id=blocked)
     page = get(base + "/")
-    waiting, _, others = page.partition('<details class="others">')
-    assert '<div class="qhead" data-waiting="1">' in waiting and f'href="/stop/{run}/draft"' in waiting
-    assert f'href="/stop/{blocked}/final"' not in waiting and f'href="/stop/{blocked}/final"' in others
+    assert '<div class="qhead" data-waiting="1">' in page and '<details class="others">' not in page
+    assert f'<a class="item holds blocked" href="/stop/{blocked}/final"' in page
+    assert f'<a class="item stop" href="/stop/{run}/draft"' in page  # every step ran: it only lets the run finish
     assert len(re.findall(r"<span>started \d\d:\d\d</span>", page)) == 2
     call = get(f"{base}/run/{run}")
     assert ('<div class="call stop"><span>Waiting for you: Ship &#x27;draft one&#x27;?</span>'
@@ -757,7 +762,7 @@ def test_a_long_question_keeps_its_first_sentence_as_the_heading_and_the_rest_be
               "--runtime", "quick=tests.stopped:Agent"])
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
     finally:
         server.shutdown()
     assert "<h1>Ship it?</h1>" in page and "<h1>Ship it? Added" not in page
@@ -775,7 +780,7 @@ def test_a_stop_opened_before_its_step_said_how_to_show_it_shows_as_the_step_doe
     monkeypatch.setattr(stopped.DRAFT, "shows", lambda out, _: [Shown("The draft", f"{out.text}, in full.")])
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
     finally:
         server.shutdown()
     front, _, details = page.partition('<details class="fold"><summary>Details')
@@ -791,7 +796,7 @@ def test_backticks_in_what_agents_write_are_shown_as_code(tmp_path: Path) -> Non
               "--runtime", "quick=tests.stopped:Agent"])
     base, server = serving(tmp_path)
     try:
-        page = get(base + "/")
+        page = get(base + "/next")
     finally:
         server.shutdown()
     assert "add <code>mul</code> to calc" in page and "`mul`" not in page
@@ -803,7 +808,7 @@ def test_after_an_accept_the_page_opens_the_runs_next_stop(tmp_path: Path) -> No
     [run] = Store(tmp_path / "jaynes.sqlite3").runs()
     base, server = serving(tmp_path)
     try:
-        first = get(base + "/")
+        first = get(base + "/next")
         assert "Waiting for you" in first and f'href="/stop/{run}/draft"' in first  # both stops at once
         assert "The run went on with this without waiting for you" in first
         fields = urllib.parse.urlencode({**form(first), "answer": "accept"}).encode()
@@ -818,7 +823,7 @@ def test_after_an_accept_the_page_opens_the_runs_next_stop(tmp_path: Path) -> No
 
 
 def finish(base: str, home: Path, run: str) -> None:
-    status, _ = post(base + "/answer", {**form(get(base + "/")), "answer": "accept", "note": ""})
+    status, _ = post(base + "/answer", {**form(get(base + "/next")), "answer": "accept", "note": ""})
     assert status == 303
     store = Store(home / "jaynes.sqlite3")
     deadline = time.monotonic() + 30

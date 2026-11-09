@@ -45,7 +45,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import bounds, install, role_file, roles, sandbox, skill, update, verify
+from jaynes import bounds, install, outcome, proof, role_file, roles, sandbox, skill, update, verify
 from jaynes import project as repo
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
                               continue_in_background, holds, new_run_id, project, return_to, start_in_background)
@@ -296,6 +296,24 @@ aside { border-right: 1px solid var(--line); display: flex; flex-direction: colu
 .item .t { font-size: 14px; }
 .item .m { font-family: var(--mono); font-size: 11px; color: var(--dim); display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 .item .m .s { overflow: hidden; text-overflow: ellipsis; }
+.qhead.look { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 14px; }
+.home .part + .part { margin-top: 36px; }
+.phead { display: flex; align-items: baseline; gap: 10px; }
+.phead span { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+.part .sub { margin: 4px 0 12px; font-size: 13px; }
+.rows { border: 1px solid var(--line); border-radius: 6px; }
+.hrow { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 16px; border-left: 2px solid transparent; }
+.hrow + .hrow { border-top: 1px solid var(--line); }
+.hrow:hover { background: rgba(255, 255, 255, .025); }
+.hrow > div:first-child { display: grid; gap: 4px; min-width: 0; }
+.hrow .strip { flex: none; }
+.hrow.holds { border-left-color: var(--amber); }
+.hrow.holds.blocked { border-left-color: var(--red); }
+.hrow .t { font-size: 14px; }
+.hrow .q { font-size: 13px; color: var(--dim); }
+.hrow .m { font-family: var(--mono); font-size: 11px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.none { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+.part .fold { margin-top: 12px; }
 .empty-q { padding: 12px 18px; font-family: var(--mono); font-size: 12px; color: var(--faint); }
 .chip { font-family: var(--mono); font-size: 10.5px; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
 .amber { color: var(--amber); background: var(--amber-soft); }
@@ -490,13 +508,13 @@ const check = async () => {
 };
 check(); poll = setInterval(check, 2500);
 addEventListener("pagehide", () => navigator.sendBeacon("/bye"));
-// A stop that appeared since this tab last loaded: the count in the title, and a notification if the person
+// What holds a run, appeared since this tab last loaded: the count in the title, and a notification if the person
 // is elsewhere. Without a tab open, the server opens one instead.
 const qhead = document.querySelector(".qhead"), waiting = qhead ? Number(qhead.dataset.waiting) : 0;
 if (waiting) document.title = "(" + waiting + ") " + document.title;
 let before = null;
 try { before = sessionStorage.getItem("jaynes-waiting"); sessionStorage.setItem("jaynes-waiting", waiting); } catch (e) {}
-const first = document.querySelector("a.item.stop, a.item.blocked, a.item.idle");
+const first = document.querySelector("a.item.holds");
 if ("Notification" in window && Notification.permission === "granted" && before !== null && waiting > Number(before)
     && !document.hasFocus() && first) {
   const n = new Notification("Jaynes: your answer", {body: first.querySelector(".t").textContent, tag: "jaynes"});
@@ -649,6 +667,37 @@ def stage_strip(items: list[Stage]) -> str:
         f'<i class="{s.state}" title="{esc(s.name)}"></i>' for s in items) + "</div>"
 
 
+@dataclass(frozen=True)
+class Delivery:
+    run_id: str
+    at: float  # when it landed: its last merge, else its branch, else when it finished
+    st: RunState
+
+
+VISIT_GAP = 1800.0  # half an hour without looking at the home page ends a visit
+
+
+def visit(home: Path, now: float, record: bool = True) -> float | None:
+    """When the person's last visit to the home page ended, before this one, or None on their first. A visit is
+    their looks at it with less than ``VISIT_GAP`` between them, so the page reloading itself keeps the same one.
+    Only the person's browser records one."""
+    path = home / "visits.json"
+    try:
+        seen = json.loads(path.read_text())
+        last, since = seen.get("last"), seen.get("since")
+    except (OSError, ValueError, AttributeError):
+        last = since = None
+    if not record:
+        return since if last is None or now - last <= VISIT_GAP else last
+    if last is not None and now - last > VISIT_GAP:
+        since = last
+    try:
+        path.write_text(json.dumps({"last": now, "since": since}))
+    except OSError:
+        pass
+    return since
+
+
 # --- the application ---------------------------------------------------------------
 
 @dataclass
@@ -680,8 +729,13 @@ class Review:
     def queue(self) -> list[Waiting]:
         """Read once per request: the sidebar and the page show the same queue."""
         if self._queue is None:
-            self._queue = self.c.queue(idle_after=self.shared.idle_after)
+            self._queue = self.c.queue(idle_after=self.shared.idle_after, steps=self.steps_of)
         return self._queue
+
+    def steps_of(self, run_id: str) -> list[str] | None:
+        """A run's steps in role order, when its role can be imported here."""
+        role = self.role_of(run_id)
+        return [s.name for s in role.steps] if role is not None else None
 
     def role_of(self, run_id: str) -> Role | None:
         """The role a run was started with, if its module can be imported here. Edits need a restart."""
@@ -712,12 +766,14 @@ class Review:
     # sidebar ----------------------------------------------------------------
 
     def sidebar(self, selected: tuple[str, str] | None) -> str:
-        """What waits for the person, the open stops; below it, folded, runs that are blocked, idle or working."""
+        """What holds a run until the person acts; below it the samples, stops the runs went past; and folded, the
+        runs working or paused for quota."""
         items = self.queue()
         now = self.c.clock()
         starts = {w.run_id: next(iter(self.c.store.events("RunStarted", run_id=w.run_id))).ts for w in items}
         tasks = [w.task for w in {w.run_id: w for w in items}.values()]  # one per run: a run lists each of its stops
         waiting: list[str] = []
+        looks: list[str] = []  # samples: stops the run went past
         others: list[str] = []
         unfold = False
         for w in items:
@@ -725,7 +781,8 @@ class Review:
             events = list(self.c.store.events(run_id=w.run_id))
             names = self.names(self.role_of(w.run_id), events)
             run_stages = stages(names, events, project(events), now)
-            chip = {"stop": '<span class="chip amber">stop</span>', "blocked": '<span class="chip red">blocked</span>',
+            chip = {"stop": ('<span class="chip amber">stop</span>' if w.holds else
+                             '<span class="chip blue">sample</span>'), "blocked": '<span class="chip red">blocked</span>',
                     "idle": '<span class="chip blue">idle</span>', "running": '<span class="chip blue">running</span>',
                     "paused": '<span class="chip amber">paused</span>'}[w.kind]
             # a run that needs nobody opens its run page; it continues by itself
@@ -753,9 +810,13 @@ class Review:
                 row = (f'<a class="item {w.kind}" href="{href}"><div class="t">{marked(headline(w.task))}</div>'
                        f'<div class="m">{chip}<span class="s">{esc(w.step)}</span>{started}<span>{when}</span></div>'
                        f'{stage_strip(run_stages)}</a>')
-            (waiting if w.waits else others).append(row)
-            unfold = unfold or (on and not w.waits) or (w.kind == "blocked" and not any(x.waits for x in items))
+            if w.holding:
+                row = row.replace('class="item ', 'class="item holds ', 1)
+            (waiting if w.holding else looks if w.kind == "stop" else others).append(row)
+            unfold = unfold or (on and w.kind in ("running", "paused"))
         body = "".join(waiting) or '<div class="empty-q">Nothing is waiting for you.</div>'
+        if looks:
+            body += f'<div class="qhead look"><span>To look at</span><span>{len(looks)}</span></div>' + "".join(looks)
         if others:
             body += (f'<details class="others"{" open" if unfold else ""}><summary class="qhead"><span>Other runs</span>'
                      f'<span>{len(others)}</span></summary>{"".join(others)}</details>')
@@ -767,7 +828,7 @@ class Review:
                    f'<form class="halt" method="post" action="/halt">{token}<button class="btn" title="Stop every run '
                    'before its next step, and every merge, until you resume">Halt all</button></form>')
         return ('<aside><div class="brand"><a href="/">Jaynes</a> <span>review</span><nav>'
-                '<a href="/">Queue</a><a href="/new">New run</a><a href="/roles">Roles</a><a href="/history">History</a><a href="/log">Log</a><a href="/setup">Setup</a></nav></div>'
+                '<a href="/">Home</a><a href="/new">New run</a><a href="/roles">Roles</a><a href="/history">History</a><a href="/log">Log</a><a href="/setup">Setup</a></nav></div>'
                 f'{stopped}'
                 f'<div class="qhead" data-waiting="{len(waiting)}"><span>Waiting for you</span>'
                 '<button id="notify" class="hidden" type="button">Notify me</button>'
@@ -776,17 +837,118 @@ class Review:
 
     # pages ------------------------------------------------------------------
 
-    def queue_page(self) -> str:
-        items = [w for w in self.queue() if w.waits]
-        if items:
-            return self.stop_page(items[0].run_id, items[0].step)
-        blocked = sum(w.kind == "blocked" for w in self.queue())
-        say = (f"{blocked} run{' is' if blocked == 1 else 's are'} blocked: see Other runs." if blocked else
-               "Runs that stop or block will appear here.")
-        main = ('<div class="crumbs"><b>Queue</b></div><div class="body" style="display:flex">'
-                f'<div class="empty"><h1>Nothing is waiting</h1><p>{say}</p>'
-                '<p><a class="btn go" href="/new">Start a run</a></p></div></div>')
+    def next_page(self) -> str:
+        """The first thing to answer: what holds a run, then a sample; the home page when there is neither."""
+        items = self.queue()
+        w = next((x for x in items if x.holding), None) or next((x for x in items if x.kind == "stop"), None)
+        return self.stop_page(w.run_id, w.step) if w is not None else self.home_page(None)
+
+    def home_page(self, since: float | None) -> str:
+        """Four parts: what waits for the person, the samples to look at, what was delivered since their last visit
+        (``since``; the last week on a first visit) and what runs now."""
+        items, now = self.queue(), self.c.clock()
+        holding = [w for w in items if w.holding]
+        looks = [w for w in items if w.kind == "stop" and not w.holds]
+        moving = [w for w in items if w.kind in ("running", "paused")]
+        delivered = self.deliveries()
+        cut = since if since is not None else now - outcome.SETTLE
+        new = [d for d in delivered if d.at > cut]
+        earlier = [d for d in delivered if d.at <= cut][:10]
+
+        def part(title: str, sub: str, rows: list[str], none: str, extra: str = "") -> str:
+            listed = f'<div class="rows">{"".join(rows)}</div>' if rows else f'<div class="none">{none}</div>'
+            return (f'<section class="part"><div class="phead"><h2>{title}</h2><span>{len(rows) or ""}</span></div>'
+                    f'<p class="sub">{sub}</p>{listed}{extra}</section>')
+
+        last = (f"Since your last visit, {age(now - since)} ago." if since is not None else
+                "In the last 7 days: this is your first visit.")
+        older = (f'<details class="fold"><summary>Earlier <span>{len(earlier)}</span></summary><div class="rows">'
+                 f'{"".join(self._delivery_row(d, now) for d in earlier)}</div></details>' if earlier else "")
+        main = ('<div class="crumbs"><b>Home</b></div><div class="body home">'
+                + part("Waiting for you", "Only what holds a run: it goes on once you answer.",
+                       [self._home_row(w, now) for w in holding], "Nothing holds a run.")
+                + part("To look at", "Samples: the runs went on without them, and only your answers here count "
+                       "towards trusting a step.", [self._home_row(w, now) for w in looks], "No samples.")
+                + part("Delivered", f"{last} Undo is on each run's page.",
+                       [self._delivery_row(d, now) for d in new], "Nothing new was delivered.", older)
+                + part("Running now", "Runs working, or paused until their quota resets.",
+                       [self._home_row(w, now) for w in moving], "Nothing is running.",
+                       '<p><a class="btn go" href="/new">Start a run</a></p>' if not moving else "")
+                + '</div>')
         return page("Jaynes review", self.sidebar(None), main, self.seq())
+
+    def _home_row(self, w: Waiting, now: float) -> str:
+        """A run in one row: what it was asked and, below, what it waits for or where it is, with its steps."""
+        events = list(self.c.store.events(run_id=w.run_id))
+        role = self.role_of(w.run_id)
+        names = self.names(role, events)
+        where = names.index(w.step) + 1 if w.step in names else 0
+        chip = {"stop": ('<span class="chip amber">holds</span>' if w.holds else '<span class="chip blue">sample'
+                         '</span>'),
+                "blocked": '<span class="chip red">blocked</span>', "idle": '<span class="chip blue">not running</span>',
+                "running": '<span class="chip blue">running</span>', "paused": '<span class="chip amber">paused</span>'
+                }[w.kind]
+        said = {"stop": headline(self._question_of(w, role), 140),
+                "blocked": w.reasons[0] if w.reasons else "", "idle": "No process holds it: continue or dismiss it.",
+                "running": "", "paused": ""}[w.kind]
+        when = (f"until {time.strftime('%H:%M', time.localtime(w.until))}" if w.until is not None else
+                age(now - w.since))
+        href = f"/stop/{q(w.run_id)}/{q(w.step)}" if w.needs_person else f"/run/{q(w.run_id)}"
+        return (f'<a class="hrow {w.kind}{" holds" if w.holding else ""}" href="{href}"><div>'
+                f'<div class="t">{marked(headline(w.task))}</div>'
+                + (f'<div class="q">{marked(said)}</div>' if said else "")
+                + f'<div class="m">{chip}<span>{esc(w.role)}</span><span>step {where} of {len(names)}, '
+                f'{esc(w.step)}</span><span>{when}</span></div></div>'
+                f'{stage_strip(stages(names, events, project(events), now))}</a>')
+
+    def deliveries(self) -> list[Delivery]:
+        """What runs delivered, newest first: merged, a branch for the person to merge, or the outputs alone."""
+        out: list[Delivery] = []
+        for run_id in self.c.store.runs():
+            events = list(self.c.store.events(run_id=run_id))
+            st = project(events)
+            if st.started is None or st.outcome in ("dismissed", "ended"):
+                continue
+            merged = [e.ts for e in events if e.type == "Merged"]
+            finished = [e.ts for e in events if e.type == "RunFinished"]
+            made = [e.ts for e in events if e.type == "BranchCreated"]
+            at = merged[-1] if merged else made[-1] if made else finished[-1] if finished else None
+            if at is not None:
+                out.append(Delivery(run_id, at, st))
+        return sorted(out, key=lambda d: d.at, reverse=True)
+
+    def _delivery_row(self, d: Delivery, now: float) -> str:
+        """A delivery in one row: what it was asked, where it landed, its hidden checks and corrections."""
+        st, role = d.st, self.role_of(d.run_id)
+        started = st.started or {}
+        if st.undone is not None:
+            chip, said = '<span class="chip red">undone</span>', f"reverted: {st.undone['note']}"
+        elif st.merged:
+            m = st.merged[-1]
+            chip = '<span class="chip green">merged</span>'
+            said = f"into {m['into']} by itself" + (", a correction on top" if m.get("over") else "")
+        elif st.branch is not None:
+            chip = '<span class="chip blue">branch</span>'
+            said = f"{st.branch['branch']}, for you to merge" + (
+                f": {st.not_merged['reason']}" if st.not_merged is not None else "")
+        else:
+            chip, said = '<span class="chip green">delivered</span>', "its outputs, on the run's page"
+        facts: list[str] = []
+        proofs = [self.c.output(d.run_id, x) for x in (role.steps if role else [])
+                  if x.output is not None and issubclass(x.output, proof.Proved)]
+        results = [r for p in proofs if p is not None for r in p.results]
+        if results:
+            passed = sum(r.passed for r in results)
+            facts.append(f"{passed} of {len(results)} hidden checks passed")
+        if open_ := sum(s.open_stop is not None for s in st.steps.values()):
+            facts.append(f"{open_} sample{'s' if open_ != 1 else ''} to look at")
+        if fixes := len(self.c.corrections(d.run_id)):
+            facts.append(f"{fixes} correction{'s' if fixes != 1 else ''}")
+        return (f'<a class="hrow done" href="/run/{q(d.run_id)}"><div>'
+                f'<div class="t">{marked(headline(str(started.get("task", ""))))}</div>'
+                f'<div class="q">{esc(said)}</div><div class="m">{chip}<span>{esc(str(started.get("role", "")))}</span>'
+                + "".join(f"<span>{esc(x)}</span>" for x in facts)
+                + f'<span>{age(now - d.at)} ago</span></div></div></a>')
 
     def stop_page(self, run_id: str, step: str, error: str = "", fields: dict[str, str] | None = None) -> str:
         w = next((x for x in self.queue() if (x.run_id, x.step) == (run_id, step)), None)
@@ -842,9 +1004,11 @@ class Review:
         sub = (f'<div class="sub">{len(rejected)} earlier attempt{"s" if len(rejected) != 1 else ""} '
                f'rejected by Jaynes before you saw it: {esc(rejected[-1].payload["reasons"][0])}</div>'
                if rejected and rejected[-1].payload.get("reasons") else "")
-        if s.open_stop is not None and not holds(s.open_stop[1]) and not (st.merged and st.undone is None):
+        if s.open_stop is not None and not w.holds and not (st.merged and st.undone is None):
             sub += ('<div class="sub">The run went on with this without waiting for you. A return corrects on top of '
                     'what it did: only what used it runs again.</div>')
+        elif s.open_stop is not None and w.holds and not holds(s.open_stop[1]):
+            sub += '<div class="sub">The run waits for your answer here: the steps after it need it.</div>'
         if s.open_stop is not None and s.open_stop[1].get("ends"):
             sub += ('<div class="sub">Accepting ends the run here, with nothing delivered; return it with a note '
                     'to have the agent look again.</div>')
@@ -1944,7 +2108,9 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                     f"{self._cookie_name()}={shared.key}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"))
             match parts:
                 case []:
-                    self._send(200, app.queue_page())
+                    self._send(200, app.home_page(visit(home, time.time(), record=self._person())))
+                case ["next"]:
+                    self._send(200, app.next_page())
                 case ["seq"]:  # also says which start of the server answers, so a tab sees a restart
                     if self._person():
                         shared.polled = time.time()
@@ -2021,21 +2187,21 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
     server.shared = shared
     threading.Thread(target=_wake, args=(home, wake_every, server.stopping), daemon=True).start()
     if call:
-        threading.Thread(target=_call, args=(home, shared, server.link, server.stopping), daemon=True).start()
+        threading.Thread(target=_call, args=(home, shared, server.at("/next"), server.stopping), daemon=True).start()
         threading.Thread(target=_look, args=(shared, server.stopping), daemon=True).start()
     return server
 
 
 def _call(home: Path, shared: Shared, link: str, stopping: threading.Event, every: float = 2.0,
           alive: float = 75.0) -> None:
-    """Open the page when something new needs the person and no tab is open; an open tab notifies by itself. A
+    """Open the page at what to answer when something new holds a run and no tab is open; an open tab notifies by
+    itself, and a sample waits for the person's next look. A
     hidden tab may ask for /seq only once a minute, so a tab counts as open for ``alive`` seconds after it asked."""
     import webbrowser
     seen: set[tuple[str, str, float]] | None = None
     while not stopping.wait(every):
         try:
-            now = {(w.run_id, w.step, w.since) for w in Conductor(home).queue(idle_after=shared.idle_after)
-                   if w.needs_person}
+            now = {(w.run_id, w.step, w.since) for w in Review(home, shared).queue() if w.holding}
         except Exception:  # a locked or half-written log is read again on the next tick
             continue
         if seen is not None and now - seen and time.time() - shared.polled > alive:
@@ -2097,7 +2263,11 @@ class ReviewServer(ThreadingHTTPServer):
 
     @property
     def link(self) -> str:
-        return f"http://127.0.0.1:{self.server_address[1]}/?key={self.key}"
+        return self.at("/")
+
+    def at(self, path: str) -> str:
+        """A link to ``path`` that lets the browser that opens it answer as the person."""
+        return f"http://127.0.0.1:{self.server_address[1]}{path}?key={self.key}"
 
     def shutdown(self) -> None:
         super().shutdown()
