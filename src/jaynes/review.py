@@ -45,7 +45,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import bounds, install, outcome, proof, role_file, roles, sandbox, skill, update, verify
+from jaynes import bounds, guard, install, outcome, proof, role_file, roles, sandbox, skill, update, verify
 from jaynes import project as repo
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
                               continue_in_background, holds, new_run_id, project, return_to, start_in_background)
@@ -382,6 +382,9 @@ form.halt .btn { padding: 6px 10px; font-size: 12px; }
 form.halted { margin: 10px 14px 0; padding: 10px 12px; border: 1px solid var(--red); border-radius: 4px; display: grid; gap: 8px; font-size: 13px; color: var(--ink); }
 form.inline select { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px; }
 form.inline .btn { padding: 6px 10px; }
+form.owner { justify-content: flex-start; }
+form.owner + form.owner { margin-top: 6px; }
+form.owner input[type=text] { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px 8px; }
 .btn { font-family: var(--mono); font-size: 12.5px; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink); background: var(--panel); cursor: pointer; white-space: nowrap; }
 details.ran summary { cursor: pointer; }
 details.ran pre { margin: 8px 0 0; max-height: 320px; overflow: auto; white-space: pre-wrap; color: var(--dim); }
@@ -1450,17 +1453,18 @@ class Review:
         main = crumbs + f'<div class="body">{body}</div>'
         return page("History", self.sidebar(None), main, self.seq())
 
-    def setup_page(self) -> str:
+    def setup_page(self, error: str = "") -> str:
         g = install.status(self.c.home)
         chip = ('<span class="chip green">installed</span>' if g.installed else
                 f'<span class="chip amber">partly installed, {len(g.hooked)} of {len(install.EVENTS)} events</span>'
                 if g.hooked else '<span class="chip amber">not installed</span>')
         buttons = ('' if g.installed else '<button class="btn go" name="action" value="install">Install</button>') + \
             ('<button class="btn" name="action" value="remove">Remove</button>' if g.hooked else '')
-        main = ('<div class="crumbs"><b>Setup</b></div><div class="body">'
-                '<div><h1>Action gate in Claude Code</h1><div class="sub">Every tool call your Claude Code agents make '
-                'goes through Jaynes. Actions that cannot be undone, like pushing, never run without you. Everything '
-                'else runs as it does today, except a random one in ten that asks you, so Jaynes can measure.</div></div>'
+        main = ('<div class="crumbs"><b>Setup</b></div><div class="body">' + self._guard_part(error)
+                + '<div><h2>Action gate in Claude Code</h2><div class="sub">This one is optional. With it, every tool '
+                'call your Claude Code agents make goes through Jaynes. Actions that cannot be undone, like pushing, never run without you. '
+                'Everything else runs as it does today, except a random one in ten that asks you, so Jaynes can '
+                'measure. The guard above is the floor that always applies, with the gate or without it.</div></div>'
                 f'<div class="box"><table class="kv"><tr><td>state</td><td>{chip}</td></tr>'
                 f'<tr><td>settings</td><td class="m">{esc(str(g.settings))}</td></tr>'
                 f'<tr><td>policy</td><td class="m">{esc(str(g.policy))}'
@@ -1474,6 +1478,34 @@ class Review:
                 f'{esc(g.settings.name)}.jaynes-backup. Your other hooks and settings stay as they are.</div>'
                 + self._command_part() + self._version_part() + '</div>')
         return page("Setup", self.sidebar(None), main, self.seq())
+
+    def _guard_part(self, error: str) -> str:
+        g = guard.load()
+        token = f'<input type="hidden" name="token" value="{self.shared.token}">'
+        state = '<span class="chip green">on</span>' if g.on else '<span class="chip amber">off</span>'
+        switch = (f'<form method="post" action="/setup" class="inline owner">{state}{token}<button class="btn" '
+                  f'name="action" value="{"guard-off" if g.on else "guard-on"}">{"Turn off" if g.on else "Turn on"}'
+                  '</button></form>')
+        rows = "".join(
+            f'<form method="post" action="/setup" class="inline owner">{token}<span class="m">{esc(o)}</span>'
+            + ('<span class="chip blue">your GitHub user</span>'
+               if g.github_user and o.lower() == g.github_user.lower() else '')
+            + f'<input type="hidden" name="owner" value="{esc(o)}"><button class="btn" name="action" '
+            'value="guard-owner-remove">Remove</button></form>' for o in g.owners)
+        none = '' if g.owners else ('<div class="m">none yet: every held action asks, wherever it lands</div>')
+        add = (f'<form method="post" action="/setup" class="inline owner">{token}<input type="text" name="owner" '
+               'placeholder="GitHub owner" aria-label="GitHub owner"><button class="btn go" name="action" '
+               'value="guard-owner-add">Add</button></form>')
+        return ('<div><h1>Guard in Claude Code</h1><div class="sub">In every Claude Code session with the Jaynes '
+                'plugin, it holds what cannot be undone in git and GitHub: git push, reset --hard, clean, branch -D, '
+                'tag -d, creating, merging or closing pull requests, and creating, deleting or archiving '
+                'repositories. It asks instead of blocking: Claude Code tells you what cannot be undone and why, and '
+                'you approve with one key. Everything else passes untouched. Repositories on GitHub whose owner is '
+                'one of your free owners pass freely. It also asks before anything changes its own files.</div></div>'
+                f'<div class="box"><table class="kv"><tr><td>state</td><td>{switch}</td></tr>'
+                f'<tr><td>free owners</td><td>{rows}{none}{add}'
+                + (f'<div class="err">{esc(error)}</div>' if error else '')
+                + f'</td></tr><tr><td>settings</td><td class="m">{esc(str(guard.path()))}</td></tr></table></div>')
 
     def _command_part(self) -> str:
         if skill.installed():
@@ -1498,7 +1530,16 @@ class Review:
 
     def setup(self, fields: dict[str, str]) -> tuple[int, str]:
         action = fields.get("action", "")
-        if action == "skill":
+        if action in ("guard-on", "guard-off"):
+            guard.switch(action == "guard-on")
+        elif action == "guard-owner-add":
+            try:
+                guard.add_owner(fields.get("owner", ""))
+            except ValueError as err:
+                return 400, self.setup_page(str(err))
+        elif action == "guard-owner-remove":
+            guard.remove_owner(fields.get("owner", ""))
+        elif action == "skill":
             skill.install()
         elif action == "skill-remove":
             skill.remove()

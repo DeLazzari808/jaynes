@@ -97,6 +97,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Part | State |
 |---|---|
 | Action gate for Claude Code: categories, floors, sampled audits, labels from the transcript, anytime-valid certification | Works |
+| Guard in every Claude Code session with the plugin: asks before git and GitHub actions that cannot be undone (push, reset --hard, clean, branch -D, tag -d, pull requests and repositories created, merged, closed, deleted or archived) outside your free owners' repositories, and before changes to its own files; switch and owners on Setup | Works in tests |
 | History report and guarantee simulation | Works |
 | Step conductor for Claude Code (Codex also runs): roles in Python or TOML, write boundary, checks, retries, resume after a crash, quota pause | Works |
 | Review page and CLI answers: queue, stops, runs, roles, log; return to an earlier step; dismiss a run; running and paused runs in the queue, a paused run continuing at its reset | Works |
@@ -178,12 +179,29 @@ there: Accept, or Return with a note. The review page, opened by `jaynes`,
 shows a stop in full and offers Change and Context too. When a newer Jaynes
 is out, the page offers to update and restarts itself.
 
-The plugin is the skill and the hook that records your answers in the dialog,
-installed by you: no agent writes your Claude Code settings. The skill only
+The plugin is the skill, the hook that records your answers in the dialog
+and the guard below, installed by you: no agent writes your Claude Code settings. The skill only
 says when to use Jaynes; the steps come from `jaynes guide`, so they change
 with the `jaynes` command. The agent runs `jaynes update` at the start of each
 task, and it brings the plugin to the same commit with Claude Code's own
 `claude plugin update`, used from the next session.
+
+The plugin also brings a guard, in every Claude Code session where it is on,
+not only in Jaynes runs. Before an agent pushes, runs `git reset --hard`,
+`git clean`, `git branch -D` or `git tag -d`, or creates, merges or closes a
+pull request or creates, deletes or archives a repository with gh, Claude Code
+asks you, saying what cannot be undone and why: for example, *git push
+publishes commits to github.com/quill-labs/site, whose owner is not one of
+your free owners*. It asks instead of blocking, so you approve with one key;
+in `claude -p`, where nobody can answer, Claude Code refuses it. Repositories
+on GitHub whose owner is one of your free owners pass freely: at first your
+own GitHub user, found once with `gh`, and you add or remove owners on the
+Setup page. Everything else, like `git merge` or `git branch -d`, runs as it
+did. It also asks before anything changes its own files, and it needs only
+python3, not the `jaynes` command. To turn it off, press Turn off under Guard
+in Claude Code on the Setup page, or set `"on": false` in
+`~/.jaynes/guard.json` yourself (Claude Code asks first if an agent tries);
+disabling the plugin turns it off with the rest.
 
 Or by hand:
 

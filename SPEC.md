@@ -538,7 +538,7 @@ order with how each was released (`by jaynes`, `checked`, `accepted`,
 | Log (`/log`) | The latest 500 events, payloads cut at 600 characters, filterable by type and run |
 | New run (`/new`) | Starts a run: a built-in role, one run before (proposed first, the last one run) or a role in the folder, the task, the project folder and an optional preview command |
 | History (`/history`) | The report of `jaynes history`: how many past tool calls a person approved, by category |
-| Setup (`/setup`) | Installs or removes the action gate in Claude Code's settings, keeping a backup |
+| Setup (`/setup`) | First the guard (section 9.1): on or off with a switch, and the free owners, added and removed one at a time, the GitHub user found by gh marked. Then the optional action gate, installed in or removed from Claude Code's settings, keeping a backup |
 
 After an answer the server starts `jaynes run <id>` in the background, logging
 to `runs/<id>/continue.log`, and the page reloads when the log grows, unless
@@ -629,6 +629,57 @@ the code (`jaynes.policy`, `jaynes.gate`, `jaynes.hook`) and summarized here:
 
 Inside conductor runs the runtime sandbox and the write boundary are the
 primary safety; the gate adds floors for any Claude Code turn.
+
+### 9.1 The guard
+
+The floor that always applies, with the gate or without it. The plugin's
+`hooks/hooks.json` runs `hooks/guard.py` before every Bash, Edit, Write,
+MultiEdit and NotebookEdit call, in every Claude Code session where the
+plugin is on. The script uses only python3's standard library and never
+imports jaynes, so it works before the `jaynes` command is installed.
+
+- **What it holds.** git push, git reset --hard, git clean, git branch -D
+  (and --delete --force), git tag -d, gh pr create, merge and close, gh repo
+  create, delete and archive. A dry run (`-n`, `--dry-run`) of push or clean
+  passes. A command counts only at a command boundary (the start, after `;`,
+  `&&`, `||`, `|`, `&`, a newline or a parenthesis, `$(` or a backtick, after
+  `if`, `then`, `do`, variable assignments and wrappers such as `env` or
+  `sudo`, and inside `sh -c` or `eval`), with git's own options such as
+  `-C <dir>` and `-c k=v` before the subcommand. Words inside quotes, comments
+  and heredoc bodies are text, not commands.
+- **How it holds.** It prints PreToolUse JSON with `permissionDecision`
+  `ask` and a `permissionDecisionReason` saying in plain words what cannot be
+  undone and why it asks. It never exits 2. In `claude -p`, where nobody can
+  answer, Claude Code turns the ask into a deny. Everything else gets no
+  output and exit 0, so Claude Code's own permission flow applies. Bad input
+  and the guard's own errors also give no output.
+- **Free owners.** A held action whose repository is on GitHub with an owner
+  in the free owners list passes silently (owners compare case-insensitively).
+  The repository is the hook's `cwd`, changed by `cd X` earlier in the line
+  and by `git -C X`. For git push it is the push URL of the remote named in
+  the command (origin when none is named), or the URL itself. For gh, `-R` or
+  `--repo` owner/name names it, as does the repository argument of gh repo
+  create, delete and archive; otherwise it is the `cwd`'s origin. A
+  repository with no origin, or one not on GitHub, always asks.
+- **Settings.** `$JAYNES_HOME/guard.json` (`~/.jaynes/guard.json`):
+  `{"on": true, "owners": ["nora-builds"], "github_user": "nora-builds"}`.
+  `on` is true when missing or not a boolean. When `owners` is not a list of
+  strings (the file is missing or broken), the first held action finds the
+  person's GitHub user with `gh api user --jq .login` (5 s timeout) and saves
+  it as the only owner and as `github_user`, so later commands never wait on
+  the network. If gh is missing, not logged in or slow, the list is empty and
+  every held action asks. A configured list, even an empty one, replaces the
+  GitHub user, and gh is not called.
+- **Its own files.** An Edit, Write, MultiEdit or NotebookEdit of a file in
+  the plugin's `hooks/` folder or of the settings file asks. So does a Bash
+  command that visibly writes them: a redirection into them, `rm`, `mv`
+  (source or target), `cp`, `ln`, `install` or `rsync` onto them, `tee`,
+  `truncate`, `touch`, `chmod`, `sed -i` or `perl -i` on them, `dd of=`.
+  Removing a folder that holds them asks too. Reading them passes.
+- **Setup.** The Setup page reads and writes the same file through the
+  `/setup` form with the page token (`guard-on`, `guard-off`,
+  `guard-owner-add`, `guard-owner-remove`). The guard off is silent for
+  everything.
 
 ## 10. Success on the first user
 
