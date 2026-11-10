@@ -16,6 +16,7 @@ from jaynes.review import Review, Shared
 RUN = {"type": "string", "description": "the run's id, such as r20261109131915e270dd"}
 STEP = {"type": "string", "description": "the step's name, as the run lists it"}
 NOTE = {"type": "string", "description": "a sentence, in plain words"}
+PROJECT = {"type": "string", "description": "a folder in the project's git repository"}
 
 
 def _tool(name: str, description: str, properties: dict[str, Any] | None = None,
@@ -53,8 +54,9 @@ TOOLS = [
     _tool("continue", "Go on with a run that is not running: blocked, left idle, or past its quota pause.",
           {"run": RUN}, ("run",)),
     _tool("start", "Start a run of a role on a task, in the background. The page shows its stops.",
-          {"role": {"type": "string", "description": "a built-in role such as build-feature, fix-bug or "
-                                                     "small-change, a role file (.toml) or module:attribute"},
+          {"role": {"type": "string", "description": "a role by its name, as packages lists the roles of the "
+                                                     "project's packages, such as build-feature, fix-bug or "
+                                                     "small-change; or a role file (.toml) or module:attribute"},
            "task": {"type": "string", "description": "what the run is asked to do, in full"},
            "project": {"type": "string", "description": "a folder in the git repository the run works on"},
            "inputs": {"type": "object", "description": "the inputs the role declares, name to value"}},
@@ -66,8 +68,26 @@ TOOLS = [
            "note": NOTE}, ("run", "step", "kind", "note")),
     _tool("halt", "Halt every run before its next step, and every merge. Only the person resumes, on the page.",
           {"note": NOTE}),
+    _tool("packages", "The packages of roles installed, each with its roles, and which projects use which: the "
+                      "default list, for every project with no list of its own, and each project's own list. A run "
+                      "takes a role by its name from the first package in its project's list that has it."),
+    _tool("add_package", "Use a package of roles, only when the person asks for it: a folder of theirs with "
+                         "jaynes-package.toml, linked so their edits apply at once; a git repository, installed "
+                         "at its newest commit or at ref; or software or design, which come with Jaynes. It goes "
+                         "first in the project's list. Give the project they named, or the one you work in; leave "
+                         "project out only when they say every project.",
+          {"source": {"type": "string", "description": "a folder, a git address, or software or design"},
+           "project": PROJECT,
+           "ref": {"type": "string", "description": "with a git address: a branch, tag or commit to install"},
+           "folder": {"type": "string", "description": "with a git address: the folder in it that holds the "
+                                                       "package, when it is not the top"}},
+          ("source",)),
+    _tool("remove_package", "Stop using a package in a project, or, without project, in the default list. Its "
+                            "installed versions stay for the runs that use them.",
+          {"name": {"type": "string", "description": "the package's name, as packages lists it"},
+           "project": PROJECT}, ("name",)),
 ]
-CALLS = {"send_back": "send-back"}  # a tool's name, where the API's differs
+CALLS = {"send_back": "send-back", "add_package": "add-package", "remove_package": "remove-package"}  # a tool's name, where the API's differs
 
 
 def call(home: Path, name: str, args: dict[str, Any]) -> tuple[bool, Any]:
@@ -81,6 +101,8 @@ def call(home: Path, name: str, args: dict[str, Any]) -> tuple[bool, Any]:
                 return True, api.stop(r, str(args.get("run", "")), str(args.get("step", "")))
             case "run":
                 return True, api.run(r, str(args.get("run", "")))
+            case "packages":
+                return True, api.installed(r)
             case "start":
                 return True, api.start(r, {**args, "ref": args.get("role", "")}, "agent")
             case _ if name in {t["name"] for t in TOOLS}:

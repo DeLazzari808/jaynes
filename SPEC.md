@@ -394,7 +394,13 @@ changed, and `jaynes update` installs a git package's newest commit unless
 `REF` is a commit. The home's `packages.json` holds what is installed, the
 default list and each project's list, by the project's git root. A project
 without its own list uses the default one; `jaynes add --project` starts its
-list from the default one and puts the package first.
+list from the default one and puts the package first. The page's Roles shows
+the same: each installed package with its version, where it came from and its
+roles, each list in order with Remove, and a form to add a folder or a git
+repository for one project, the one the page was opened from by default, or
+for every project. The API's `add-package` and `remove-package`, and the MCP
+tools `packages`, `add_package` and `remove_package`, do it for an agent the
+person asked.
 
 A role is started by its name, a role file's path, a Python file's
 `path.py:attribute`, or `module:attribute`. A name is looked up in the
@@ -637,12 +643,14 @@ kind is the person's, on the page.
 
 The local API, under `/api/` on the same server, has every action of the
 page as JSON: `POST /api/<action>` with the fields as a JSON object, for
-answer, continue, send-back, dismiss, correct, correction, undo, halt, resume
-and start, and `GET /api/home`, `/api/stop/<run>/<step>` and `/api/run/<run>`
-for what the page shows. The page's buttons go through the same functions
+answer, continue, send-back, dismiss, correct, correction, undo, halt, resume,
+start, add-package and remove-package, and `GET /api/home`,
+`/api/stop/<run>/<step>`, `/api/run/<run>` and `/api/packages` for what the
+page shows. The page's buttons go through the same functions
 (`jaynes.api`). A request with the page key's cookie is the person's; any
 other is an agent's. An agent may answer a stop that holds its run, send a
-blocked run back, continue a run, start one, record a correction and halt;
+blocked run back, continue a run, start one, record a correction, halt, and
+add or remove a package of roles;
 only the person answers a sample (an agent's answer never counts as proof), a
 floor or a braked stop, dismisses a run, files a correction as another kind,
 undoes and resumes, and the API answers anyone else 403. It takes only

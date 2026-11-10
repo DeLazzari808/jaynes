@@ -156,7 +156,8 @@ def test_the_mcp_server_gives_an_agent_the_reads_and_the_answers_it_may_give(tmp
     first = replies[0]["result"]
     assert first["protocolVersion"] == "2025-06-18" and first["serverInfo"]["name"] == "jaynes"
     names = [t["name"] for t in replies[1]["result"]["tools"]]
-    assert names == ["home", "stop", "run", "answer", "send_back", "continue", "start", "correct", "halt"]
+    assert names == ["home", "stop", "run", "answer", "send_back", "continue", "start", "correct", "halt", "packages",
+                     "add_package", "remove_package"]
     shown = json.loads(replies[2]["result"]["content"][0]["text"])
     assert [w["run"] for w in shown["waiting"]] == [waiting] and [s["run"] for s in shown["samples"]] == [went_on]
     sample = replies[3]["result"]

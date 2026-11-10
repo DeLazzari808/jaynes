@@ -5,7 +5,8 @@ the same wherever it comes from.
 Who acts is the person or an agent. The page's server counts a request as the person's when it carries the key
 the person's browser holds, and as an agent's otherwise; the MCP server always acts as an agent. An agent may do
 what an agent can resolve: answer a stop that holds its run, send a blocked run back with a note, try it again,
-start a run, record a correction and halt everything. Only the person answers a sample, since an agent's answer
+start a run, record a correction, halt everything, and add or remove a package of roles when the person asks for
+it. Only the person answers a sample, since an agent's answer
 never counts as proof, and a floor or a braked stop; only the person drops a run, files a correction as another
 kind, undoes a delivery and resumes after a halt.
 """
@@ -19,7 +20,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from jaynes import inputs as run_inputs
 from jaynes import project as repo
-from jaynes import catalog, proof, role_file, verify
+from jaynes import catalog, packages, proof, role_file, verify
 from jaynes.ask import page
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, By, RunBusy, StepState, Waiting,
                               continue_in_background, new_run_id, project, start_in_background)
@@ -352,7 +353,62 @@ def start(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
     return {"run": run_id, "started": True, "page": f"{page(r.c.home)}/run/{run_id}"}
 
 
+def installed(r: Review) -> dict[str, Any]:
+    """The packages of roles installed, each with its roles, and which projects use which: the default list, for
+    every project with no list of its own, and each project's own list, first package first."""
+    home = r.c.home
+    shown: list[dict[str, Any]] = []
+    for p in packages.installed(home).values():
+        folder = Path(p.path)
+        try:
+            about = packages.manifest(folder).about
+        except packages.PackageError:
+            about = ""
+        shown.append({"name": p.name, "version": p.version, "source": p.source, "linked": p.linked,
+                      "commit": p.commit, "ref": p.ref, "about": about, "missing": not folder.is_dir(),
+                      "roles": [x.name for _, x in catalog.found(folder)] if folder.is_dir() else []})
+    return {"packages": shown, "default": packages.uses(home), "projects": packages.projects(home)}
+
+
+def _project_of(f: dict[str, Any]) -> Path | None:
+    given = _text(f, "project").strip()
+    if not given:
+        return None
+    folder = Path(given).expanduser()
+    if not folder.is_dir():
+        raise Refused(400, f"{given} is not a folder on this computer")
+    return folder
+
+
+def add_package(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
+    """Use a package of roles in a project, or in every project with no list of its own: a folder, linked, a git
+    repository, or one that comes with Jaynes by its name."""
+    source = _text(f, "source").strip()
+    if not source:
+        raise Refused(400, "name the package: a folder with jaynes-package.toml, a git address, or software or "
+                           "design")
+    project = _project_of(f)
+    try:
+        p = packages.add(r.c.home, source, project, ref=_text(f, "ref").strip(), folder=_text(f, "folder").strip())
+    except packages.PackageError as err:
+        raise Refused(400, str(err)) from None
+    return {"name": p.name, "version": p.version, "linked": p.linked,
+            "project": packages.root(project) if project else None, "uses": packages.uses(r.c.home, project)}
+
+
+def remove_package(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
+    """Stop using a package in a project, or in the default list; its installed versions stay for the runs that
+    use them."""
+    project = _project_of(f)
+    try:
+        packages.remove(r.c.home, _text(f, "name").strip(), project)
+    except packages.PackageError as err:
+        raise Refused(400, str(err)) from None
+    return {"project": packages.root(project) if project else None, "uses": packages.uses(r.c.home, project)}
+
+
 Action = Callable[["Review", dict[str, Any], By], dict[str, Any]]
 ACTIONS: dict[str, Action] = {"answer": answer, "continue": continue_run, "send-back": send_back, "dismiss": dismiss,
                               "correct": correct, "correction": file_as, "undo": undo, "halt": halt,
-                              "resume": resume, "start": start}
+                              "resume": resume, "start": start, "add-package": add_package,
+                              "remove-package": remove_package}

@@ -383,6 +383,8 @@ form.inline select { background: var(--panel); border: 1px solid var(--line-2); 
 form.inline .btn { padding: 6px 10px; }
 form.owner { justify-content: flex-start; }
 form.owner + form.owner { margin-top: 6px; }
+form.used span.m { min-width: 16ch; }
+.nowrap { white-space: nowrap; }
 form.owner input[type=text] { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font-family: var(--mono); font-size: 12px; padding: 6px 8px; }
 .btn { font-family: var(--mono); font-size: 12.5px; padding: 10px 14px; border-radius: 4px; border: 1px solid var(--line-2); color: var(--ink); background: var(--panel); cursor: pointer; white-space: nowrap; }
 details.ran summary { cursor: pointer; }
@@ -494,7 +496,7 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
 SCRIPT = """
 <script>
 const seq = %d, boot = document.body.dataset.boot;
-const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/undo", "/halt", "/resume", "/start", "/setup", "/update", "/restart"];  // no page to GET
+const posted = ["/answer", "/continue", "/dismiss", "/send-back", "/correction", "/undo", "/halt", "/resume", "/start", "/setup", "/packages", "/update", "/restart"];  // no page to GET
 const busy = () => { const f = document.activeElement; return f && ["INPUT", "TEXTAREA", "SELECT"].includes(f.tagName); };
 let poll = null;
 const check = async () => {
@@ -1682,13 +1684,75 @@ class Review:
                 f'<pre class="sub">{esc(text)}</pre></div></div>')
         return page(title, self.sidebar(None), main, self.seq())
 
-    def roles_page(self) -> str:
+    def roles_page(self, error: str = "", fields: dict[str, str] | None = None) -> str:
         names = sorted({str(ev.payload["role"]) for ev in self.c.store.events("RunStarted")})
         rows = "".join(f'<tr><td><a href="/role/{q(n)}">{esc(n)}</a></td></tr>' for n in names)
-        body = f'<div class="box"><table><tr><th>role</th></tr>{rows}</table></div>' if names else \
+        ran = f'<div class="box"><table><tr><th>role</th></tr>{rows}</table></div>' if names else \
             '<div class="sub">No runs yet.</div>'
-        main = f'<div class="crumbs"><b>Roles</b></div><div class="body">{body}</div>'
+        main = (f'<div class="crumbs"><b>Roles</b></div><div class="body">{self._packages_part(error, fields or {})}'
+                f'<div><div class="label">Roles that ran <span>how each one did</span></div>{ran}</div></div>')
         return page("Roles", self.sidebar(None), main, self.seq())
+
+    def _packages_part(self, error: str, f: dict[str, str]) -> str:
+        """The packages of roles: what is installed, which projects use which, and a form to add one."""
+        shown = api.installed(self)
+        token = f'<input type="hidden" name="token" value="{self.shared.token}">'
+        rows: list[str] = []
+        for p in shown["packages"]:
+            if p["source"] == "jaynes":
+                origin = "comes with Jaynes"
+            elif p["linked"]:
+                origin = f'your folder, linked<div class="m">{esc(p["source"])}</div>'
+            else:
+                origin = f'git, at {esc(p["ref"] or p["commit"][:7])}<div class="m">{esc(p["source"])}</div>'
+            roles = "its folder is missing" if p["missing"] else ", ".join(
+                f'<span class="nowrap">{esc(n)}</span>' for n in p["roles"]) or "no roles"
+            about = f'<div class="m">{esc(p["about"])}</div>' if p["about"] else ""
+            rows.append(f'<tr><td><b>{esc(p["name"])}</b>{about}</td><td class="m">{esc(p["version"])}</td>'
+                        f'<td>{origin}</td><td class="m">{roles}</td></tr>')
+
+        def used(names: list[str], project: str) -> str:
+            return "".join(
+                f'<form method="post" action="/packages" class="inline owner used">{token}<span class="m">{esc(n)}</span>'
+                f'<input type="hidden" name="name" value="{esc(n)}"><input type="hidden" name="project" '
+                f'value="{esc(project)}"><button class="btn" name="action" value="remove">Remove</button></form>'
+                for n in names) or '<div class="m">none</div>'
+        lists = [("every project with no list of its own", "", list(shown["default"]))] + [
+            (where, where, names) for where, names in sorted(shown["projects"].items())]
+        list_rows = "".join(f'<tr><td class="m">{esc(label)}</td><td>{used(names, project)}</td></tr>'
+                            for label, project, names in lists)
+        project = f.get("project", self.default_project())
+        return ('<div><h1>Packages</h1><div class="sub">A package is a set of roles. software and design come with '
+                'Jaynes and follow its version. Add one of yours, a folder or a git repository, for one project or '
+                'for every project. A run takes each role by its name from the first package in its project\'s '
+                'list that has it, and keeps that version to the end.</div></div>'
+                '<div><div class="label">Installed</div><div class="box"><table><tr><th>package</th><th>version</th>'
+                f'<th>from</th><th>roles</th></tr>{"".join(rows)}</table></div></div>'
+                '<div><div class="label">Used by <span>first package first</span></div><div class="box">'
+                f'<table class="kv">{list_rows}</table></div></div>'
+                f'<form class="form" method="post" action="/packages">{token}'
+                '<label><span class="label">Add a package</span><input type="text" name="source" '
+                f'placeholder="~/my-roles or https://github.com/you/roles" value="{esc(f.get("source", ""))}"'
+                + (' autofocus' if error else '') + '>'
+                '<span class="m" style="margin-top:6px">A folder with jaynes-package.toml, linked so your edits '
+                'apply at once, or a git repository, installed at its newest commit; jaynes update moves it to the '
+                'next one.</span></label>'
+                '<label><span class="label">For the project</span><input type="text" name="project" '
+                f'placeholder="/path/to/repository" value="{esc(project)}"><span class="m" style="margin-top:6px">'
+                'Empty: every project with no list of its own.</span></label>'
+                + (f'<div class="err">{esc(error)}</div>' if error else '')
+                + '<button class="btn go" name="action" value="add">Add the package</button></form>')
+
+    def packages(self, fields: dict[str, str]) -> tuple[int, str]:
+        adding = fields.get("action") == "add"
+        act = api.add_package if adding else api.remove_package if fields.get("action") == "remove" else None
+        if act is None:
+            return 400, self.roles_page()
+        try:
+            act(self, fields, "person")
+        except api.Refused as err:
+            return err.status, self.roles_page(err.reason, fields if adding else None)
+        return 303, "/roles"
 
     def role_page(self, name: str) -> str:
         runs = [ev.run_id for ev in self.c.store.events("RunStarted") if ev.payload["role"] == name and ev.run_id]
@@ -2154,9 +2218,11 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                         return self._json(200, api.stop(app, run_id, step))
                     case ["run", run_id]:
                         return self._json(200, api.run(app, run_id))
+                    case ["packages"]:
+                        return self._json(200, api.installed(app))
                     case _:
                         return self._json(404, {"error": "no such address", "reads": ["home", "stop/<run>/<step>",
-                                                                                     "run/<run>"],
+                                                                                     "run/<run>", "packages"],
                                                 "actions": sorted(api.ACTIONS)})
             except api.Refused as err:
                 return self._json(err.status, {"error": err.reason})
@@ -2285,7 +2351,8 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
             handlers = {"/answer": Review.answer, "/continue": Review.resume, "/dismiss": Review.dismiss,
                         "/send-back": Review.send_back, "/correction": Review.correction, "/undo": Review.undo,
                         "/halt": Review.halt, "/resume": Review.resume_all,
-                        "/start": Review.start, "/setup": Review.setup, "/update": Review.update,
+                        "/start": Review.start, "/setup": Review.setup, "/packages": Review.packages,
+                        "/update": Review.update,
                         "/restart": Review.restart}
             if path not in handlers:
                 return self._send(404, "not found", "text/plain")

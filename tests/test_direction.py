@@ -4,6 +4,7 @@ once its run delivered the plan, Jaynes starts it by itself."""
 from __future__ import annotations
 
 import json
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -13,7 +14,8 @@ from jaynes import cli, packages, plan
 from jaynes.conductor import Conductor, project
 from tests.test_merge import git
 from tests.test_plan import drain, pending, repo  # noqa: F401  # pyright: ignore[reportUnusedImport]
-from tests.test_review import get, serving
+from tests.test_api import call, mcp, tool
+from tests.test_review import form, get, post, serving
 
 RUNTIME = ["--runtime", "planner=tests.planned:Agent"]
 REQUEST = "A dark look, then the home screen in it"
@@ -224,3 +226,76 @@ def test_the_new_run_page_offers_each_role_once_by_its_package_version_now(tmp_p
     now = {e.name: e.ref for e in catalog.entries(home)}
     assert "jaynes.roles.build_feature" not in page and page.count("build-feature (") == 1
     assert f'<option value="{now["build-feature"]}" selected>build-feature (software)</option>' in page
+
+
+def installed_part(page: str) -> str:
+    """The packages part of /roles: from its heading to the roles that ran."""
+    return page[page.index("<h1>Packages</h1>"):page.index("Roles that ran")]
+
+
+def test_the_person_adds_a_package_for_one_project_on_the_roles_page_and_removes_it(
+        tmp_path: Path, repo: Path, mine: Path) -> None:  # noqa: F811
+    home = tmp_path / "home"
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    base, server = serving(home)
+    try:
+        page = get(f"{base}/roles")
+        part = installed_part(page)
+        assert "software" in part and "design" in part and "comes with Jaynes" in part
+        assert "fix-bug" in part and "screen-design" in part  # each package with its roles
+        assert "every project" in part and 'name="source"' in part and 'name="project"' in part
+        token = form(page)["token"]
+
+        status, shown = post(f"{base}/packages", {"token": "stale", "action": "add", "source": str(mine)})
+        assert status == 403 and packages.uses(home) == ["software", "design"]
+        status, shown = post(f"{base}/packages", {"token": token, "action": "add", "source": str(empty),
+                                                   "project": str(repo)})
+        assert status == 400 and "has no jaynes-package.toml" in shown and str(empty) in shown  # kept to fix
+        status, _ = post(f"{base}/packages", {"token": token, "action": "add", "source": str(mine),
+                                              "project": str(repo)})
+        assert status == 303
+        assert packages.uses(home, repo) == ["team", "software", "design"] and packages.uses(home) == [
+            "software", "design"]  # only that project
+        part = installed_part(get(f"{base}/roles"))
+        assert "team" in part and "0.1.0" in part and str(mine) in part and "direction" in part
+        assert str(repo) in part
+
+        status, _ = post(f"{base}/packages", {"token": token, "action": "remove", "name": "team",
+                                              "project": str(repo)})
+        assert status == 303 and packages.uses(home, repo) == ["software", "design"]
+    finally:
+        server.shutdown()
+
+
+def test_an_agent_reads_adds_and_removes_packages_through_the_api_and_the_mcp_server(
+        tmp_path: Path, repo: Path, mine: Path) -> None:  # noqa: F811
+    home = tmp_path / "home"
+    base, server = serving(home)
+    try:
+        status, out = call(f"{base}/api/add-package", {"source": str(mine), "project": str(repo)})
+        assert status == 200, out
+        assert out == {"name": "team", "version": "0.1.0", "linked": True, "project": str(repo),
+                       "uses": ["team", "software", "design"]}
+        with urllib.request.urlopen(f"{base}/api/packages", timeout=10) as r:
+            shown = json.loads(r.read())
+    finally:
+        server.shutdown()
+    team = next(p for p in shown["packages"] if p["name"] == "team")
+    assert team["source"] == str(mine) and team["linked"] and "direction" in team["roles"]
+    assert team["about"] == "A team that plans."
+    assert shown["default"] == ["software", "design"] and shown["projects"] == {str(repo): ["team", "software",
+                                                                                            "design"]}
+
+    replies = mcp(home, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                  {"jsonrpc": "2.0", "id": 2, "method": "tools/call",  # its name argument is the package's
+                   "params": {"name": "remove_package", "arguments": {"name": "team", "project": str(repo)}}},
+                  tool(3, "packages"),
+                  tool(4, "add_package", source=str(tmp_path / "missing")))
+    tools = {t["name"]: t for t in replies[0]["result"]["tools"]}
+    assert {"packages", "add_package", "remove_package"} <= set(tools)
+    assert "asks" in tools["add_package"]["description"]  # only when the person asks for it
+    assert not replies[1]["result"]["isError"], replies[1]
+    after = json.loads(replies[2]["result"]["content"][0]["text"])
+    assert after["projects"] == {str(repo): ["software", "design"]}
+    assert replies[3]["result"]["isError"] and packages.uses(home) == ["software", "design"]

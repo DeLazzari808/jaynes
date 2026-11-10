@@ -118,6 +118,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
 | A request as a plan of runs (`jaynes plan`): each run starts once the runs it builds on delivered, from where their delivery landed, without waiting for samples; the page shows the plan | Works in tests and on a scratch page |
 | Roles are packages, as npm libraries: `jaynes add` installs one at a fixed version, from git or a folder of yours, for one project or every project; `jaynes roles` lists what a project can start; the engine has no role of its own | Works in tests and on a scratch home with a private package |
+| Packages on the page (Roles: what is installed, who uses what, add and remove) and for agents (API and MCP: `packages`, `add_package`, `remove_package`) | Works in tests and on a scratch page |
 | A role whose step delivers a plan, which Jaynes checks and starts once its run delivered | Works in tests; a private direction role planned a real request with Claude Code |
 
 Missing, roughly in order:
@@ -226,7 +227,8 @@ jaynes                         # opens the page on http://127.0.0.1:8740
 Roles come in packages. Jaynes installs two by itself, `software`
 (build-feature, fix-bug, small-change) and `design` (visual-identity,
 redesign, screen-design), for every project. Add your own for one project or
-for all:
+for all on the page, under Roles, or ask your agent to ("use the roles in
+~/my-team in this project"), or by hand:
 
 ```sh
 jaynes add ~/my-team --project .            # a folder with jaynes-package.toml, linked: edits apply at once
