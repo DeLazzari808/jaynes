@@ -2,6 +2,20 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: The person drops a run of a plan before it starts
+
+**Decided.** The first piece of changing a plan once it started: on the
+request page, Drop takes out a run that has not started and that no other run
+builds on. It never starts, the request delivers without it, and the drop is an
+event of the request (`RequestRunDropped`). Only the person drops, as only the
+person dismisses a run; an agent's request is refused. A run another builds on
+stays until that one is dropped first. Adding a run or changing one is still
+open.
+
+Why now: the direction planned a screen design of `/health` for tenure-app,
+a page only Hangar reads, and Alan agreed it should go. Until now the only way
+out was to dismiss it once it started.
+
 ## 2026-11-10: The docs live on jaynes.dev/docs; packages need no terminal
 
 **Decided.** People rarely type Jaynes's commands: their agent does. So the

@@ -66,7 +66,7 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
    Each run starts once the runs it builds on delivered, from where their delivery landed, and its task names
    what they delivered; it never waits for their samples. When it is refused, it says why: fix the plan and run
    it again. It prints one line of JSON with the `request`, its `page`, and each run's `state` (planned,
-   working, delivered or stopped). Tell the person the plan in one line, the runs in order, with the `page`
+   working, delivered, stopped, or dropped: the person took it out before it started). Tell the person the plan in one line, the runs in order, with the `page`
    link, then run `jaynes wait <request>` in the background. It returns with a new line of JSON when the
    request's `status` is `delivered` or `stopped`, or when a run `holds` for the person: tell them its
    `question` or `reasons`, with its `page`, and wait again; when it delivered, say in one sentence where each

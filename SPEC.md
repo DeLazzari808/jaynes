@@ -363,7 +363,9 @@ every request still working, and starts again a run marked started whose
 `RunStarted` has not arrived after 60 s. `jaynes wait <request>` returns when
 the request delivered or stopped, or when something new holds one of its runs.
 The page shows `/request/<id>` and, under Running now, the requests whose next
-runs wait.
+runs wait. On the request page the person drops a run that has not started and
+that no other run builds on (`RequestRunDropped`, the API's `drop-run`, the
+person's alone): it never starts, and the request delivers without it.
 
 A role plans when a step's output is `jaynes.plan.Plan` (`runs`, each with
 `name`, `role` by name, `task`, `after`, `preview`, `preview_path`, `suite`,

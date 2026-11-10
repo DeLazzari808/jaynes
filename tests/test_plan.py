@@ -4,6 +4,7 @@ landed, and hears what they delivered."""
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -227,3 +228,46 @@ def test_waiting_on_a_request_returns_once_it_delivered(
 
     said = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert said["status"] == "delivered" and [r["state"] for r in said["runs"]] == ["delivered", "delivered"]
+
+
+FOUR = {"request": "A dark look, the home screen in it, polished, and a health page",
+        "runs": runs({"name": "look", "role": "tests.planned:LOOK", "task": "Paint a dark look"},
+                     {"name": "screen", "role": "tests.planned:SCREEN", "task": "Build the home screen",
+                      "after": ["look"]},
+                     {"name": "polish", "role": "tests.planned:SCREEN", "task": "Polish the home screen",
+                      "after": ["screen"]},
+                     {"name": "health", "role": "tests.planned:SCREEN", "task": "Design the health page",
+                      "after": ["look"]})}
+
+
+def test_the_person_drops_a_run_of_the_plan_before_it_starts_and_the_plan_delivers_without_it(
+        tmp_path: Path, repo: Path, pending: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
+    from tests.test_api import call
+    from tests.test_review import form, post
+    out = start(tmp_path, capsys, FOUR, repo)
+    rid = out["request"]
+    base, server = serving(tmp_path / "home")
+    try:
+        page = get(f"{base}/request/{rid}")
+        droppable = re.findall(r'name="name" value="([a-z-]+)"><button class="btn"[^>]*>Drop', page)
+        assert droppable == ["polish", "health"]  # not started, and no run builds on them
+        token = form(page)["token"]
+        status, shown = post(f"{base}/drop", {"token": token, "request": rid, "name": "screen"})
+        assert status == 400 and "polish builds on it" in shown
+        status, _ = call(f"{base}/api/drop-run", {"request": rid, "name": "health"})
+        assert status == 403  # an agent never takes a run out of the person's plan
+        status, _ = post(f"{base}/drop", {"token": token, "request": rid, "name": "health"})
+        assert status == 303
+        page = get(f"{base}/request/{rid}")
+        assert re.search(r"health: Design the health page.*?dropped", page, re.S)
+        assert "0 of 3 runs delivered" in page
+    finally:
+        server.shutdown()
+
+    assert len(drain(pending, capsys)) == 3  # look, screen and polish; health never starts
+    c = Conductor(tmp_path / "home")
+    [req] = plan.requests(c, rid)
+    assert {x.planned.name: x.state for x in plan.places(c, req)}["health"] == "dropped"
+    assert plan.status(c, req) == "delivered"
+    with pytest.raises(plan.PlanError, match="already started"):
+        plan.drop(c, rid, "look")

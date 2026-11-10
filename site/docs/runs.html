@@ -89,7 +89,7 @@
 </ul>
 <p>Only an error counts against the stop that let it through. You can change the kind on the run's page.</p>
 <h2 id="plans">Plans</h2>
-<p>A request that needs more than one role, such as a new look and then a screen in it, becomes a plan of runs. Each run starts once the runs it builds on delivered, from where their delivery landed, and the page shows the whole plan. A role can plan a request too: Jaynes checks the plan it delivers, and starts it by itself. See <a href="write-a-role.html#a-role-that-plans">Write a role</a>.</p>
+<p>A request that needs more than one role, such as a new look and then a screen in it, becomes a plan of runs. Each run starts once the runs it builds on delivered, from where their delivery landed, and the page shows the whole plan. A role can plan a request too: Jaynes checks the plan it delivers, and starts it by itself. On the request's page, <strong>Drop</strong> takes a run out of the plan before it starts, when no other run builds on it; the request then delivers without it. See <a href="write-a-role.html#a-role-that-plans">Write a role</a>.</p>
 <h2 id="previews">Previews</h2>
 <p>With a preview command, such as <code>npm run dev -- --port {port}</code>, each stop shows the project before and after the change. The agent tells Jaynes the command when your project has a dev server; on New run it is a field.</p>
 <p>The preview runs the agent's changes, so on macOS it runs in a box: it writes only to its copy, cannot read where secrets live, and reaches no network but the local ports you list, such as a backend it needs.</p>

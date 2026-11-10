@@ -8,7 +8,7 @@ what an agent can resolve: answer a stop that holds its run, send a blocked run 
 start a run, record a correction, halt everything, and add or remove a package of roles when the person asks for
 it. Only the person answers a sample, since an agent's answer
 never counts as proof, and a floor or a braked stop; only the person drops a run, files a correction as another
-kind, undoes a delivery and resumes after a halt.
+kind, undoes a delivery, resumes after a halt and takes a run out of a plan.
 """
 
 from __future__ import annotations
@@ -353,6 +353,18 @@ def start(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
     return {"run": run_id, "started": True, "page": f"{page(r.c.home)}/run/{run_id}"}
 
 
+def drop_run(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
+    """Take a run out of a plan before it starts."""
+    from jaynes import plan
+    _person_only(by, "takes a run out of a plan")
+    rid, name = _text(f, "request"), _text(f, "name")
+    try:
+        plan.drop(r.c, rid, name)
+    except plan.PlanError as err:
+        raise Refused(400, str(err)) from None
+    return {"request": rid, "dropped": name}
+
+
 def installed(r: Review) -> dict[str, Any]:
     """The packages of roles installed, each with its roles, and which projects use which: the default list, for
     every project with no list of its own, and each project's own list, first package first."""
@@ -410,5 +422,5 @@ def remove_package(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
 Action = Callable[["Review", dict[str, Any], By], dict[str, Any]]
 ACTIONS: dict[str, Action] = {"answer": answer, "continue": continue_run, "send-back": send_back, "dismiss": dismiss,
                               "correct": correct, "correction": file_as, "undo": undo, "halt": halt,
-                              "resume": resume, "start": start, "add-package": add_package,
+                              "resume": resume, "start": start, "add-package": add_package, "drop-run": drop_run,
                               "remove-package": remove_package}

@@ -133,8 +133,8 @@ Missing, roughly in order:
   waits 7 days, not yet a time of its own. A step cannot yet start over from
   scratch, giving its reason, instead of correcting on top.
 - **Changing a plan.** A role can plan a request, and its plan's sample
-  counts; but a plan cannot be started from the page or changed once it
-  started, so a return makes a new plan that does not replace it.
+  counts; once it started, you can drop a run that has not started, but not
+  add or change one, and a plan cannot be started from the page.
 - **small-change merging alone.** It has no hidden checks yet, so the
   person still merges it.
 - **Halting a turn under way.** Halt all stops every run before its next

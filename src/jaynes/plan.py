@@ -263,16 +263,24 @@ class Place:
     """Where one run of a plan is."""
 
     planned: Planned
-    state: str  # planned, working, delivered or stopped
+    state: str  # planned, working, delivered, stopped, or dropped by the person before it started
     why: str = ""  # for planned, what it waits for; for stopped, why
+
+
+def dropped(c: Conductor, req: Request) -> set[str]:
+    """The runs the person took out of the plan before they started."""
+    return {str(e.payload["name"]) for e in c.store.events("RequestRunDropped", run_id=req.id)}
 
 
 def places(c: Conductor, req: Request) -> list[Place]:
     out: list[Place] = []
     by: dict[str, Place] = {}
+    out_of_it = dropped(c, req)
     for p in req.runs:
         st = _state(c, p.run)
-        if st is not None and st.started is not None:
+        if p.name in out_of_it and (st is None or st.started is None):
+            place = Place(p, "dropped", "dropped by the person")
+        elif st is not None and st.started is not None:
             why = stopped(st)
             place = (Place(p, "stopped", why) if why else
                      Place(p, "delivered") if delivered(load(p.role), st) else Place(p, "working"))
@@ -297,9 +305,35 @@ def started_mark(c: Conductor, req: Request, name: str) -> float | None:
 
 
 def status(c: Conductor, req: Request) -> str:
-    """delivered once every run delivered, stopped when one never will, otherwise working."""
-    states = {x.state for x in places(c, req)}
-    return "delivered" if states == {"delivered"} else "stopped" if "stopped" in states else "working"
+    """delivered once every run delivered, stopped when one never will, otherwise working; a run the person dropped
+    does not count."""
+    states = {x.state for x in places(c, req) if x.state != "dropped"}
+    return "delivered" if states == {"delivered"} else "stopped" if not states or "stopped" in states else "working"
+
+
+def drop(c: Conductor, rid: str, name: str) -> None:
+    """Take a run out of the plan before it starts, as the person decided. A run another run builds on stays,
+    until that one is dropped first; one already started is dismissed on its own page instead."""
+    with _locked(c, rid) as mine:
+        if not mine:
+            raise PlanError(["the plan is starting runs right now; try again in a moment"])
+        found = requests(c, rid)
+        if not found:
+            raise PlanError([f"no request {rid}"])
+        req = found[0]
+        place = next((x for x in places(c, req) if x.planned.name == name), None)
+        if place is None:
+            raise PlanError([f"the plan has no run {name!r}"])
+        if place.state == "dropped":
+            raise PlanError([f"{name} is already dropped"])
+        if place.state != "planned":
+            raise PlanError([f"{name} already started; dismiss it on its own page instead"])
+        out_of_it = dropped(c, req)
+        after = [p.name for p in req.runs if name in p.after and p.name not in out_of_it]
+        if after:
+            raise PlanError([f"{', '.join(after)} builds on it; drop {'that' if len(after) == 1 else 'those'} "
+                             "first"])
+        c.store.append("RequestRunDropped", {"name": name, "run": place.planned.run}, run_id=rid)
 
 
 def _files(c: Conductor, st: RunState) -> list[str]:

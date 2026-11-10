@@ -61,7 +61,7 @@ Only an error counts against the stop that let it through. You can change the ki
 
 ## Plans
 
-A request that needs more than one role, such as a new look and then a screen in it, becomes a plan of runs. Each run starts once the runs it builds on delivered, from where their delivery landed, and the page shows the whole plan. A role can plan a request too: Jaynes checks the plan it delivers, and starts it by itself. See [Write a role](write-a-role.md#a-role-that-plans).
+A request that needs more than one role, such as a new look and then a screen in it, becomes a plan of runs. Each run starts once the runs it builds on delivered, from where their delivery landed, and the page shows the whole plan. A role can plan a request too: Jaynes checks the plan it delivers, and starts it by itself. On the request's page, **Drop** takes a run out of the plan before it starts, when no other run builds on it; the request then delivers without it. See [Write a role](write-a-role.md#a-role-that-plans).
 
 ## Previews
 
