@@ -168,12 +168,17 @@ class Stop:
     sampled: bool = True
     audit_rate: float = 0.1
     delta: float = 0.05
+    waits: bool = field(default=False, repr=False)  # left out of the repr, so every role's fingerprint stays
 
 
-def stop(budget: float, sampled: bool = True, audit_rate: float = 0.1, delta: float = 0.05) -> Stop:
+def stop(budget: float, sampled: bool = True, audit_rate: float = 0.1, delta: float = 0.05,
+         waits: bool = False) -> Stop:
+    """Where a step needs the person. Most stops show the output and the run goes on; one that ``waits`` holds the run
+    until the person answers, for a choice that is theirs to make, such as a look among three. It always asks, and
+    only the person answers it."""
     if not 0 < budget < 1 or not 0 < delta < 1 or not 0 <= audit_rate <= 1:
         raise ValueError("budget and delta must be in (0, 1), audit_rate in [0, 1]")
-    return Stop(budget, sampled, audit_rate, delta)
+    return Stop(budget, sampled and not waits, audit_rate, delta, waits)
 
 
 @dataclass(frozen=True)

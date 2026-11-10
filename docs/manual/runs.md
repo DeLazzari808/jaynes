@@ -17,6 +17,7 @@ Most stops do not hold the run. It goes on with the agent's choice and delivers 
 - a step that does something that cannot be undone, such as sending or paying, waits for every stop before it;
 - a change to a file that runs outside the box (see [Files that run later](#files-that-run-later));
 - an output that would end the run early, such as fix-bug finding no bug a test can show;
+- a stop the role marks as one that waits for your choice, such as a look among three;
 - a stop that was wrong too often lately (see [A stop asks less as it proves right](#a-stop-asks-less-as-it-proves-right)).
 
 A stop the role marks as a floor asks on every run and only you answer it, but the run goes on meanwhile, unless it is one of the above.

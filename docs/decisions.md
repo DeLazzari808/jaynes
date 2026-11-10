@@ -2,6 +2,29 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: Choices of taste wait for the person; a plan names its specialists
+
+**Decided.** A role can mark a stop as one that waits: `stop(budget,
+waits=True)`. The run holds there until the person answers; it always asks,
+and only the person answers. Every other stop still shows its output and lets
+the run go on.
+
+- Why: since stops stopped holding runs (2026-11-08), a role had no way to
+  wait for a choice that is the person's to make. On a real project the identity
+  applied a look Alan never saw and the screen design went on with moments and
+  requirements the agent picked. Taste is an input, not a check.
+- A plan's run may name the `specialist` who does it; the request page shows
+  it. Specialists stay outside Jaynes, in the private repository; Jaynes only
+  carries the name.
+- The flag is left out of the stop's repr, so no role's fingerprint, and no
+  stop's count, changes.
+
+**Open.** Where the roles live. For now the new roles are private, in the
+private repository's package; maybe public later. Alan, same day: the
+commercial plan may become an open engine with a few usable roles, more roles
+hosted in a registry as npm does, and the private specialists powered by
+Jaynes as what he sells.
+
 ## 2026-11-10: Dismiss on every run, also while it works
 
 **Decided.** Every unfinished run's page has Dismiss, not only idle and
@@ -25,7 +48,7 @@ person dismisses a run; an agent's request is refused. A run another builds on
 stays until that one is dropped first. Adding a run or changing one is still
 open.
 
-Why now: the direction planned a screen design of `/health` for tenure-app,
+Why now: the direction planned a screen design of `/health` for a real project,
 a page only Hangar reads, and Alan agreed it should go. Until now the only way
 out was to dismiss it once it started.
 

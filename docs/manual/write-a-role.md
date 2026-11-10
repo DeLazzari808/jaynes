@@ -80,7 +80,7 @@ A key Jaynes does not know, a reference that does not import, or a question that
 
 ## Stops
 
-`stop=stop(budget=0.2)` makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. `stop(budget=0.05, sampled=False)` always asks. [Runs and stops](runs.md#a-stop-asks-less-as-it-proves-right) has how a stop earns that.
+`stop=stop(budget=0.2)` makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. `stop(budget=0.05, sampled=False)` always asks. Most stops show the output and the run goes on; `stop(0.2, waits=True)` holds the run until you answer, for a choice that is yours to make, such as a look among three. It always asks, and only you answer it. [Runs and stops](runs.md#a-stop-asks-less-as-it-proves-right) has how a stop earns that.
 
 ## Steps that act on the world
 
@@ -88,7 +88,7 @@ A step Jaynes runs that acts on the world declares it, with `effect`. A step wit
 
 ## A role that plans
 
-A role whose step outputs `jaynes.plan.Plan` plans a request: its runs, each with a role, a task and the runs it builds on (`after`), and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.
+A role whose step outputs `jaynes.plan.Plan` plans a request: its runs, each with a role, a task, the runs it builds on (`after`) and, when a team planned it, the `specialist` who does it; and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.
 
 ```python
 from jaynes.plan import Plan

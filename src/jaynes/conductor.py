@@ -1165,7 +1165,7 @@ class Conductor:
             "evidence": evidence_hash(s.checked, question, shown), **({"floor_paths": later} if later else {}),
             **({"ends": True} if ending else {}), **({"shown": shown} if shown else {}),
             **({"braked": {"n": c.after[0], "k": c.after[1]}} if status == "braked" else {}),
-            **({"holds": True} if later or ending or status == "braked" else {})})
+            **({"holds": True} if later or ending or status == "braked" or sp.waits else {})})
 
     # helpers ------------------------------------------------------------------
 

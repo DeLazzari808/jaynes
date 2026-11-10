@@ -35,7 +35,7 @@ ROLE_KEYS = {"name", "agent", "method", "method_file", "about", "step"}
 STEP_KEYS = {"name", "output", "needs", "check", "stop", "run_by", "agent", "instructions", "max_turns", "deadline",
              "question", "project", "may_change", "web", "effect", "ends",
              "max_messages"}
-STOP_KEYS = {"budget", "sampled", "audit_rate", "delta"}
+STOP_KEYS = {"budget", "sampled", "audit_rate", "delta", "waits"}
 
 
 class RoleFileError(ValueError):
@@ -115,7 +115,7 @@ def _known(where: str, table: dict[str, Any], keys: set[str]) -> None:
 
 def _stop(step: str, table: Any) -> Stop:
     if not isinstance(table, dict) or "budget" not in table or set(table) - STOP_KEYS:  # pyright: ignore[reportUnknownArgumentType]
-        raise ValueError(f"step {step}: stop takes budget, and optionally sampled, audit_rate and delta, as "
+        raise ValueError(f"step {step}: stop takes budget, and optionally sampled, audit_rate, delta and waits, as "
                          "{ budget = 0.2 }")
     return stop(**table)  # pyright: ignore[reportUnknownArgumentType]
 

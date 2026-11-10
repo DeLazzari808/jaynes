@@ -126,8 +126,11 @@ Rules:
   stop. It is recorded in `StopOpened` and is part of the stop's fingerprint.
   Without it the page asks whether the output is right, or, for a step with
   no output, whether the person accepts the result of the steps it needs.
-- `stop(budget, sampled=True, audit_rate=0.1)`: `sampled=False` makes it a
-  floor.
+- `stop(budget, sampled=True, audit_rate=0.1, waits=False)`: `sampled=False`
+  makes it a floor. `waits=True` makes it a floor that holds the run until the
+  person answers (`holds` in `StopOpened`), for a choice that is theirs, such
+  as a look among three; it is left out of the stop's repr, so fingerprints do
+  not change.
 - `ends=fn(output) -> bool` lets an output end the run early, such as
   fix-bug's "no test shows the bug". It needs a stop, and when it holds
   that stop is a floor: only a person ends a run. Accepting (or changing
@@ -369,7 +372,8 @@ person's alone): it never starts, and the request delivers without it.
 
 A role plans when a step's output is `jaynes.plan.Plan` (`runs`, each with
 `name`, `role` by name, `task`, `after`, `preview`, `preview_path`, `suite`,
-`inputs`; and `why`). The step's prompt lists the roles from `jaynes roles`
+`inputs`, and `specialist`, who does it when a team planned it, which the
+request page shows; and `why`). The step's prompt lists the roles from `jaynes roles`
 that do not plan, each with its `about`, inputs and whether it changes or
 merges the project; the conductor checks the plan as `jaynes plan` would, and
 its reasons send the step back. The run's `RunStarted` carries `plans: true`.

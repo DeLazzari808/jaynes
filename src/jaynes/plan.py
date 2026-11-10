@@ -46,6 +46,8 @@ class Run(BaseModel):
     preview_path: str = Field("", description="the path of the screen the run changes, in the preview")
     suite: str = Field("", description="the command that runs the project's tests, when Jaynes cannot find it")
     inputs: dict[str, str] = Field(default_factory=dict[str, str], description="the role's inputs, by name")
+    specialist: str = Field("", description="who does this run, when the plan comes from a team of specialists, "
+                                            "such as product-designer; empty otherwise")
 
 
 class Plan(BaseModel):
@@ -77,6 +79,7 @@ class Planned:
     suite: str = ""
     inputs: dict[str, str] = field(default_factory=dict[str, str])
     runtimes: dict[str, str] = field(default_factory=dict[str, str])
+    specialist: str = ""  # who does it, when a team planned it
 
 
 @dataclass(frozen=True)
@@ -177,7 +180,8 @@ def parse(data: object, has_project: bool, home: Path, project: Path | None = No
                 branches.add(name)
             runs.append(Planned(name, reference, task, new_run_id(), tuple(dict.fromkeys(after)),
                                 _text(x, "preview"), _text(x, "preview_path"), _text(x, "preview_ports"),
-                                _text(x, "suite"), _pairs(x, "inputs", where), _pairs(x, "runtimes", where)))
+                                _text(x, "suite"), _pairs(x, "inputs", where), _pairs(x, "runtimes", where),
+                                _text(x, "specialist")))
         except PlanError as err:
             reasons.extend(f"{where}: {r}" for r in err.reasons)
     if reasons:
@@ -205,7 +209,8 @@ def _request(e: Any) -> Request:
     p = e.payload
     runs = tuple(Planned(str(r["name"]), str(r["role"]), str(r["task"]), str(r["run"]), tuple(r.get("after") or ()),
                          str(r.get("preview", "")), str(r.get("preview_path", "")), str(r.get("preview_ports", "")),
-                         str(r.get("suite", "")), dict(r.get("inputs") or {}), dict(r.get("runtimes") or {}))
+                         str(r.get("suite", "")), dict(r.get("inputs") or {}), dict(r.get("runtimes") or {}),
+                         str(r.get("specialist", "")))
                  for r in cast(list[dict[str, Any]], p["runs"]))
     return Request(str(e.run_id), str(p["request"]), p.get("project"), runs, float(e.ts), p.get("by"))
 

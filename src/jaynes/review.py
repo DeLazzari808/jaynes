@@ -944,7 +944,8 @@ class Review:
                 role = p.role
             inner = (f'<div><div class="t">{esc(p.name)}: {marked(headline(p.task))}</div>'
                      + (f'<div class="q">{marked(headline(said, 140))}</div>' if said else "")
-                     + f'<div class="m">{chip}<span>{esc(role)}</span><span>{esc(follows)}</span>{drop}</div></div>')
+                     + f'<div class="m">{chip}' + (f'<span>{esc(p.specialist)}</span>' if p.specialist else '')
+                     + f'<span>{esc(role)}</span><span>{esc(follows)}</span>{drop}</div></div>')
             started = x.state != "planned" and list(self.c.store.events("RunStarted", run_id=p.run))
             rows.append(f'<a class="hrow" href="/run/{q(p.run)}">{inner}</a>' if started else
                         f'<div class="hrow">{inner}</div>')

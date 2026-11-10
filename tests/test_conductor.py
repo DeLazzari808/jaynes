@@ -627,3 +627,22 @@ def test_a_run_dismissed_while_it_works_finishes_when_its_step_ends_and_runs_no_
     assert c.run(r, "t", run_id="r1").status == "finished"
     assert agent.counts == {"a": 1}  # b never ran
     assert payloads(c, "r1", "RunFinished") == [{"outcome": "dismissed"}] and c.queue(idle_after=0) == []
+
+
+def test_a_stop_that_waits_holds_the_run_until_the_person_answers_and_keeps_every_fingerprint(tmp_path: Path) -> None:
+    assert repr(stop(0.2)) == "Stop(budget=0.2, sampled=True, audit_rate=0.1, delta=0.05)"  # counts kept
+    waits = stop(0.2, waits=True)
+    assert waits.waits and not waits.sampled  # a choice of taste is never skipped
+    r = role("taste", agent="fake")
+    pick = r.step("pick", output=Note, stop=waits)
+    r.step("build", output=Note, needs=[pick])
+    agent = Scripted(default=lambda s: {"text": s})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    out = c.run(r, "t", run_id="r1")
+    assert out.status == "waiting" and out.step == "pick" and agent.counts == {"pick": 1}  # build waits for it
+    [w] = [x for x in c.queue(idle_after=0) if x.kind == "stop"]
+    assert w.holds and w.needs_person
+    with pytest.raises(AnswerRejected):
+        c.answer(r, "r1", "pick", "accept", by="agent")  # only the person answers a choice of taste
+    c.answer(r, "r1", "pick", "accept", by="person")
+    assert c.run(r, "t", run_id="r1").status == "finished" and agent.counts == {"pick": 1, "build": 1}

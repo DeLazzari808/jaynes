@@ -271,3 +271,23 @@ def test_the_person_drops_a_run_of_the_plan_before_it_starts_and_the_plan_delive
     assert plan.status(c, req) == "delivered"
     with pytest.raises(plan.PlanError, match="already started"):
         plan.drop(c, rid, "look")
+
+
+def test_a_plan_names_the_specialist_of_each_run_and_the_page_shows_it(
+        tmp_path: Path, repo: Path, pending: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
+    data = {"request": "A dark look, then the home screen in it",
+            "runs": runs({"name": "look", "role": "tests.planned:LOOK", "task": "Paint a dark look",
+                          "specialist": "brand-designer"},
+                         {"name": "screen", "role": "tests.planned:SCREEN", "task": "Build the home screen",
+                          "after": ["look"]})}
+    out = start(tmp_path, capsys, data, repo)
+    c = Conductor(tmp_path / "home")
+    [req] = plan.requests(c, out["request"])
+    assert [p.specialist for p in req.runs] == ["brand-designer", ""]
+    base, server = serving(tmp_path / "home")
+    try:
+        page = get(f"{base}/request/{out['request']}")
+    finally:
+        server.shutdown()
+    assert re.search(r"look: Paint a dark look.*?brand-designer", page, re.S)
+    assert plan.Run.model_json_schema()["properties"]["specialist"]["description"].startswith("who does this run")

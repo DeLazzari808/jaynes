@@ -82,11 +82,11 @@ instructions = &quot;Write one sentence about the topic in inputs/topic.json wit
 </code></pre>
 <p>A key Jaynes does not know, a reference that does not import, or a question that names a field the output lacks is refused, with the step it is in.</p>
 <h2 id="stops">Stops</h2>
-<p><code>stop=stop(budget=0.2)</code> makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. <code>stop(budget=0.05, sampled=False)</code> always asks. <a href="runs.html#a-stop-asks-less-as-it-proves-right">Runs and stops</a> has how a stop earns that.</p>
+<p><code>stop=stop(budget=0.2)</code> makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. <code>stop(budget=0.05, sampled=False)</code> always asks. Most stops show the output and the run goes on; <code>stop(0.2, waits=True)</code> holds the run until you answer, for a choice that is yours to make, such as a look among three. It always asks, and only you answer it. <a href="runs.html#a-stop-asks-less-as-it-proves-right">Runs and stops</a> has how a stop earns that.</p>
 <h2 id="steps-that-act-on-the-world">Steps that act on the world</h2>
 <p>A step Jaynes runs that acts on the world declares it, with <code>effect</code>. A step with <code>effect=&quot;irreversible&quot;</code>, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with <code>ctx.idempotency_key</code> for the service it calls, and a run that stopped while it was running is blocked instead of running it again.</p>
 <h2 id="a-role-that-plans">A role that plans</h2>
-<p>A role whose step outputs <code>jaynes.plan.Plan</code> plans a request: its runs, each with a role, a task and the runs it builds on (<code>after</code>), and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.</p>
+<p>A role whose step outputs <code>jaynes.plan.Plan</code> plans a request: its runs, each with a role, a task, the runs it builds on (<code>after</code>) and, when a team planned it, the <code>specialist</code> who does it; and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.</p>
 <pre><code class="language-python">from jaynes.plan import Plan
 from jaynes.role import role, stop
 
