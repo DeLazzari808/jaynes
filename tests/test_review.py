@@ -727,7 +727,7 @@ def test_a_run_is_titled_by_a_line_and_its_whole_task_is_one_click_away(tmp_path
 
 def test_a_blocked_run_goes_back_from_its_page_to_the_step_the_person_names_with_their_note(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from jaynes import review
+    from jaynes import api
     from tests import stopped
     cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:BLOCKS", "--task", "rank people",
               "--runtime", "quick=tests.stopped:Drafts"])
@@ -739,7 +739,7 @@ def test_a_blocked_run_goes_back_from_its_page_to_the_step_the_person_names_with
     def background(home: Path, run_id: str) -> None:
         continued.append(run_id)
 
-    monkeypatch.setattr(review, "continue_in_background", background)
+    monkeypatch.setattr(api, "continue_in_background", background)  # the page's buttons go through the API
     base, server = serving(tmp_path)
     try:
         page = get(f"{base}/stop/{run}/build")

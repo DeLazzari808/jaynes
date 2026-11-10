@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import html
+import json
 import re
 from pathlib import Path
 
 import pytest
 from pydantic import BaseModel
 
-from jaynes import cli, review
+from jaynes import api, cli
 from jaynes.conductor import Conductor
 from jaynes.role import DISPUTES, Disputes, Pass, Witnesses, role
 from tests.fakes import Scripted, write
+from tests.test_api import call
 from tests.test_review import get, post, serving
 
 SAID = "test_zero expects the old total"
@@ -54,7 +56,7 @@ def blocked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Conductor,
     def nothing(home: Path, run_id: str) -> None:
         pass
 
-    monkeypatch.setattr(review, "continue_in_background", nothing)
+    monkeypatch.setattr(api, "continue_in_background", nothing)  # the page's buttons go through the API
     cli.main(["run", "--home", str(tmp_path), "--role", "tests.test_dispute:R", "--task", "t",
               "--runtime", "fake=tests.test_dispute:Stubborn"])
     c = Conductor(tmp_path)
@@ -117,3 +119,24 @@ def test_fix_the_test_sends_back_what_the_agent_said(tmp_path: Path, blocked: tu
         assert (sent["to"], sent["by"]) == ("tests", "person") and SAID in sent["note"]
     finally:
         server.shutdown()
+
+
+def test_an_agent_sees_the_dispute_and_the_two_choices_the_page_gives(tmp_path: Path,
+                                                                      blocked: tuple[Conductor, str]) -> None:
+    c, run = blocked
+    base, server = serving(tmp_path)
+    try:
+        page = get(f"{base}/stop/{run}/code")
+        [w] = json.loads(get(base + "/api/home"))["waiting"]
+        fix, keep = w["dispute"]["choices"]
+        status, out = call(base + "/api/send-back", {"run": run, "to": keep["to"], "note": keep["note"]})
+    finally:
+        server.shutdown()
+    assert (w["kind"], w["who_answers"]) == ("blocked", "anyone")
+    assert (w["dispute"]["about"], w["dispute"]["said"]) == ("test", SAID)
+    assert [x["label"] for x in (fix, keep)] == ["Fix the test", "Keep the test"]
+    for x in (fix, keep):  # the same send back the page's button posts
+        assert {k: form_of(page, x["label"])[k] for k in ("to", "note")} == {"to": x["to"], "note": x["note"]}
+    assert status == 200, out
+    [sent] = [e.payload for e in c.store.events("RunSentBack", run_id=run)]
+    assert (sent["to"], sent["by"]) == ("code", "agent")

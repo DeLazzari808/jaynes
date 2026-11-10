@@ -647,6 +647,9 @@ def main(argv: list[str] | None = None) -> int:
     ak.add_argument("run")
     ak.add_argument("--home")
     sub.add_parser("answered", help="Claude Code's hook after its question dialog")
+    mc = sub.add_parser("mcp", help="the MCP server for agents, over stdio: what waits, and the answers an agent "
+                                    "may give; Claude Code starts it with the plugin")
+    mc.add_argument("--home")
     args = ap.parse_args(argv)
     if args.cmd is None:
         _open_page(jaynes_home(), 8740)
@@ -657,6 +660,10 @@ def main(argv: list[str] | None = None) -> int:
         return answered()
     if args.cmd == "policy":
         print(BUILT_IN_POLICY.read_text(), end="")
+        return 0
+    if args.cmd == "mcp":
+        from jaynes import mcp
+        mcp.serve(_home(args))
         return 0
     if args.cmd == "review":
         from jaynes.review import serve

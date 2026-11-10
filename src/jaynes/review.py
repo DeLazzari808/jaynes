@@ -45,10 +45,10 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import bounds, guard, install, outcome, proof, role_file, roles, sandbox, skill, update, verify
+from jaynes import api, bounds, guard, install, outcome, role_file, roles, sandbox, skill, update
 from jaynes import project as repo
-from jaynes.conductor import (LABELS, Answer, AnswerRejected, Conductor, RunBusy, RunState, StepState, Waiting,
-                              continue_in_background, holds, new_run_id, project, return_to, start_in_background)
+from jaynes.conductor import (By, Conductor, RunState, StepState, Waiting, continue_in_background, holds, project,
+                              return_to)
 from jaynes.history import Report, past_calls, report
 from jaynes import inputs as run_inputs
 from jaynes.preview import Previews
@@ -922,35 +922,28 @@ class Review:
 
     def _delivery_row(self, d: Delivery, now: float) -> str:
         """A delivery in one row: what it was asked, where it landed, its hidden checks and corrections."""
-        st, role = d.st, self.role_of(d.run_id)
-        started = st.started or {}
-        if st.undone is not None:
-            chip, said = '<span class="chip red">undone</span>', f"reverted: {st.undone['note']}"
-        elif st.merged:
-            m = st.merged[-1]
+        x = api.delivery(self, d)
+        if x["landed"] == "undone":
+            chip, said = '<span class="chip red">undone</span>', f"reverted: {x['note']}"
+        elif x["landed"] == "merged":
             chip = '<span class="chip green">merged</span>'
-            said = f"into {m['into']} by itself" + (", a correction on top" if m.get("over") else "")
-        elif st.branch is not None:
+            said = f"into {x['into']} by itself" + (", a correction on top" if x["over"] else "")
+        elif x["landed"] == "branch":
             chip = '<span class="chip blue">branch</span>'
-            said = f"{st.branch['branch']}, for you to merge" + (
-                f": {st.not_merged['reason']}" if st.not_merged is not None else "")
+            said = f"{x['branch']}, for you to merge" + (f": {x['not_merged']}" if x["not_merged"] is not None else "")
         else:
             chip, said = '<span class="chip green">delivered</span>', "its outputs, on the run's page"
         facts: list[str] = []
-        proofs = [self.c.output(d.run_id, x) for x in (role.steps if role else [])
-                  if x.output is not None and issubclass(x.output, proof.Proved)]
-        results = [r for p in proofs if p is not None for r in p.results]
-        if results:
-            passed = sum(r.passed for r in results)
-            facts.append(f"{passed} of {len(results)} hidden checks passed")
-        if open_ := sum(s.open_stop is not None for s in st.steps.values()):
+        if checks := x["hidden_checks"]:
+            facts.append(f"{checks['passed']} of {checks['of']} hidden checks passed")
+        if open_ := x["samples"]:
             facts.append(f"{open_} sample{'s' if open_ != 1 else ''} to look at")
-        if fixes := len(self.c.corrections(d.run_id)):
+        if fixes := x["corrections"]:
             facts.append(f"{fixes} correction{'s' if fixes != 1 else ''}")
         return (f'<a class="hrow done" href="/run/{q(d.run_id)}"><div>'
-                f'<div class="t">{marked(headline(str(started.get("task", ""))))}</div>'
-                f'<div class="q">{esc(said)}</div><div class="m">{chip}<span>{esc(str(started.get("role", "")))}</span>'
-                + "".join(f"<span>{esc(x)}</span>" for x in facts)
+                f'<div class="t">{marked(headline(x["task"]))}</div>'
+                f'<div class="q">{esc(said)}</div><div class="m">{chip}<span>{esc(x["role"])}</span>'
+                + "".join(f"<span>{esc(fact)}</span>" for fact in facts)
                 + f'<span>{age(now - d.at)} ago</span></div></div></a>')
 
     def stop_page(self, run_id: str, step: str, error: str = "", fields: dict[str, str] | None = None) -> str:
@@ -1256,7 +1249,6 @@ class Review:
     def _dispute_bar(self, run_id: str, step: str, dispute: Mapping[str, Any]) -> str:
         """Two buttons, nothing to write: fix what the agent says is wrong, or keep it and have the agent work with
         it. Each sends the run back as Send back does, with the note written for the agent."""
-        about, to, said = str(dispute["about"]), str(dispute["to"]), str(dispute["said"])
         def button(label: str, back_to: str, note: str, solid: bool) -> str:
             return (f'<form method="post" action="/send-back" style="display:inline">'
                     f'<input type="hidden" name="token" value="{esc(self.shared.token)}">'
@@ -1264,9 +1256,9 @@ class Review:
                     f'<input type="hidden" name="to" value="{esc(back_to)}">'
                     f'<input type="hidden" name="note" value="{esc(note)}">'
                     f'<button class="btn{" solid" if solid else ""}">{esc(label)}</button></form>')
+        (fix, fix_to, fix_note), (keep, keep_to, keep_note) = api.dispute_choices(step, dict(dispute))
         return ('<div class="bar"><div class="row"><div class="acts">'
-                + button(f"Fix the {about}", to, f"The agent at {step} says this {about} is wrong; fix it: {said}", True)
-                + button(f"Keep the {about}", step, f"The {about} is right as it is; make your work pass it.", False)
+                + button(fix, fix_to, fix_note, True) + button(keep, keep_to, keep_note, False)
                 + f'<form method="post" action="/dismiss" style="display:inline"><input type="hidden" name="token" '
                 f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
                 '<button class="btn">Dismiss</button></form></div></div></div>')
@@ -1699,108 +1691,42 @@ class Review:
 
     def answer(self, fields: dict[str, str]) -> tuple[int, str]:
         """Returns (status, location or page)."""
-        run_id, step, raw = fields.get("run", ""), fields.get("step", ""), fields.get("answer", "")
-        note = fields.get("note", "").strip() or None
-        if raw not in LABELS:
-            return 400, self.stop_page(run_id, step, f"unknown answer {raw!r}", fields)
-        answer = cast(Answer, raw)
-        if answer in ("return", "context") and not note:
-            return 400, self.stop_page(run_id, step, f"{answer} needs a note for the agent", fields)
-        role = self.role_of(run_id)
-        if role is None:
-            return 400, self.stop_page(run_id, step, "the role of this run cannot be imported here", fields)
-        output = None
-        if answer == "change":
-            try:
-                output = json.loads(fields.get("output", ""))
-            except ValueError as err:
-                return 400, self.stop_page(run_id, step, f"the edited output is not JSON: {err}", fields)
+        run_id, step = fields.get("run", ""), fields.get("step", "")
         opened = project(self.c.store.events(run_id=run_id)).steps.get(step, StepState()).open_stop
         seen = self.shared.first_seen.get((run_id, step, opened[0])) if opened else None
         spent = round(max(0.0, time.time() - seen), 3) if seen else None  # from the first view, across reloads
         try:
-            self.c.answer(role, run_id, step, answer, note=note, output=output, seconds_spent=spent,
-                          chosen=[x.strip() for x in fields.get("chosen", "").replace(",", " ").split()],
-                          # the select goes with every answer; only return and context go back
-                          to=(fields.get("to") or None) if answer in ("return", "context") else None,
-                          by="person", evidence=fields.get("evidence") or None)
-        except AnswerRejected as err:
-            return 400, self.stop_page(run_id, step, "not recorded: " + "; ".join(err.reasons), fields)
-        except RunBusy:
-            return 409, self.stop_page(run_id, step, "busy: another answer to this run is being recorded; try again "
-                                       "in a moment", fields)
-        continue_in_background(self.c.home, run_id)  # when a process already runs it, that one goes on with this
+            done = api.answer(self, fields, "person", spent)
+        except api.Refused as err:
+            return err.status, self.stop_page(run_id, step, err.reason, fields)
         # after an accept, the run's next stop; any other answer changes an output, and the stops after it may be
         # made again, so the run's page
         following = next((w for w in self.queue() if w.run_id == run_id and w.kind == "stop" and w.step != step),
-                          None) if answer == "accept" else None
+                          None) if done["answer"] == "accept" else None
         return 303, f"/stop/{q(run_id)}/{q(following.step)}" if following else f"/run/{q(run_id)}"
 
     def start(self, fields: dict[str, str]) -> tuple[int, str]:
-        ref = fields.get("ref", "").strip() or fields.get("role", "")
-        task = fields.get("task", "").strip()
-        if not task:
-            return 400, self.new_page("a run needs a task", fields)
-        if ref.endswith(".toml"):  # stored whole, so the run continues from any folder; its mistakes are shown
-            ref = str(Path(ref).expanduser().resolve())
-            try:
-                role_file.load(Path(ref))
-            except role_file.RoleFileError as err:
-                return 400, self.new_page(str(err), fields)
-        r = self.import_role(ref)
-        if r is None:
-            return 400, self.new_page(f"{ref} cannot be imported from {Path.cwd()}", fields)
-        if problems := verify.verify(r):
-            return 400, self.new_page(verify.report(r, problems), fields)
-        folder = fields.get("project", "").strip()
-        preview = fields.get("preview", "").strip()
-        if folder:
-            try:
-                repo.resolve(Path(folder).expanduser())
-            except repo.ProjectError as err:
-                return 400, self.new_page(str(err), fields)
-        if preview and "{port}" not in preview:
-            return 400, self.new_page("the preview command needs {port} where the port goes", fields)
-        ports = fields.get("preview_ports", "").replace(",", " ").split()
-        if not all(p.isdigit() and 0 < int(p) < 65536 for p in ports):
-            return 400, self.new_page("local ports are numbers, such as 8789", fields)
-        lines = [x.strip() for x in fields.get("inputs", "").splitlines() if x.strip()]
-        if any("=" not in x for x in lines):
-            return 400, self.new_page("inputs are name=value, one per line", fields)
-        given = {k.strip(): v.strip() for k, v in (x.split("=", 1) for x in lines)}
-        if problems := run_inputs.missing(r, given):
-            return 400, self.new_page("; ".join(problems), fields)
-        run_id = new_run_id()
-        start_in_background(self.c.home, run_id, ref, task, self.known_roles().get(ref, {}),
-                            str(Path(folder).expanduser()) if folder else "", preview,
-                            fields.get("preview_path", "").strip(), " ".join(ports), fields.get("suite", "").strip(),
-                            given)
-        return 303, f"/run/{q(run_id)}"
+        try:
+            done = api.start(self, fields, "person")
+        except api.Refused as err:
+            return 400, self.new_page(err.reason, fields)
+        return 303, f"/run/{q(done['run'])}"
 
     # pieces -------------------------------------------------------------------
 
+    def _did(self, act: api.Action, fields: dict[str, str], then: str) -> tuple[int, str]:
+        """A button of the page, pressed by the person: where to go after it, or why it was not done."""
+        try:
+            act(self, fields, "person")
+        except api.Refused as err:
+            return err.status, self.run_page(fields.get("run", "")) if err.status == 409 else self.not_found(err.reason)
+        return 303, then
+
     def resume(self, fields: dict[str, str]) -> tuple[int, str]:
-        run_id = fields.get("run", "")
-        if not list(self.c.store.events("RunStarted", run_id=run_id)):
-            return 404, self.not_found(f"No run {run_id}")
-        if self.c._held(run_id):  # pyright: ignore[reportPrivateUsage]
-            return 409, self.run_page(run_id)
-        continue_in_background(self.c.home, run_id)
-        return 303, f"/run/{q(run_id)}"
+        return self._did(api.continue_run, fields, f"/run/{q(fields.get('run', ''))}")
 
     def send_back(self, fields: dict[str, str]) -> tuple[int, str]:
-        run_id = fields.get("run", "")
-        role = self.role_of(run_id)
-        if role is None:
-            return 404, self.not_found(f"No role to send run {run_id} back with")
-        try:
-            self.c.send_back(role, run_id, fields.get("to", ""), fields.get("note", ""), by="person")
-        except AnswerRejected as err:
-            return 400, self.not_found("; ".join(err.reasons))
-        except RunBusy:
-            return 409, self.run_page(run_id)
-        continue_in_background(self.c.home, run_id)
-        return 303, f"/run/{q(run_id)}"
+        return self._did(api.send_back, fields, f"/run/{q(fields.get('run', ''))}")
 
     def _corrections(self, run_id: str) -> str:
         """What was corrected in this run's delivery afterwards, each with the kind the agent proposed and a way to
@@ -1828,47 +1754,23 @@ class Review:
                 f'{"".join(rows)}</table></div></div>')
 
     def halt(self, fields: dict[str, str]) -> tuple[int, str]:
-        self.c.halt(by="person", note=fields.get("note", ""))
-        return 303, "/"
+        return self._did(api.halt, fields, "/")
 
     def resume_all(self, fields: dict[str, str]) -> tuple[int, str]:
         try:
-            runs = self.c.resume(by="person")
-        except AnswerRejected:
-            return 303, "/"  # resumed already, from another tab
-        for run_id in runs:
-            continue_in_background(self.c.home, run_id)
+            api.resume(self, fields, "person")
+        except api.Refused:
+            pass  # resumed already, from another tab
         return 303, "/"
 
     def undo(self, fields: dict[str, str]) -> tuple[int, str]:
-        run_id = fields.get("run", "")
-        try:
-            self.c.undo(run_id, fields.get("note", ""), by="person")
-        except AnswerRejected as err:
-            return 400, self.not_found("; ".join(err.reasons))
-        except RunBusy:
-            return 409, self.run_page(run_id)
-        return 303, f"/run/{q(run_id)}"
+        return self._did(api.undo, fields, f"/run/{q(fields.get('run', ''))}")
 
     def correction(self, fields: dict[str, str]) -> tuple[int, str]:
-        run_id = fields.get("run", "")
-        try:
-            self.c.reclassify(run_id, fields.get("id", ""), fields.get("kind", ""), by="person")
-        except AnswerRejected as err:
-            return 400, self.not_found("; ".join(err.reasons))
-        except RunBusy:
-            return 409, self.run_page(run_id)
-        return 303, f"/run/{q(run_id)}"
+        return self._did(api.file_as, fields, f"/run/{q(fields.get('run', ''))}")
 
     def dismiss(self, fields: dict[str, str]) -> tuple[int, str]:
-        run_id = fields.get("run", "")
-        try:
-            self.c.dismiss(run_id)
-        except AnswerRejected as err:
-            return 400, self.not_found("; ".join(err.reasons))
-        except RunBusy:
-            return 409, self.run_page(run_id)
-        return 303, "/"
+        return self._did(api.dismiss, fields, "/")
 
     def _value(self, s: StepState, target: Step[Any] | None) -> Any:
         return None if s.checked is None else self._value_of(s.checked, target)
@@ -2138,6 +2040,47 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
         def _cookie_name(self) -> str:  # cookies ignore ports, so two servers keep apart by name
             return f"jaynes_key_{cast(tuple[str, int], self.server.server_address)[1]}"
 
+        def _json(self, status: int, body: Any) -> None:
+            self._send(status, json.dumps(body, ensure_ascii=False), "application/json")
+
+        def _by(self) -> By:
+            """The person when the request carries the key their browser holds; anything else is an agent."""
+            return "person" if self._person() else "agent"
+
+        def _api_get(self, app: Review, parts: list[str]) -> None:
+            try:
+                match parts:
+                    case ["home"]:
+                        return self._json(200, api.home(app))
+                    case ["stop", run_id, step]:
+                        return self._json(200, api.stop(app, run_id, step))
+                    case ["run", run_id]:
+                        return self._json(200, api.run(app, run_id))
+                    case _:
+                        return self._json(404, {"error": "no such address", "reads": ["home", "stop/<run>/<step>",
+                                                                                     "run/<run>"],
+                                                "actions": sorted(api.ACTIONS)})
+            except api.Refused as err:
+                return self._json(err.status, {"error": err.reason})
+
+        def _api_post(self, name: str, raw: bytes) -> None:
+            """An action as JSON. Asking for JSON keeps another site's forms out, as the Origin check does."""
+            if name not in api.ACTIONS:
+                return self._json(404, {"error": f"no action {name!r}", "actions": sorted(api.ACTIONS)})
+            if (self.headers.get("Content-Type") or "").partition(";")[0].strip() != "application/json":
+                return self._json(415, {"error": "send the fields as JSON, with Content-Type: application/json"})
+            try:
+                fields = json.loads(raw or b"{}")
+            except ValueError as err:
+                return self._json(400, {"error": f"the body is not JSON: {err}"})
+            if not isinstance(fields, dict):
+                return self._json(400, {"error": "the body is a JSON object of fields"})
+            try:
+                done = api.ACTIONS[name](Review(home, shared), cast(dict[str, Any], fields), self._by())
+            except api.Refused as err:
+                return self._json(err.status, {"error": err.reason})
+            self._json(200, done)
+
         def _person(self) -> bool:
             jar = SimpleCookie()
             try:
@@ -2178,6 +2121,8 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                 return self._send(303, "", location=url.path + (f"?{rest}" if rest else ""), cookie=(
                     f"{self._cookie_name()}={shared.key}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"))
             match parts:
+                case ["api", *rest]:
+                    self._api_get(app, rest)
                 case []:
                     self._send(200, app.home_page(visit(home, time.time(), record=self._person())))
                 case ["next"]:
@@ -2228,8 +2173,11 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                 length = -1
             if not 0 <= length <= 2_000_000:
                 return self._send(400, "bad Content-Length", "text/plain")
-            fields = dict(urllib.parse.parse_qsl(self.rfile.read(length).decode(errors="replace"), keep_blank_values=True))
+            raw = self.rfile.read(length)
             path = urllib.parse.urlsplit(self.path).path
+            if path.startswith("/api/"):
+                return self._api_post(path.removeprefix("/api/"), raw)
+            fields = dict(urllib.parse.parse_qsl(raw.decode(errors="replace"), keep_blank_values=True))
             if path == "/bye":  # a tab closing or reloading; a reload asks for /seq again at once
                 if self._person():
                     shared.polled = 0.0

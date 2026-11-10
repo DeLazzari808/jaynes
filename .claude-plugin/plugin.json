@@ -2,5 +2,11 @@
   "name": "jaynes",
   "description": "Conducts Claude Code through a method one step at a time, checks each step, and asks you only where it matters",
   "author": { "name": "alk0x1" },
-  "homepage": "https://github.com/alk0x1/jaynes"
+  "homepage": "https://github.com/alk0x1/jaynes",
+  "mcpServers": {
+    "jaynes": {
+      "command": "sh",
+      "args": ["-c", "for j in \"$(command -v jaynes)\" \"$HOME/.local/bin/jaynes\"; do if [ -n \"$j\" ] && [ -x \"$j\" ]; then exec \"$j\" mcp; fi; done; echo 'jaynes is not installed: the Jaynes skill installs it' >&2; exit 1"]
+    }
+  }
 }

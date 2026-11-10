@@ -107,6 +107,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
 | Halt all on the page (and `jaynes halt`): no run takes a step or merges until you resume | Works in tests |
 | The page's home in four parts: what holds a run waits for you, the samples the runs went past, what was delivered since your last visit with its hidden checks, and what runs now; the browser opens by itself only for what holds a run | Works in tests and on a scratch page |
+| A local API with every action of the page (`/api/` on the page's address, JSON), and the MCP server (`jaynes mcp`) the plugin starts in Claude Code: an agent answers what holds a run and sends a blocked run back; only you answer samples, drop a run, undo and resume | Works in tests; a Claude Code agent used it on a scratch home |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
 | Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
@@ -179,8 +180,12 @@ there: Accept, or Return with a note. The review page, opened by `jaynes`,
 shows a stop in full and offers Change and Context too. When a newer Jaynes
 is out, the page offers to update and restarts itself.
 
-The plugin is the skill, the hook that records your answers in the dialog
-and the guard below, installed by you: no agent writes your Claude Code settings. The skill only
+The plugin is the skill, the hook that records your answers in the dialog,
+the guard below and Jaynes's MCP server, installed by you: no agent writes
+your Claude Code settings. The MCP server gives any agent in Claude Code what
+waits in Jaynes and the answers an agent may give: a stop that holds its run,
+a blocked run sent back with a note. Samples, Undo and Resume stay yours, on
+the page. The skill only
 says when to use Jaynes; the steps come from `jaynes guide`, so they change
 with the `jaynes` command. The agent runs `jaynes update` at the start of each
 task, and it brings the plugin to the same commit with Claude Code's own

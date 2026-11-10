@@ -101,7 +101,7 @@ before a class, in a booking app.
 
 ## 2026-11-07: An API and an MCP server, and what an agent may release
 
-**Decided, not started.** Jaynes gets a local API with every action of its page,
+**Decided.** Jaynes gets a local API with every action of its page,
 and its page becomes one client of it; another frontend, such as the private
 company's panel, uses the same API. An MCP server offers the same actions to
 agents. An agent can be the first to handle an exception, and the person gets
@@ -121,6 +121,17 @@ only what it may not release.
   such as the browser or the system keychain.
 - An agent resolving exceptions can hide a pattern the person would have
   noticed; its resolutions show in the results.
+
+**Built 2026-11-09.** The page's server answers `/api/` with every action of
+the page as JSON, and the page's buttons go through the same functions. A
+request carrying the page key's cookie is the person's, any other an agent's.
+`jaynes mcp` offers the reads and the agent's actions over MCP, and the plugin
+starts it in Claude Code. An agent answers a stop that holds its run, sends a
+blocked run back with a note, continues a run or starts one; a sample, a floor,
+a braked stop, dropping a run, filing a correction as another kind, Undo and
+Resume answer it 403. Calling another specialist waits for the specialists,
+and the person's key for another frontend still lives in a file the person's
+agents could read, not yet in the keychain.
 
 ## 2026-11-07: What is Jaynes and what is the company built on it
 

@@ -568,6 +568,22 @@ also continues the run. `jaynes delivered` and `jaynes correct` find a
 delivery and record its correction (section 6.2); changing a correction's
 kind is the person's, on the page.
 
+The local API, under `/api/` on the same server, has every action of the
+page as JSON: `POST /api/<action>` with the fields as a JSON object, for
+answer, continue, send-back, dismiss, correct, correction, undo, halt, resume
+and start, and `GET /api/home`, `/api/stop/<run>/<step>` and `/api/run/<run>`
+for what the page shows. The page's buttons go through the same functions
+(`jaynes.api`). A request with the page key's cookie is the person's; any
+other is an agent's. An agent may answer a stop that holds its run, send a
+blocked run back, continue a run, start one, record a correction and halt;
+only the person answers a sample (an agent's answer never counts as proof), a
+floor or a braked stop, dismisses a run, files a correction as another kind,
+undoes and resumes, and the API answers anyone else 403. It takes only
+`Content-Type: application/json` and a local Host and Origin, so another
+site's form cannot post to it. `jaynes mcp` serves the same reads and the
+agent's actions over stdio, as an MCP server, needing no page running; the
+plugin declares it, so Claude Code starts it wherever the plugin is on.
+
 Halt all, in the page's sidebar, halts everything: each run returns `halted`
 before its next step, a merge waits, and quota resets continue nothing. A turn
 already under way finishes, and what it made waits too. Answers are still
