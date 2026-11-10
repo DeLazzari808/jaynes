@@ -156,6 +156,73 @@ def test_setup_needs_the_page_token(served: tuple[str, Path]) -> None:
     assert status == 403
 
 
+def guard_part(page: str) -> str:
+    """The guard's part of /setup: from its heading to the action gate's."""
+    start, end = page.index("Guard in Claude Code"), page.index("Action gate in Claude Code")
+    assert start < end  # the guard comes first
+    return page[start:end]
+
+
+@pytest.fixture
+def gh_user(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A gh logged in as nora-builds, an invented GitHub user."""
+    bin_ = tmp_path / "gh-bin"
+    bin_.mkdir()
+    (bin_ / "gh").write_text('#!/bin/sh\nif [ "$*" = "api user --jq .login" ]; then echo nora-builds; exit 0; fi\nexit 1\n')
+    (bin_ / "gh").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ.get('PATH', '/usr/bin:/bin')}")
+    monkeypatch.setenv("HOME", str(tmp_path / "user"))  # never the person's ~/.claude, which a box hides
+
+
+def test_setup_shows_the_guard_first_on_with_the_gh_user_marked(
+        served: tuple[str, Path], gh_user: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, home = served
+    monkeypatch.setenv("JAYNES_HOME", str(home))
+    page = get(base + "/setup")
+    part = guard_part(page)
+    assert "asks" in part and "push" in part  # what it holds, and that it asks instead of blocking
+    assert "nora-builds" in part and "your GitHub user" in part
+    assert 'value="guard-off"' in part and 'value="guard-on"' not in part  # on, with its switch
+    assert 'name="owner"' in part and 'value="guard-owner-add"' in part
+    gate = page[page.index("Action gate in Claude Code"):]
+    assert "optional" in gate and "floor" in gate
+
+
+def test_the_guard_switch_and_owners_are_changed_from_setup(
+        served: tuple[str, Path], gh_user: None, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, home = served
+    monkeypatch.setenv("JAYNES_HOME", str(home))
+    saved = home / "guard.json"
+
+    def settings() -> tuple[object, object]:
+        data = json.loads(saved.read_text())
+        return data["on"], data["owners"]
+
+    page = get(base + "/setup")
+    status, _ = post(base + "/setup", {**form(page), "action": "guard-owner-add", "owner": "otter-co"})
+    assert status == 303
+    assert settings() == (True, ["nora-builds", "otter-co"])
+    assert "otter-co" in guard_part(get(base + "/setup"))
+
+    status, _ = post(base + "/setup", {**form(page), "action": "guard-owner-remove", "owner": "nora-builds"})
+    assert status == 303
+    assert settings() == (True, ["otter-co"])
+
+    status, _ = post(base + "/setup", {**form(page), "action": "guard-off"})
+    assert status == 303
+    assert settings() == (False, ["otter-co"])
+    part = guard_part(get(base + "/setup"))
+    assert 'value="guard-on"' in part and 'value="guard-off"' not in part
+
+    status, _ = post(base + "/setup", {**form(page), "action": "guard-on"})
+    assert status == 303
+    assert settings() == (True, ["otter-co"])
+
+    status, _ = post(base + "/setup", {"token": "wrong", "action": "guard-off"})
+    assert status == 403
+    assert settings() == (True, ["otter-co"])
+
+
 def past(n: int, tool: str, tool_input: dict[str, object], decided_by: str, label: str = "none") -> list[PastCall]:
     start = datetime(2026, 10, 1, tzinfo=timezone.utc)
     return [PastCall(f"{tool}{i}", "s", start + timedelta(hours=i), "/p", tool, tool_input, decided_by, label)
