@@ -52,6 +52,11 @@ dispute between agents is theirs to settle first.
 - When hooks disagree, the stricter one wins, so a hand-written hook that
   blocks the same actions hides the guard's question and has to go.
 
+**Built 2026-11-09.** `hooks/guard.py`, a standard-library script the
+plugin's hooks run before every shell command and edit. The person's GitHub
+user is found once with gh and saved in `~/.jaynes/guard.json` with the
+switch; Setup shows the guard first, with the switch and the free owners.
+
 ## 2026-11-09: The software roles stay public and keep improving
 
 **Decided.** The roles that build software (build-feature, fix-bug and

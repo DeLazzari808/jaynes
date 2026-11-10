@@ -1,6 +1,12 @@
 {
-  "description": "Records the person's answer to a Jaynes stop asked in Claude Code's question dialog",
+  "description": "Records the person's answer to a Jaynes stop asked in Claude Code's question dialog, and guards against git and GitHub actions that cannot be undone by asking before them",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/guard.py\"", "timeout": 30 }]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "AskUserQuestion",
