@@ -355,6 +355,8 @@ def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
     if result.status in ("waiting", "finished"):  # merged alone, or why not
         from jaynes.conductor import project
         st = project(c.store.events(run_id=run_id))
+        if st.outcome == "dismissed":
+            out["dismissed"] = True
         if st.merged and st.undone is None:
             out["merged"] = st.merged[-1]["into"]
         elif st.not_merged is not None:

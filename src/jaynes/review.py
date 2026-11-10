@@ -1410,6 +1410,9 @@ class Review:
             label = {"stop": "Open the stop", "blocked": "See why", "idle": "Continue or dismiss"}[w.kind]
             call = (f'<div class="call {w.kind}"><span>{esc(say)}</span><a class="btn go" '
                     f'href="/stop/{q(run_id)}/{q(w.step)}">{label}</a></div>')
+        if st.outcome == "dismissed":
+            call = ('<div class="call"><span>Dismissed: this run ended here, and nothing it had not delivered will '
+                    'arrive.</span></div>')
         merges = "".join(f'<tr><td>merged</td><td class="m">into {esc(str(m["into"]))} by itself, at '
                          f'{esc(str(m["commit"])[:8])}{", a correction on top" if m.get("over") else ""}</td></tr>'
                          for m in st.merged)
@@ -1440,8 +1443,21 @@ class Review:
                 f'<div><div class="label">Events <span><a href="/log?run={q(run_id)}">raw log</a></span></div>'
                 f'<div class="box"><table><tr><th>time</th><th>event</th><th>step</th><th>detail</th></tr>{rows}</table></div></div>'
                 '</details>')
-        main = crumbs + f'<div class="body">{body}</div>'
+        main = crumbs + f'<div class="body">{body}</div>' + self._dismiss_part(run_id, st)
         return page(f"Run {run_id}", self.sidebar((run_id, w.step) if w else (run_id, "")), main, self.seq())
+
+    def _dismiss_part(self, run_id: str, st: RunState) -> str:
+        """Dismiss for any run that has not finished; while a process works on it, that it ends with the step."""
+        if st.finished or st.started is None:
+            return ""
+        if any(True for _ in self.c.store.events("DismissAsked", run_id=run_id)):
+            return ('<div class="bar"><div class="row"><span class="m">Dismissing: the run ends when the step '
+                    'under way ends, and nothing after it runs.</span></div></div>')
+        return (f'<form class="bar" method="post" action="/dismiss"><input type="hidden" name="token" '
+                f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
+                '<div class="row"><span class="m" style="flex:1">Ends the run: what it has not delivered is dropped '
+                'and its open questions close. What it already merged stays; Undo reverts that. In a plan, the runs '
+                'after it do not start.</span><button class="btn">Dismiss</button></div></form>')
 
     def _question_of(self, w: Waiting, role: Role | None) -> str:
         """The question a stop asks, its step's own or the default the stop page shows."""
@@ -1966,7 +1982,7 @@ class Review:
         return self._did(api.file_as, fields, f"/run/{q(fields.get('run', ''))}")
 
     def dismiss(self, fields: dict[str, str]) -> tuple[int, str]:
-        return self._did(api.dismiss, fields, "/")
+        return self._did(api.dismiss, fields, f"/run/{q(fields.get('run', ''))}")
 
     def _value(self, s: StepState, target: Step[Any] | None) -> Any:
         return None if s.checked is None else self._value_of(s.checked, target)

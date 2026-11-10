@@ -2,6 +2,19 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: Dismiss on every run, also while it works
+
+**Decided.** Every unfinished run's page has Dismiss, not only idle and
+blocked ones. A run no process holds ends at once; a run a process works on
+ends when the step under way ends, and nothing after it runs. The turn under
+way is not killed, so its workspace and log stay whole. Dismiss ends the run,
+not only the person's review: open questions close, what was merged stays
+until Undo, and in a plan the runs after it do not start. Still the person's
+alone.
+
+Why: Alan had runs of work projects he no longer wanted, and the button was
+only where a run had stopped by itself.
+
 ## 2026-11-10: The person drops a run of a plan before it starts
 
 **Decided.** The first piece of changing a plan once it started: on the

@@ -402,6 +402,9 @@ class Conductor:
             while True:
                 if self.halted() is not None:  # nothing runs and nothing merges until a person resumes
                     return RunResult("halted")
+                if self._dismiss_asked(run_id):  # the person dismissed it while the last step worked
+                    self._emit(run_id, "RunFinished", {"outcome": "dismissed"})
+                    return RunResult("finished")
                 result = self._advance(role, run_id, fold(self.store.events(run_id=run_id)))
                 if result is not None:
                     return result
@@ -525,16 +528,32 @@ class Conductor:
             self._emit(run_id, "RunSentBack", {"step": at, "to": to, "reset": names[names.index(to):names.index(at) + 1],
                                                "note": note, "by": by, **({"revises": revises} if revises else {})})
 
-    def dismiss(self, run_id: str) -> None:
-        """A person drops an unfinished run: it finishes with nothing delivered and leaves the queue.
-        A run that a process holds right now is refused with ``RunBusy``."""
-        with self._lock(run_id):
-            st = project(self.store.events(run_id=run_id))
-            if st.started is None:
-                raise AnswerRejected([f"no run {run_id}"])
-            if st.finished:
-                raise AnswerRejected([f"run {run_id} already finished"])
-            self._emit(run_id, "RunFinished", {"outcome": "dismissed"})
+    def dismiss(self, run_id: str) -> str:
+        """A person drops an unfinished run: it finishes with nothing delivered and leaves the queue, at once
+        ("dismissed"), or, when a process is working on it, as soon as the step under way ends ("asked"). What it
+        already merged stays; Undo reverts that."""
+        try:
+            with self._lock(run_id):
+                self._dismissable(run_id)
+                self._emit(run_id, "RunFinished", {"outcome": "dismissed"})
+                return "dismissed"
+        except RunBusy:
+            self._dismissable(run_id)
+            if not self._dismiss_asked(run_id):
+                self._emit(run_id, "DismissAsked", {})
+            return "asked"
+
+    def _dismissable(self, run_id: str) -> None:
+        st = project(self.store.events(run_id=run_id))
+        if st.started is None:
+            raise AnswerRejected([f"no run {run_id}"])
+        if st.finished:
+            raise AnswerRejected([f"run {run_id} already finished"])
+
+    def _dismiss_asked(self, run_id: str) -> bool:
+        """Whether the person dismissed the run while a process worked on it, and it has not finished yet."""
+        return any(True for _ in self.store.events("DismissAsked", run_id=run_id)) and not any(
+            True for _ in self.store.events("RunFinished", run_id=run_id))
 
     def output(self, run_id: str, step: Step[T]) -> T | None:
         """The latest checked output of ``step`` in ``run_id``."""

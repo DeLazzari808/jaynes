@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from jaynes.conductor import AnswerRejected, Conductor, RunBusy, RunResult, coin, return_to
+from jaynes.conductor import AnswerRejected, Conductor, RunResult, coin, return_to
 from jaynes.gate import Window
 from jaynes.role import Fail, Pass, Witnesses, role, stop
 from tests.fakes import Scripted, fail, nothing, quota, raw, stray, tamper, timeout, write
@@ -374,9 +374,7 @@ def test_a_person_dismisses_a_run_that_no_process_holds_and_it_leaves_the_queue(
     c = Conductor(tmp_path, runtimes={"fake": lambda: Scripted({("a", 1): die})})
     with pytest.raises(Killed):
         c.run(r, "t", run_id="r1")
-    with c._lock("r1"), pytest.raises(RunBusy):  # pyright: ignore[reportPrivateUsage]
-        c.dismiss("r1")
-    c.dismiss("r1")
+    assert c.dismiss("r1") == "dismissed"
     assert c.queue(idle_after=0) == [] and payloads(c, "r1", "RunFinished") == [{"outcome": "dismissed"}]
     assert c.run(r, "t", run_id="r1").status == "finished"  # continuing it changes nothing
     with pytest.raises(AnswerRejected, match="already finished"):
@@ -615,3 +613,17 @@ def test_the_store_lists_only_runs_that_have_not_finished_in_the_order_they_star
         c.store.append("RunStarted", {"role": "r", "task": "t"}, run_id=run)
     c.store.append("RunFinished", {"outcome": "delivered"}, run_id="b")
     assert c.store.unfinished_runs() == ["a", "c"]
+
+
+def test_a_run_dismissed_while_it_works_finishes_when_its_step_ends_and_runs_no_more(tmp_path: Path) -> None:
+    r, _, _ = chain()
+    c: Conductor
+
+    def asked(ws: Path) -> None:  # the person presses Dismiss while the agent works on a
+        assert c.dismiss("r1") == "asked"
+        write({"text": "a"})(ws)
+    agent = Scripted({("a", 1): asked})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    assert c.run(r, "t", run_id="r1").status == "finished"
+    assert agent.counts == {"a": 1}  # b never ran
+    assert payloads(c, "r1", "RunFinished") == [{"outcome": "dismissed"}] and c.queue(idle_after=0) == []

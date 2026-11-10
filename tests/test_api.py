@@ -14,6 +14,8 @@ from http.cookiejar import CookieJar
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from jaynes.store import Store
 from tests.test_home import held, merged
 from tests.test_review import JAR, get, post, serving
@@ -195,3 +197,33 @@ def test_an_agent_starts_a_run_through_the_api(tmp_path: Path) -> None:
         time.sleep(0.2)
     [started] = [e.payload for e in Store(home / "jaynes.sqlite3").events("RunStarted", run_id=out["run"])]
     assert started["task"] == "write a second one"
+
+
+def test_every_unfinished_run_page_offers_dismiss_and_a_working_run_ends_when_its_step_does(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from jaynes import cli
+    from jaynes.conductor import Conductor
+    from tests.test_review import form
+    home = tmp_path / "home"
+    waiting, working = held(home, "write the draft"), held(home, "write another")
+    base, server = serving(home)
+    try:
+        page = get(f"{base}/run/{waiting}")
+        assert 'action="/dismiss"' in page and "Ends the run" in page
+        status, _ = post(f"{base}/dismiss", {**form(page), "run": waiting})
+        assert status == 303
+        page = get(f"{base}/run/{waiting}")
+        assert 'action="/dismiss"' not in page and "Dismissed: this run ended here" in page
+
+        c = Conductor(home)
+        with c._lock(working):  # pyright: ignore[reportPrivateUsage]  # a process is working on it
+            assert call(base + "/api/dismiss", {"run": working}, jar=JAR) == (
+                200, {"run": working, "dismissed": False, "when": "its current step ends"})
+            page = get(f"{base}/run/{working}")
+            assert "Dismissing" in page and 'action="/dismiss"' not in page
+        assert [e.type for e in Store(home / "jaynes.sqlite3").events("DismissAsked", run_id=working)] == [
+            "DismissAsked"]
+        cli.main(["run", working, "--home", str(home)])  # the process goes on, and ends at once
+        assert json.loads(capsys.readouterr().out.strip().splitlines()[-1])["dismissed"] is True
+    finally:
+        server.shutdown()

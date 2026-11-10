@@ -230,15 +230,16 @@ def send_back(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
 
 
 def dismiss(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
-    """Drop an unfinished run: it finishes with nothing delivered."""
+    """Drop an unfinished run: it finishes with nothing delivered, at once or, while a process works on it, when its
+    current step ends."""
     _person_only(by, "drops a run")
     run_id = _text(f, "run")
     try:
-        r.c.dismiss(run_id)
+        done = r.c.dismiss(run_id)
     except AnswerRejected as err:
         raise Refused(400, "; ".join(err.reasons)) from None
-    except RunBusy:
-        raise Refused(409, f"run {run_id} is running in another process") from None
+    if done == "asked":  # a process is working on it: it ends when the step under way does
+        return {"run": run_id, "dismissed": False, "when": "its current step ends"}
     return {"run": run_id, "dismissed": True}
 
 

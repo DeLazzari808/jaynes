@@ -47,6 +47,8 @@ Two errors among a stop's last ten outcomes brake it: it asks on every run, and 
 
 build-feature and fix-bug prove their work with checks written from your request alone, before the work, which the agent that makes the change never sees. Jaynes runs them against the changed project. When every one passes, Jaynes merges the run's branch into the branch you started from, only over a clean checkout, and never pushes. A return merges its correction on top. Undo, on the run's page, reverts the merge.
 
+**Dismiss**, at the bottom of any run's page, ends a run that has not finished: what it has not delivered is dropped and its open questions close. If the run is working, it ends when the step under way ends, and nothing after it runs. What it already merged stays; Undo reverts that. In a plan, the runs after it do not start.
+
 **Halt all**, in the page's sidebar, stops every run before its next step, and every merge, until you press Resume. A turn already under way finishes first.
 
 ## Corrections after delivery

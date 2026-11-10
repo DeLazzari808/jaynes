@@ -51,6 +51,8 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
    - `paused`: the agent's plan ran out; the run continues by itself at `until`.
    - `halted`: the person halted everything on the page; tell them in one line that the run goes on once they
      resume there, with the `page` link.
+   - `finished` with `dismissed`: the person dismissed the run on the page; say so in one line and do nothing more
+     with it.
    - `finished`: when `merged` is printed, tell the person in one sentence that the change is merged into that
      branch, and that Undo on the run's page reverts it. Otherwise tell them that the change is on the branch
      `jaynes/<run>`, with `not_merged` in a few words when it is printed, and offer to merge it.
