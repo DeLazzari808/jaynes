@@ -4,6 +4,7 @@ once its run delivered the plan, Jaynes starts it by itself."""
 from __future__ import annotations
 
 import json
+import re
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -299,3 +300,22 @@ def test_an_agent_reads_adds_and_removes_packages_through_the_api_and_the_mcp_se
     after = json.loads(replies[2]["result"]["content"][0]["text"])
     assert after["projects"] == {str(repo): ["software", "design"]}
     assert replies[3]["result"]["isError"] and packages.uses(home) == ["software", "design"]
+
+
+def test_the_page_never_adds_a_package_for_every_project_unless_the_person_ticks_it(
+        tmp_path: Path, repo: Path, mine: Path) -> None:  # noqa: F811
+    home = tmp_path / "home"
+    base, server = serving(home)
+    try:
+        page = get(f"{base}/roles")
+        field = re.search(r'<input type="text" name="project"[^>]*>', page)
+        assert field is not None and 'value=""' in field[0]  # never the folder the page was opened from
+        token = form(page)["token"]
+        status, shown = post(f"{base}/packages", {"token": token, "action": "add", "source": str(mine),
+                                                   "project": ""})
+        assert status == 400 and "Name the project" in shown and packages.uses(home) == ["software", "design"]
+        status, _ = post(f"{base}/packages", {"token": token, "action": "add", "source": str(mine),
+                                              "project": "", "every": "1"})
+        assert status == 303 and packages.uses(home) == ["team", "software", "design"]
+    finally:
+        server.shutdown()

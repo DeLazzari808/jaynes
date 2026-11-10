@@ -397,8 +397,8 @@ without its own list uses the default one; `jaynes add --project` starts its
 list from the default one and puts the package first. The page's Roles shows
 the same: each installed package with its version, where it came from and its
 roles, each list in order with Remove, and a form to add a folder or a git
-repository for one project, the one the page was opened from by default, or
-for every project. The API's `add-package` and `remove-package`, and the MCP
+repository for the project the person names, or, ticked, for every project;
+the project is never filled in for them. The API's `add-package` and `remove-package`, and the MCP
 tools `packages`, `add_package` and `remove_package`, do it for an agent the
 person asked.
 

@@ -18,8 +18,8 @@ to click on the page, and the agent, with every command in full.
 - The README keeps what Jaynes is, the guarantee, the status and the roadmap;
   how to use it moved to the docs, so there is one place to keep up.
 - Packages need no terminal: the page's Roles shows what is installed, which
-  projects use which, and adds or removes one, for the project the page was
-  opened from by default. An agent does the same through the API and the MCP
+  projects use which, and adds or removes one: for the project the person
+  names, never filled in, or for every project only when they tick it. An agent does the same through the API and the MCP
   tools `packages`, `add_package` and `remove_package`, only when the person
   asks, since a package's roles run code on their computer.
 - Costs: one dev dependency, `markdown-it-py`, only to build the docs; the

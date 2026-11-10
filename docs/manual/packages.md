@@ -17,7 +17,7 @@ What each one does is in [Roles that come with Jaynes](roles.md).
 
 Use whichever is at hand:
 
-- **On the page**: Roles, then Add a package. Give a folder or a git address, and the project, or leave the project empty for every project.
+- **On the page**: Roles, then Add a package. Give a folder or a git address, and the project; for every project, tick the box under it instead.
 - **Ask your agent**: "use the roles in ~/my-team in this project". The plugin gives it the tools to do it, and it adds a package only when you ask.
 - **From a terminal**, in the project:
 

@@ -401,6 +401,7 @@ details.ran pre { margin: 8px 0 0; max-height: 320px; overflow: auto; white-spac
 .filters a.on { color: var(--ink); border-color: var(--blue); }
 .form { display: grid; gap: 20px; max-width: 640px; }
 .form label { display: grid; }
+.form label.tick { display: flex; gap: 8px; align-items: center; color: var(--dim); font-size: 14px; }
 .form select, .form input[type=text], .form textarea { background: var(--panel); border: 1px solid var(--line-2); border-radius: 4px; color: var(--ink); font: inherit; font-size: 14px; padding: 10px 12px; }
 .form textarea { min-height: 96px; resize: vertical; }
 .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 7px; vertical-align: -1px; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18); }
@@ -1721,7 +1722,8 @@ class Review:
             (where, where, names) for where, names in sorted(shown["projects"].items())]
         list_rows = "".join(f'<tr><td class="m">{esc(label)}</td><td>{used(names, project)}</td></tr>'
                             for label, project, names in lists)
-        project = f.get("project", self.default_project())
+        project = f.get("project", "")  # never filled in: the page may have been opened from any project
+        every = ' checked' if f.get("every") else ''
         return ('<div><h1>Packages</h1><div class="sub">A package is a set of roles. software and design come with '
                 'Jaynes and follow its version. Add one of yours, a folder or a git repository, for one project or '
                 'for every project. A run takes each role by its name from the first package in its project\'s '
@@ -1738,8 +1740,9 @@ class Review:
                 'apply at once, or a git repository, installed at its newest commit; jaynes update moves it to the '
                 'next one.</span></label>'
                 '<label><span class="label">For the project</span><input type="text" name="project" '
-                f'placeholder="/path/to/repository" value="{esc(project)}"><span class="m" style="margin-top:6px">'
-                'Empty: every project with no list of its own.</span></label>'
+                f'placeholder="/path/to/repository" value="{esc(project)}"></label>'
+                f'<label class="tick"><input type="checkbox" name="every" value="1"{every}>'
+                '<span>Or every project with no list of its own</span></label>'
                 + (f'<div class="err">{esc(error)}</div>' if error else '')
                 + '<button class="btn go" name="action" value="add">Add the package</button></form>')
 
@@ -1748,6 +1751,10 @@ class Review:
         act = api.add_package if adding else api.remove_package if fields.get("action") == "remove" else None
         if act is None:
             return 400, self.roles_page()
+        if adding and fields.get("every"):
+            fields = {**fields, "project": ""}
+        elif adding and not fields.get("project", "").strip():  # every project only when the person says so
+            return 400, self.roles_page("Name the project, or tick every project.", fields)
         try:
             act(self, fields, "person")
         except api.Refused as err:
