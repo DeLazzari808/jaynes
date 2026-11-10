@@ -14,7 +14,13 @@ dependencies = [
 jaynes = "jaynes.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "hypothesis>=6", "scipy>=1.14", "pyright>=1.1.400"]
+dev = [
+    "pytest>=8",
+    "hypothesis>=6",
+    "scipy>=1.14",
+    "pyright>=1.1.400",
+    "pytest-xdist>=3.6",
+]
 
 [build-system]
 requires = ["hatchling>=1.25"]
@@ -25,7 +31,7 @@ packages = ["src/jaynes"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -n 8"  # 8 tests at a time: the suite takes 3 minutes instead of 12; -n 0 runs one at a time
 
 [tool.pyright]
 include = ["src", "tests"]
