@@ -17,13 +17,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from jaynes.browser import chrome
 from jaynes.role import Fail, Pass, StepContext
 
 IMAGES = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 URL = re.compile(r"https?://[^\s<>\"'`]+")
 PATH = re.compile(r"""(?:^|(?<=[\s"'`(]))((?:~|/)(?:\\ |[^\n"'`])*?\.(?:png|jpe?g|webp|gif))(?![\w.])""", re.IGNORECASE)
-CHROME = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-          "/Applications/Chromium.app/Contents/MacOS/Chromium")
 PICTURE_BYTES = 10_000_000
 WORDS = 8  # what a direction takes from a reference, at least
 
@@ -53,13 +52,6 @@ def named(task: str) -> list[str]:
     found = [(m.start(), m.group().rstrip(".,;:!?)]")) for m in URL.finditer(task)]
     found += [(m.start(1), m.group(1).replace("\\ ", " ")) for m in PATH.finditer(task)]
     return list(dict.fromkeys(s for _, s in sorted(found)))
-
-
-def chrome() -> str | None:
-    for c in (os.environ.get("JAYNES_CHROME"), *CHROME, shutil.which("google-chrome"), shutil.which("chromium")):
-        if c and Path(c).is_file():
-            return c
-    return None
 
 
 def capture(url: str, out: Path, timeout: float = 60.0) -> None:

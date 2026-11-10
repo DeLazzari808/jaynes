@@ -349,6 +349,13 @@ def new_run_id() -> str:
 
 # --- conductor -----------------------------------------------------------------
 
+def _root(started: Mapping[str, Any]) -> Path | None:
+    """The person's repository a run works on, if it has one."""
+    given: object = started.get("project")
+    found = cast(dict[str, object], given).get("root") if isinstance(given, dict) else None
+    return Path(str(found)) if found else None
+
+
 def _plans(step: Step[Any]) -> bool:
     """Whether the step delivers a plan of runs."""
     from jaynes.plan import Plan
@@ -1207,7 +1214,7 @@ class Conductor:
             lines += [step.instructions.rstrip(), ""]
         lines += [f"Task: {task}", ""]
         if _plans(step):
-            lines += self._roles()
+            lines += self._roles(_root(started or {}))
         if step.needs or s.previous:
             lines.append("Inputs, read-only:")
             lines += [f"- inputs/{n.name}.json: the checked output of step {n.name}" for n in step.needs]
@@ -1295,12 +1302,12 @@ class Conductor:
         except ValidationError as err:
             return _schema_reasons(err)
 
-    def _roles(self) -> list[str]:
+    def _roles(self, project: Path | None) -> list[str]:
         """The roles a plan may use, as a planning step is shown them: each with what it is for and its inputs."""
         from jaynes.catalog import entries
         from jaynes.plan import load
         lines = ["The task is the person's request, in their words. The roles you can use, by name:"]
-        for e in entries(self.home):
+        for e in entries(self.home, project):
             if e.plans:
                 continue
             lines.append(f"- {e.name}: {e.about or 'no description'}")
@@ -1319,7 +1326,7 @@ class Conductor:
         failures: list[str] = []
         if _plans(step):  # Jaynes refuses the plan the way it would refuse it from the person's agent
             from jaynes.plan import reasons
-            failures += reasons(self, value, has_project=bool(needs.started.get("project")))
+            failures += reasons(self, value, _root(needs.started))
         for check in step.checks:
             try:
                 result = cast(object, check(value, needs))  # user code; its annotation is not a guarantee

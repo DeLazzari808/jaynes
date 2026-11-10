@@ -11,8 +11,8 @@ import pytest
 
 from jaynes.conductor import Conductor
 from jaynes.role import Checked, Disputes, Fail, Pass, StepContext, Witnesses
-from jaynes.roles import build_feature as bf
-from jaynes.roles import fix_bug as fb
+from software import build_feature as bf
+from software import fix_bug as fb
 from tests.needs import chrome_runs
 from jaynes.verify import verify
 from tests.fakes import Scripted, write

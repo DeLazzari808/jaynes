@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from jaynes import runners
 from jaynes.role import Fail, Pass, StepContext, Witnesses, role, stop
-from jaynes.roles import fix_bug as fb
+from . import fix_bug as fb
 
 LIMIT = 30  # changed lines, added and removed, past which a person sees the change
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from jaynes import sandbox
-from jaynes.roles.references import chrome
+from jaynes.browser import chrome
 
 # inside a box, as when Jaynes's own suite runs in a run's box, Chrome opens only with its own sandbox off and the
 # shared temporary folder writable, which a box must not allow

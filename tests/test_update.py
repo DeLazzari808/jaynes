@@ -109,15 +109,16 @@ def test_jaynes_skill_installs_the_command_and_prints_what_to_do(capsys: pytest.
     assert "/jaynes <task>" in out and "jaynes run --here --role" in out and "jaynes wait" in out
 
 
-def test_the_skill_only_says_when_and_jaynes_guide_says_how_naming_every_built_in_role(
+def test_the_skill_only_says_when_and_jaynes_guide_says_how_naming_every_role_that_comes_with_jaynes(
         capsys: pytest.CaptureFixture[str]) -> None:
-    from jaynes.roles import BUILT_IN
+    from jaynes import catalog, packages
+    shipped = [r.name for name in packages.DEFAULT for _, r in catalog.found(packages.bundled_root() / name)]
     text = skill.SOURCE.read_text()
     assert "jaynes guide" in text and "jaynes run" not in text  # steps change with the CLI, not with the plugin
     cli.main(["guide"])
     out = capsys.readouterr().out
     assert "jaynes run --here --role" in out and "jaynes wait" in out and "$ARGUMENTS" not in out
-    assert all(f"`{name}`" in out for name in BUILT_IN)
+    assert len(shipped) == 6 and all(f"`{name}`" in out for name in shipped)
 
 
 def test_an_installed_skill_is_kept_current_and_an_absent_one_stays_absent() -> None:

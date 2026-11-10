@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from jaynes.role import Checked, Fail, Pass, Witnesses
-from jaynes.roles import visual_identity as vi
+from design import visual_identity as vi
 
 
 def project(tmp_path: Path) -> Path:

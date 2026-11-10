@@ -1,91 +1,53 @@
-"""Where roles come from: the ones that come with Jaynes, and the folders of roles the person added.
+"""Where a run's role comes from: the packages the project uses (``jaynes.packages``), by the role's name, or a
+reference to a file or a module.
 
-A person keeps their own roles, such as a company's private specialists, in a folder outside Jaynes and adds it once:
-``jaynes roles add <folder>``. Every role file (``.toml``) and every Python file with a role in it there is a role
-started by its name, and one named like a built-in role takes its place. A run records the role's reference whole,
-a file's absolute path, so it continues from any folder and in any process.
+A package's Python files are imported as one Python package per installed version, named after its folder, so a
+file imports the files next to it relatively and two versions of a package never mix. A run records its role's file
+by its full path, which names the version, so it continues from any folder and in any process with the version it
+started with.
 """
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
-import json
 import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import cast
 
+from jaynes import packages
 from jaynes.role import Role
 
-FILE = "roles.json"  # in the home: {"folders": [absolute paths]}
+LEGACY = {"jaynes.roles.build_feature": ("software", "build_feature"), "jaynes.roles.fix_bug": ("software", "fix_bug"),
+          "jaynes.roles.small_change": ("software", "small_change"),
+          "jaynes.roles.visual_identity": ("design", "visual_identity"), "jaynes.roles.redesign": ("design", "redesign"),
+          "jaynes.roles.screen_design": ("design", "screen_design"),
+          "jaynes.roles.references": ("design", "references")}  # where runs started before packages find their role
 
 
 class Unknown(ValueError):
     pass
 
 
-def folders(home: Path) -> list[Path]:
-    path = home / FILE
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, ValueError):
-        return []
-    found: object = cast(dict[str, object], data).get("folders") if isinstance(data, dict) else None
-    return [Path(str(f)) for f in cast(list[object], found)] if isinstance(found, list) else []
+def _package(folder: Path) -> str:
+    """The Python package an installed version's folder is imported as."""
+    name = "_jaynes_package_" + hashlib.sha256(str(folder).encode()).hexdigest()[:12]
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_loader(name, loader=None, is_package=True)
+        assert spec is not None
+        made = importlib.util.module_from_spec(spec)
+        made.__path__ = [str(folder)]
+        sys.modules[name] = made
+    return name
 
 
-def _save(home: Path, kept: list[Path]) -> None:
-    home.mkdir(parents=True, exist_ok=True)
-    (home / FILE).write_text(json.dumps({"folders": [str(f) for f in kept]}, indent=1) + "\n")
-
-
-def add(home: Path, folder: Path) -> Path:
-    folder = folder.expanduser().resolve()
-    if not folder.is_dir():
-        raise Unknown(f"{folder} is not a folder")
-    kept = folders(home)
-    if folder not in kept:
-        _save(home, [*kept, folder])
-    return folder
-
-
-def remove(home: Path, folder: Path) -> bool:
-    folder = folder.expanduser().resolve()
-    kept = folders(home)
-    if folder not in kept:
-        return False
-    _save(home, [f for f in kept if f != folder])
-    return True
-
-
-def _module(path: Path) -> ModuleType:
-    """A Python file imported by its path. Its folder is on the import path, after everything else, so the file can
-    import the files next to it by name; under that same name, so a role imported twice is one role."""
-    folder = str(path.parent)
-    if folder not in sys.path:
-        sys.path.append(folder)
-    name = path.stem
-    known = sys.modules.get(name)
-    if known is not None:
-        if Path(str(getattr(known, "__file__", "") or "")).resolve() == path:
-            return known
-        name = f"jaynes_roles_{abs(hash(str(path)))}_{path.stem}"
-        if name in sys.modules:
-            return sys.modules[name]
-    spec = importlib.util.spec_from_file_location(name, path)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"cannot import {path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[name] = module
-    try:
-        spec.loader.exec_module(module)
-    except BaseException:
-        del sys.modules[name]
-        raise
-    return module
+def module(path: Path) -> ModuleType:
+    """A role's Python file, imported as part of its folder's package."""
+    path = path.resolve()
+    return importlib.import_module(f"{_package(path.parent)}.{path.stem}")
 
 
 def load(reference: str) -> object:
@@ -98,7 +60,13 @@ def load(reference: str) -> object:
     if not where or not attr:
         raise ImportError(f"expected module:attribute, got {reference!r}")
     if where.endswith(".py"):
-        return getattr(_module(Path(where).resolve()), attr)
+        return getattr(module(Path(where)), attr)
+    if where in LEGACY:  # a run started when these roles came inside Jaynes: the version that comes with it now
+        package, stem = LEGACY[where]
+        folder = packages.bundled(package)
+        if folder is None:
+            raise ImportError(f"{where} moved to the package {package}, which this Jaynes does not have")
+        return getattr(module(folder / f"{stem}.py"), attr)
     if os.getcwd() not in sys.path:
         sys.path.insert(0, os.getcwd())
     return getattr(importlib.import_module(where), attr)
@@ -111,7 +79,7 @@ class Entry:
     name: str
     ref: str
     about: str
-    folder: str  # the person's folder it comes from, or "" for one that comes with Jaynes
+    package: str
     plans: bool  # its delivery is a plan of runs, which Jaynes starts by itself
 
 
@@ -120,10 +88,12 @@ def plans(r: Role) -> bool:
     return any(s.output is not None and issubclass(s.output, Plan) for s in r.steps)
 
 
-def _found(folder: Path) -> list[tuple[str, Role]]:
-    """The roles in one of the person's folders, with their references; a file that does not load is left out."""
+def found(folder: Path) -> list[tuple[str, Role]]:
+    """The roles in a package's folder, with their references; a file that does not load is left out."""
     out: list[tuple[str, Role]] = []
     for path in sorted(folder.glob("*.toml")):
+        if path.name == packages.MANIFEST:
+            continue
         try:
             r = load(str(path))
         except Exception:
@@ -134,47 +104,40 @@ def _found(folder: Path) -> list[tuple[str, Role]]:
         if path.name.startswith("_"):
             continue
         try:
-            module = _module(path.resolve())
+            m = module(path)
         except Exception:
             continue
-        for attr, value in vars(module).items():
+        for attr, value in vars(m).items():
             if isinstance(value, Role) and not attr.startswith("_"):
                 out.append((f"{path.resolve()}:{attr}", value))
     return out
 
 
-def entries(home: Path) -> list[Entry]:
-    """Every role a run can start by name: the person's first, folder by folder and file by file, then the built-in
-    ones whose name no role of theirs took. A name is listed once, from the first file that has it."""
-    from jaynes.roles import BUILT_IN
+def entries(home: Path, project: Path | None = None) -> list[Entry]:
+    """Every role a run on ``project`` can start by name, package by package in the project's order; a name is
+    listed once, from the first package that has it."""
     out: dict[str, Entry] = {}
-    for folder in folders(home):
-        if not folder.is_dir():
+    have = packages.installed(home)
+    for name in packages.uses(home, project):
+        p = have.get(name)
+        if p is None or not Path(p.path).is_dir():
             continue
-        for reference, r in _found(folder):
+        for reference, r in found(Path(p.path)):
             if r.name not in out:
-                out[r.name] = Entry(r.name, reference, r.about, str(folder), plans(r))
-    for name, reference in BUILT_IN.items():
-        if name in out:
-            continue
-        try:
-            found = load(reference)
-        except Exception:
-            continue
-        if isinstance(found, Role):
-            out[name] = Entry(name, reference, found.about, "", plans(found))
+                out[r.name] = Entry(r.name, reference, r.about, name, plans(r))
     return list(out.values())
 
 
-def ref(name: str, home: Path) -> str:
-    """A role's reference from what a person or an agent names it by: one of their roles or a built-in one by its
-    name, a role file, a Python file's ``path.py:attribute``, or ``module:attribute``."""
+def ref(name: str, home: Path, project: Path | None = None) -> str:
+    """A role's reference from what a person or an agent names it by: a role of the project's packages by its name,
+    a role file, a Python file's ``path.py:attribute``, or ``module:attribute``."""
     if name.endswith(".toml"):
         return str(Path(name).expanduser().resolve())
     if ":" in name:
         where, _, attr = name.rpartition(":")
         return f"{Path(where).expanduser().resolve()}:{attr}" if where.endswith(".py") else name
-    known = {e.name: e.ref for e in entries(home)}
+    known = {e.name: e.ref for e in entries(home, project)}
     if name not in known:
-        raise Unknown(f"no role {name!r}: use one of {', '.join(known)}, a role file (.toml), or module:attribute")
+        raise Unknown(f"no role {name!r} in the packages this project uses: use one of {', '.join(known) or 'none'}, "
+                      "add a package with jaynes add, or give a role file (.toml) or module:attribute")
     return known[name]

@@ -8,9 +8,9 @@ import pytest
 
 from jaynes.project import allowed
 from jaynes.role import Checked, Fail, Pass, StepContext, Witnesses
-from jaynes.roles import redesign as rd
-from jaynes.roles import references as rf
-from jaynes.roles import visual_identity as vi
+from design import redesign as rd
+from design import references as rf
+from design import visual_identity as vi
 from tests.test_visual_identity import direction, project
 
 

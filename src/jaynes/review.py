@@ -44,7 +44,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import api, bounds, catalog, guard, install, outcome, plan, roles, sandbox, skill, update
+from jaynes import api, bounds, catalog, guard, install, outcome, plan, sandbox, skill, update
 from jaynes import project as repo
 from jaynes.conductor import (By, Conductor, RunState, StepState, Waiting, continue_in_background, holds, project,
                               return_to)
@@ -64,7 +64,7 @@ def marked(text: str) -> str:
     return CODE.sub(r"<code>\1</code>", esc(text))
 CHIP = {"certified": "green", "refuted": "red", "braked": "red", "floor": "blue"}  # any other status is amber
 DEMO = "jaynes.demo:ROLE"
-BUILT_IN = {DEMO: {"scripted": "jaynes.demo:Agent"}, **{ref: {} for ref in roles.BUILT_IN.values()}}
+BUILT_IN = {DEMO: {"scripted": "jaynes.demo:Agent"}}  # the demo; every other role comes from a package
 StageState = Literal["jaynes", "checked", "accepted", "changed", "sampled", "waiting", "blocked", "running", "todo"]
 
 PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
@@ -1433,7 +1433,7 @@ class Review:
     def known_roles(self) -> dict[str, dict[str, str]]:
         """Roles a run can be started with and their runtime overrides: those that come with Jaynes, then each one run."""
         known = {k: dict(v) for k, v in BUILT_IN.items()}
-        for e in catalog.entries(self.c.home):  # the person's own roles, and a built-in one theirs took the place of
+        for e in catalog.entries(self.c.home):  # the roles of the packages every project uses
             known.setdefault(e.ref, {})
         for ev in self.c.store.events("RunStarted"):
             if "ref" in ev.payload:

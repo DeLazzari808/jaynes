@@ -13,9 +13,8 @@ from typing import Any
 import pytest
 from pydantic import BaseModel
 
-from jaynes import cli
+from jaynes import catalog, cli, packages
 from jaynes.role import Fail, Pass, Witnesses, role, stop
-from jaynes.roles import BUILT_IN
 from jaynes.store import Store
 from jaynes.verify import verify
 
@@ -110,8 +109,12 @@ def test_steps_that_change_the_project_or_act_are_used_without_a_stop() -> None:
     assert verify(r) == []
 
 
-@pytest.mark.parametrize("ref", [*sorted(BUILT_IN.values()), "jaynes.demo:ROLE"])
-def test_the_built_in_roles_and_the_demo_have_no_problems(ref: str) -> None:
+SHIPPED = [ref for name in packages.DEFAULT for ref, _ in catalog.found(packages.bundled_root() / name)]
+
+
+@pytest.mark.parametrize("ref", [*SHIPPED, "jaynes.demo:ROLE"])
+def test_the_roles_that_come_with_jaynes_and_the_demo_have_no_problems(ref: str) -> None:
+    assert len(SHIPPED) == 6
     assert verify(cli.load_ref(ref)) == []
 
 

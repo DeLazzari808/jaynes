@@ -42,9 +42,9 @@ from jaynes.role import (
     role,
     stop,
 )
-from jaynes.roles import fix_bug as fb
-from jaynes.roles.fix_bug import SUMMARY, sentence
-from jaynes.roles.references import chrome
+from . import fix_bug as fb
+from .fix_bug import SUMMARY, sentence
+from jaynes.browser import chrome
 from jaynes.runners import Runner
 
 LONGEST = {"case": 50, "result": 70}  # characters: together, one line the person reads at a glance in the terminal

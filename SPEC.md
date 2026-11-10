@@ -378,16 +378,38 @@ the page's sweep does the same for a planning run whose process died. The
 request page links the run, and the planning step's sample says that a return
 does not replace the plan already started.
 
-### 5.2 Where roles come from
+### 5.2 Packages of roles
+
+The engine has no role of its own. A package is a folder with
+`jaynes-package.toml` (`name`, `version`, `about`, `api`); every role file and
+every Python file with a `Role` at its top level there is one of its roles,
+except files whose name starts with `_`, and a file that does not import is
+left out. `jaynes add SOURCE [--project DIR] [--ref REF] [--folder SUB]`
+installs one: a name of a package that comes with Jaynes (`software`,
+`design`, in `packages/` and shipped as `jaynes/_packages`), a folder, linked,
+or a git repository, cloned at its newest commit or `REF`. An installed version
+is copied to `packages/<name>/<version>-<commit or content hash>/` in the home
+and kept; one that comes with Jaynes is installed again when Jaynes's copy
+changed, and `jaynes update` installs a git package's newest commit unless
+`REF` is a commit. The home's `packages.json` holds what is installed, the
+default list and each project's list, by the project's git root. A project
+without its own list uses the default one; `jaynes add --project` starts its
+list from the default one and puts the package first.
 
 A role is started by its name, a role file's path, a Python file's
-`path.py:attribute`, or `module:attribute`. Names come from `jaynes roles`: the
-folders in the home's `roles.json` (`jaynes roles add|remove <folder>`), in
-order, each file's roles by `name`, the first file with a name winning; then
-the built-in roles whose name no folder took. A Python file is imported by its
-path, with its folder at the end of the import path, so it imports the files
-next to it by name; a file that does not import is left out. `RunStarted`
-records the reference, a file by its absolute path.
+`path.py:attribute`, or `module:attribute`. A name is looked up in the
+project's packages in order, the first package with it winning. A package's
+Python files are imported as one Python package per installed folder, so they
+import each other relatively (`from . import fix_bug`). `RunStarted` records
+the reference, a file by its absolute path, which names the version. A run
+recorded as `jaynes.roles.<module>:ROLE`, from before packages, loads that
+module from the package that comes with Jaynes now.
+
+The role API, version 1, is what a role may import from Jaynes:
+`jaynes.role`, `jaynes.plan` (`Plan`), `jaynes.proof`, `jaynes.project`,
+`jaynes.runners`, `jaynes.suite`, `jaynes.sandbox`, `jaynes.screens`,
+`jaynes.browser` and `jaynes.inputs`. Jaynes refuses a package whose `api` is
+not its own.
 
 ## 6. Stops and attention
 

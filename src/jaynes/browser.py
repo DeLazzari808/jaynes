@@ -31,10 +31,18 @@ from pathlib import Path
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
-from jaynes.roles.references import chrome
-
 Theme = Literal["dark", "light"]
 DESKTOP, PHONE = (1440, 900), (390, 844)
+CHROME = ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          "/Applications/Chromium.app/Contents/MacOS/Chromium")
+
+
+def chrome() -> str | None:
+    """Google Chrome or Chromium on this machine, ``JAYNES_CHROME`` first."""
+    for c in (os.environ.get("JAYNES_CHROME"), *CHROME, shutil.which("google-chrome"), shutil.which("chromium")):
+        if c and Path(c).is_file():
+            return c
+    return None
 
 
 class BrowserError(Exception):

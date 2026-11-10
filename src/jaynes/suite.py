@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from jaynes import preview, sandbox
-from jaynes.role import Witnesses
+from jaynes.role import Fail, Witnesses
 
 TAIL = 3000  # characters of output kept, from the end, where test runners put their summary
 
@@ -88,3 +88,18 @@ def run(needs: Witnesses, command: str, timeout: float = 600.0, env: dict[str, s
             code = 124
         text = out.decode(errors="replace")
         return Ran(code, text[-TAIL:], text)
+
+
+def ran(needs: Witnesses, command: str) -> Ran | Fail:
+    """The command's result for a check, or why it says nothing about the project: no box, or the box refused what
+    it tried."""
+    try:
+        done = run(needs, command)
+    except sandbox.Unavailable as err:
+        return Fail(str(err))
+    refused = [line.strip() for line in done.printed.splitlines() if "operation not permitted" in line.lower()]
+    if done.code != 0 and refused:
+        return Fail(f"the box refused what {command} tried to do, so its failure says nothing about the project. "
+                    "This is Jaynes's to fix, not yours; tell the person. What the box refused:\n"
+                    + "\n".join(refused[:5]))
+    return done

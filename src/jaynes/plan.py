@@ -92,11 +92,11 @@ class Request:
         return next(p for p in self.runs if p.name == name)
 
 
-def ref(name: str, home: Path) -> str:
-    """A role's reference as runs record it, from its name among the person's roles and the built-in ones, a role
+def ref(name: str, home: Path, project: Path | None = None) -> str:
+    """A role's reference as runs record it, from its name among the roles of the packages the project uses, a role
     file, or a module's attribute."""
     try:
-        return catalog.ref(name, home)
+        return catalog.ref(name, home, project)
     except catalog.Unknown as err:
         raise PlanError([str(err)]) from None
 
@@ -125,7 +125,7 @@ def _pairs(x: Mapping[str, object], key: str, where: str) -> dict[str, str]:
     return dict(cast(dict[str, str], value))
 
 
-def parse(data: object, has_project: bool, home: Path) -> tuple[str, list[Planned]]:
+def parse(data: object, has_project: bool, home: Path, project: Path | None = None) -> tuple[str, list[Planned]]:
     """The request and its runs from a plan, or every reason it is refused. A run follows only runs listed before
     it, so a plan never loops, and it may follow at most one run with a project that does not merge, since it
     works from one branch."""
@@ -168,7 +168,7 @@ def parse(data: object, has_project: bool, home: Path) -> tuple[str, list[Planne
         if not task:
             reasons.append(f"{where}: task must say what this run does")
         try:
-            reference = ref(_text(x, "role"), home)
+            reference = ref(_text(x, "role"), home, project)
             role = load(reference)
             from jaynes import verify
             if problems := verify.verify(role):
@@ -430,16 +430,17 @@ def from_run(c: Conductor, run_id: str, start: Start | None = None) -> Request |
             if isinstance(given_agents, dict) else {}
         text, runs = parse({"request": str(first.payload["task"]),
                             "runs": [{**r.model_dump(), "runtimes": agents} for r in out.runs]},
-                           has_project=bool(folder), home=c.home)
+                           has_project=bool(folder), home=c.home, project=Path(folder) if folder else None)
         req = record(c, text, runs, Path(folder) if folder else None, by=run_id)
     advance(c, req.id, start)
     return req
 
 
-def reasons(c: Conductor, out: Plan, has_project: bool) -> list[str]:
+def reasons(c: Conductor, out: Plan, project: Path | None) -> list[str]:
     """Why Jaynes would refuse the plan, the check every planning step gets."""
     try:
-        parse({"request": "the run's task", "runs": [r.model_dump() for r in out.runs]}, has_project, c.home)
+        parse({"request": "the run's task", "runs": [r.model_dump() for r in out.runs]}, project is not None, c.home,
+              project)
     except PlanError as err:
         return err.reasons
     return []

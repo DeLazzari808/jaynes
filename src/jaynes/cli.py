@@ -157,12 +157,12 @@ def cmd_simulate(args: argparse.Namespace) -> None:
 DEFAULT_RUNTIMES = {"claude": "jaynes.runtimes:ClaudeRuntime", "codex": "jaynes.runtimes:CodexRuntime"}
 
 
-def role_ref(name: str, home: Path) -> str:
+def role_ref(name: str, home: Path, project: Path | None = None) -> str:
     """A role's reference as a run records it: one of the person's roles or a built-in one by its name, a role
     file's or a Python file's absolute path, or module:attribute, so a run continued from another folder finds it."""
     from jaynes import catalog
     try:
-        return catalog.ref(name, home)
+        return catalog.ref(name, home, project)
     except catalog.Unknown as err:
         sys.exit(str(err))
 
@@ -217,7 +217,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit("a new run needs --role and --task")
         if any("=" not in pair for pair in args.runtime):
             sys.exit("--runtime takes name=module:attribute")
-        ref, task, run_id = role_ref(args.role, c.home), args.task, args.id or new_run_id()
+        ref, task, run_id = (role_ref(args.role, c.home, Path(args.project) if args.project else None), args.task,
+                             args.id or new_run_id())
         extra = dict(pair.split("=", 1) for pair in args.runtime)
         r = _role(ref)
         if problems := verify.verify(r):  # before any agent works for it
@@ -303,7 +304,8 @@ def cmd_plan(args: argparse.Namespace) -> None:
     except ValueError as err:
         sys.exit(f"the plan is not JSON: {err}")
     try:
-        text, runs = plan.parse(data, has_project=bool(args.project), home=c.home)
+        text, runs = plan.parse(data, has_project=bool(args.project), home=c.home,
+                                project=Path(args.project) if args.project else None)
         req = plan.record(c, text, runs, Path(args.project) if args.project else None)
     except plan.PlanError as err:
         sys.exit("the plan is refused:\n" + "\n".join(f"- {r}" for r in err.reasons))
@@ -389,30 +391,67 @@ def cmd_wait(args: argparse.Namespace) -> None:
             time.sleep(args.every)
 
 
+def _project(given: str | None) -> Path | None:
+    """The project named, or the folder the command runs in when it is in a git repository."""
+    if given:
+        return Path(given)
+    from jaynes.project import ProjectError, resolve
+    try:
+        return resolve(Path.cwd())[0]
+    except ProjectError:
+        return None
+
+
 def cmd_roles(args: argparse.Namespace) -> None:
-    """List the roles a run can start by name, one line of JSON each; or add or remove a folder of the person's."""
-    from jaynes import catalog
+    """The roles a run on the project can start by name, one line of JSON each, from the packages it uses."""
+    from jaynes import catalog, packages
+    try:
+        for e in catalog.entries(_home(args), _project(args.project)):
+            print(json.dumps({"name": e.name, "about": e.about, "package": e.package, "plans": e.plans,
+                              "ref": e.ref}, ensure_ascii=False))
+    except packages.PackageError as err:
+        sys.exit(str(err))
+
+
+def cmd_add(args: argparse.Namespace) -> None:
+    from jaynes import packages
+    project = Path(args.project) if args.project else None
+    try:
+        p = packages.add(_home(args), args.source, project, ref=args.ref or "", folder=args.folder or "")
+    except packages.PackageError as err:
+        sys.exit(str(err))
+    where = f"for {packages.root(project)}" if project else "for every project with no list of its own"
+    how = "linked" if p.linked else "installed"
+    print(f"{p.name} {p.version} {how} {where}: {', '.join(packages.uses(_home(args), project))}")
+
+
+def cmd_remove(args: argparse.Namespace) -> None:
+    from jaynes import packages
+    project = Path(args.project) if args.project else None
+    try:
+        packages.remove(_home(args), args.name, project)
+    except packages.PackageError as err:
+        sys.exit(str(err))
+    print(f"{args.name} removed; {'the project' if project else 'the default list'} uses "
+          f"{', '.join(packages.uses(_home(args), project)) or 'nothing'}")
+
+
+def cmd_packages(args: argparse.Namespace) -> None:
+    """The installed packages, one line of JSON each, with the projects that list them; then the default list."""
+    from jaynes import packages
     home = _home(args)
-    if args.action:
-        if not args.folder:
-            sys.exit(f"jaynes roles {args.action} needs a folder")
-        if args.action == "add":
-            try:
-                folder = catalog.add(home, Path(args.folder))
-            except catalog.Unknown as err:
-                sys.exit(str(err))
-            print(f"added {folder}")
-        elif catalog.remove(home, Path(args.folder)):
-            print(f"removed {Path(args.folder).expanduser().resolve()}")
-        else:
-            sys.exit(f"{Path(args.folder).expanduser().resolve()} was not added")
-    for e in catalog.entries(home):
-        print(json.dumps({"name": e.name, "about": e.about, "from": e.folder or "jaynes", "plans": e.plans,
-                          "ref": e.ref}, ensure_ascii=False))
+    try:
+        have, lists, default = packages.installed(home), packages.projects(home), packages.uses(home)
+    except packages.PackageError as err:
+        sys.exit(str(err))
+    for p in have.values():
+        print(json.dumps({"name": p.name, "version": p.version, "source": p.source, "linked": p.linked,
+                          "default": p.name in default,
+                          "projects": [r for r, names in lists.items() if p.name in names]}, ensure_ascii=False))
 
 
 def cmd_check(args: argparse.Namespace) -> None:
-    r = _role(role_ref(args.role, _home(args)))
+    r = _role(role_ref(args.role, _home(args), Path(args.project) if args.project else None))
     problems = verify.verify(r)
     print(verify.report(r, problems))
     if problems:
@@ -594,7 +633,13 @@ def cmd_guide(args: argparse.Namespace) -> None:
 
 
 def cmd_update(args: argparse.Namespace) -> None:
+    from jaynes import packages
     from jaynes.conductor import Conductor
+    try:
+        if moved := packages.update(_home(args)):  # packages from git, to the newest commit they follow
+            print(f"packages updated: {', '.join(moved)}")
+    except packages.PackageError as err:
+        print(f"packages not updated: {err}", file=sys.stderr)
     at = update.installed()
     if at is None:
         print(f"Jaynes is not installed from git ({Path(__file__).parent}); update it where it came from")
@@ -701,10 +746,24 @@ def main(argv: list[str] | None = None) -> int:
     k.add_argument("role", help="a role by its name, as jaynes roles lists them, a role file (.toml), a Python "
                                 "file's path.py:attribute, or module:attribute")
     k.add_argument("--home")
-    rl = sub.add_parser("roles", help="the roles a run can start by name, and the folders of your own roles")
-    rl.add_argument("action", nargs="?", choices=["add", "remove"], help="add or remove a folder of your own roles")
-    rl.add_argument("folder", nargs="?", help="a folder of role files (.toml) and Python files with roles")
+    k.add_argument("--project", help="the project whose packages name the role; the default list otherwise")
+    rl = sub.add_parser("roles", help="the roles a run on a project can start by name, from the packages it uses")
+    rl.add_argument("--project", help="the project; the folder you are in when it is in a git repository")
     rl.add_argument("--home")
+    ad = sub.add_parser("add", help="install a package of roles, or link a folder of yours, for one project or for "
+                                    "every project")
+    ad.add_argument("source", help="a package that comes with Jaynes (software, design), a folder with "
+                                   "jaynes-package.toml, linked where it is, or a git repository")
+    ad.add_argument("--project", help="only this project; without it, every project with no list of its own")
+    ad.add_argument("--ref", help="a git branch, tag or commit; a commit stays as it is on jaynes update")
+    ad.add_argument("--folder", help="the folder in the repository that holds the package, if not its top")
+    ad.add_argument("--home")
+    rm = sub.add_parser("remove", help="stop using a package in a project, or in the default list")
+    rm.add_argument("name")
+    rm.add_argument("--project", help="only this project; without it, the default list")
+    rm.add_argument("--home")
+    pk = sub.add_parser("packages", help="the packages installed, and which projects use which")
+    pk.add_argument("--home")
     q = sub.add_parser("queue")
     q.add_argument("--home")
     w = sub.add_parser("answer")
@@ -786,7 +845,8 @@ def main(argv: list[str] | None = None) -> int:
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
      "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
      "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct, "halt": cmd_halt,
-     "plan": cmd_plan, "roles": cmd_roles}[args.cmd](args)
+     "plan": cmd_plan, "roles": cmd_roles, "add": cmd_add, "remove": cmd_remove,
+     "packages": cmd_packages}[args.cmd](args)
     return 0
 
 

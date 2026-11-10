@@ -1,5 +1,5 @@
-"""The person's own roles live in a folder outside Jaynes, and a role can plan a request: once its run delivered the
-plan, Jaynes starts it by itself."""
+"""Every set of roles is a package the projects that list it use, as npm libraries; a role can plan a request, and
+once its run delivered the plan, Jaynes starts it by itself."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from jaynes import catalog, cli, plan
+from jaynes import cli, packages, plan
 from jaynes.conductor import Conductor, project
 from tests.test_merge import git
 from tests.test_plan import drain, pending, repo  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -17,14 +17,16 @@ from tests.test_review import get, serving
 
 RUNTIME = ["--runtime", "planner=tests.planned:Agent"]
 REQUEST = "A dark look, then the home screen in it"
+MANIFEST = 'name = "team"\nversion = "0.1.0"\nabout = "A team that plans."\napi = 1\n'
 
 
 @pytest.fixture
 def mine(tmp_path: Path) -> Path:
-    """A folder of the person's roles: the planned ones, and a small-change of theirs that takes the built-in's
-    place."""
+    """A package of the person's: the planned roles, and a small-change of theirs that takes the place of the one
+    that comes with Jaynes."""
     folder = tmp_path / "my-roles"
     folder.mkdir()
+    (folder / packages.MANIFEST).write_text(MANIFEST)
     (folder / "team.py").write_text("from tests.planned import DIRECTION, LOOK, SCREEN\n")
     (folder / "small.toml").write_text('name = "small-change"\nagent = "planner"\nabout = "Mine."\n\n'
                                        '[[step]]\nname = "write"\noutput = "tests.planned:Note"\n')
@@ -33,43 +35,79 @@ def mine(tmp_path: Path) -> Path:
 
 
 def listed(capsys: pytest.CaptureFixture[str], *args: str) -> list[dict[str, Any]]:
-    cli.main(["roles", *args])
+    cli.main(list(args))
     return [json.loads(line) for line in capsys.readouterr().out.splitlines() if line.startswith("{")]
 
 
-def test_a_folder_of_the_persons_roles_comes_first_and_takes_a_built_in_roles_place(
-        tmp_path: Path, mine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_package_linked_for_one_project_comes_first_there_and_nowhere_else(
+        tmp_path: Path, repo: Path, mine: Path, capsys: pytest.CaptureFixture[str]) -> None:  # noqa: F811
     home = str(tmp_path / "home")
-    before = {r["name"]: r for r in listed(capsys, "--home", home)}
-    assert before["small-change"]["from"] == "jaynes" and "direction" not in before
+    before = {r["name"]: r for r in listed(capsys, "roles", "--project", str(repo), "--home", home)}
+    assert before["small-change"]["package"] == "software" and "direction" not in before
+    assert set(before) == {"build-feature", "fix-bug", "small-change", "redesign", "screen-design", "visual-identity"}
 
-    roles = listed(capsys, "add", str(mine), "--home", home)
+    cli.main(["add", str(mine), "--project", str(repo), "--home", home])
+    assert "team 0.1.0 linked for" in capsys.readouterr().out
 
+    roles = listed(capsys, "roles", "--project", str(repo), "--home", home)
     names = [r["name"] for r in roles]
-    assert names[:4] == ["small-change", "direction", "look", "screen"]  # theirs first, file by file
-    assert {"fix-bug", "build-feature", "screen-design"} <= set(names) and names.count("small-change") == 1
+    assert names[:4] == ["small-change", "direction", "look", "screen"]  # the package added last comes first
+    assert names.count("small-change") == 1
     by = {r["name"]: r for r in roles}
-    assert by["small-change"] == {"name": "small-change", "about": "Mine.", "from": str(mine), "plans": False,
+    assert by["small-change"] == {"name": "small-change", "about": "Mine.", "package": "team", "plans": False,
                                   "ref": str(mine / "small.toml")}
     assert by["direction"]["plans"] and by["direction"]["ref"] == f"{mine / 'team.py'}:DIRECTION"
     assert by["fix-bug"]["about"].startswith("Fixes a bug")
-    assert catalog.folders(tmp_path / "home") == [mine]
+    assert "direction" not in {r["name"] for r in listed(capsys, "roles", "--project", str(tmp_path), "--home", home)}
+    [team] = [p for p in listed(capsys, "packages", "--home", home) if p["name"] == "team"]
+    assert team["linked"] and team["projects"] == [str(repo)] and not team["default"]
 
-    cli.main(["roles", "remove", str(mine), "--home", home])
-    assert "direction" not in {r["name"] for r in listed(capsys, "--home", home)}
+    cli.main(["remove", "team", "--project", str(repo), "--home", home])
+    assert "direction" not in {r["name"] for r in listed(capsys, "roles", "--project", str(repo), "--home", home)}
+
+
+def test_a_package_from_git_is_installed_at_a_version_a_run_keeps_and_update_moves(
+        tmp_path: Path, mine: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    source = tmp_path / "team-repo"
+    source.mkdir()
+    (source / packages.MANIFEST).write_text(MANIFEST)
+    (source / "small.toml").write_text((mine / "small.toml").read_text())
+    git(source, "init", "-q", "-b", "main")
+    git(source, "add", "-A")
+    git(source, "commit", "-qm", "first")
+    home = tmp_path / "home"
+
+    first = packages.add(home, f"file://{source}")  # from git, as from any address git clones
+    cli.main(["run", "--home", str(home), "--role", "small-change", "--task", "note it", *RUNTIME])
+    run = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["run"]
+    (source / "small.toml").write_text((mine / "small.toml").read_text().replace("Mine.", "Mine, better."))
+    git(source, "commit", "-qam", "second")
+
+    assert packages.update(home) == ["team"]
+
+    now = packages.installed(home)["team"]
+    assert now.commit == git(source, "rev-parse", "HEAD") and now.path != first.path and Path(first.path).is_dir()
+    started = project(Conductor(home).store.events(run_id=run)).started
+    assert started is not None and started["ref"] == str(Path(first.path) / "small.toml")  # the run keeps its version
+    assert [r["about"] for r in listed(capsys, "roles", "--home", str(home)) if r["package"] == "team"] == [
+        "Mine, better."]
+    with pytest.raises(packages.PackageError, match="written for the role API 2"):
+        (source / packages.MANIFEST).write_text(MANIFEST.replace("api = 1", "api = 2"))
+        packages.manifest(source)
 
 
 def test_a_run_started_by_the_persons_role_name_records_where_it_lives(
         tmp_path: Path, mine: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
-    catalog.add(home, mine)
+    packages.add(home, str(mine))
     monkeypatch.chdir(tmp_path)  # another folder: the run finds the role by its path, not by where it started
     cli.main(["run", "--home", str(home), "--role", "small-change", "--task", "note it", *RUNTIME])
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
     started = project(Conductor(home).store.events(run_id=out["run"])).started
     assert started is not None and started["ref"] == str(mine / "small.toml")
-    with pytest.raises(SystemExit, match="no role 'nope': use one of small-change, direction"):
+    with pytest.raises(SystemExit, match="no role 'nope' in the packages this project uses: use one of small-change, "
+                                         "direction"):
         cli.main(["run", "--home", str(home), "--role", "nope", "--task", "t"])
 
 
@@ -77,7 +115,7 @@ def test_a_role_that_plans_starts_its_plan_once_its_run_delivered(
         tmp_path: Path, repo: Path, mine: Path, pending: list[list[str]],  # noqa: F811
         capsys: pytest.CaptureFixture[str]) -> None:
     home = tmp_path / "home"
-    catalog.add(home, mine)
+    packages.add(home, str(mine), repo)
 
     cli.main(["run", "--home", str(home), "--role", "direction", "--task", REQUEST, "--project", str(repo),
               *RUNTIME])
@@ -88,7 +126,7 @@ def test_a_role_that_plans_starts_its_plan_once_its_run_delivered(
     planned = st.step("plan").checked
     assert planned is not None and planned["attempt"] == 2  # the first plan named a role nobody has
     said = json.loads((c.home / "objects" / f"{planned['output_hash']}.json").read_text())
-    assert said["why"].startswith("roles shown: small-change, look, screen, visual-identity")  # never itself
+    assert said["why"].startswith("roles shown: small-change, look, screen, build-feature")  # never itself
     assert "direction" not in said["why"]
     assert out["status"] == "waiting" and out["stops"] == 1  # its sample waits; the plan does not
     req = out["request"]
@@ -109,7 +147,7 @@ def test_a_plan_that_names_a_role_nobody_has_is_sent_back_with_why(
         tmp_path: Path, repo: Path, mine: Path, pending: list[list[str]],  # noqa: F811
         capsys: pytest.CaptureFixture[str]) -> None:
     home = tmp_path / "home"
-    catalog.add(home, mine)
+    packages.add(home, str(mine), repo)
     cli.main(["run", "--home", str(home), "--role", "direction", "--task", REQUEST, "--project", str(repo),
               *RUNTIME])
     run = json.loads(capsys.readouterr().out.strip().splitlines()[-1])["run"]
@@ -123,7 +161,7 @@ def test_the_page_starts_a_plan_whose_run_delivered_and_died(
         tmp_path: Path, repo: Path, mine: Path, pending: list[list[str]],  # noqa: F811
         capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
-    catalog.add(home, mine)
+    packages.add(home, str(mine), repo)
     def dies(c: Conductor, run_id: str) -> None:  # it delivers, and its process dies
         pass
 
@@ -146,7 +184,7 @@ def test_the_page_ties_the_plan_to_the_run_that_made_it(
         tmp_path: Path, repo: Path, mine: Path, pending: list[list[str]],  # noqa: F811
         capsys: pytest.CaptureFixture[str]) -> None:
     home = tmp_path / "home"
-    catalog.add(home, mine)
+    packages.add(home, str(mine), repo)
     cli.main(["run", "--home", str(home), "--role", "direction", "--task", REQUEST, "--project", str(repo),
               *RUNTIME])
     out = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
@@ -161,3 +199,12 @@ def test_the_page_ties_the_plan_to_the_run_that_made_it(
         assert "only what used it runs again" not in sample
     finally:
         server.shutdown()
+
+
+def test_a_run_started_when_roles_came_inside_jaynes_finds_its_role_in_the_package_now() -> None:
+    from jaynes import catalog
+    from jaynes.role import Role
+    for old, name in [("jaynes.roles.build_feature:ROLE", "build-feature"),
+                      ("jaynes.roles.screen_design:ROLE", "screen-design")]:
+        found = catalog.load(old)
+        assert isinstance(found, Role) and found.name == name

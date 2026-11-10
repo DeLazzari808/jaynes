@@ -81,15 +81,18 @@ def test_an_answer_from_the_cli_is_an_agent_and_can_be_bound_to_what_the_queue_s
     assert answered["by"] == "agent" and answered["label"] == "correct"
 
 
-def test_a_built_in_role_is_started_by_its_name(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_a_role_of_a_package_that_comes_with_jaynes_is_started_by_its_name(
+        tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     cli.main(["run", "--home", str(tmp_path), "--role", "visual-identity", "--task", "t"])
     assert json.loads(capsys.readouterr().out)["step"] == "current"  # it ran: the first step wants a project
     [started] = [e.payload for e in Store(tmp_path / "jaynes.sqlite3").events("RunStarted")]
-    assert started["ref"] == "jaynes.roles.visual_identity:ROLE"
+    installed = Path(started["ref"].rpartition(":")[0])  # the version installed in the home, which the run keeps
+    assert installed.name == "visual_identity.py" and installed.parent.parent == tmp_path / "packages" / "design"
 
 
-def test_an_unknown_role_name_lists_the_built_in_ones(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match="visual-identity, redesign"):
+def test_an_unknown_role_name_lists_the_roles_the_project_can_use(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="no role 'landing-page' in the packages this project uses: use one of "
+                                         "build-feature, fix-bug, small-change, redesign"):
         cli.main(["run", "--home", str(tmp_path), "--role", "landing-page", "--task", "t"])
 
 

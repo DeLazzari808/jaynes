@@ -2,15 +2,60 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: Roles are packages, as libraries are for npm
+
+**Decided.** The engine brings no role of its own. Every set of roles is a
+package: a folder with `jaynes-package.toml`, which gives its name, version,
+what it is for and the role API it is written against. `jaynes add` installs
+one into the home and puts it in a project's list (`--project`) or in the
+default list that projects without their own use; `jaynes remove` takes it out,
+`jaynes packages` lists them, and `jaynes roles` lists the roles a project can
+start by name, the package added last first.
+
+- A package comes with Jaynes (`software` and `design`, both in the default
+  list), or from a git repository, or from a folder of the person's, linked
+  where it is so an edit applies at once, as `npm link` does.
+- Every installed version keeps its own folder, and a run records the file it
+  started with, so updating never changes a run under way. `jaynes update`
+  brings packages from git to the newest commit they follow; the ones that
+  come with Jaynes follow Jaynes.
+- A package's Python files import each other relatively, so two versions of a
+  package never mix in one process. What a role may import from Jaynes is the
+  role API, listed in SPEC.md, version 1; a change that breaks a role bumps it,
+  and Jaynes refuses a package written for another.
+- A project's list lives in the person's home, never in the project, so a
+  company's repository gets no file and never names a private package.
+- Runs started before this find their role in the package that comes with
+  Jaynes now.
+
+**Why.** Alan asked for the roles outside the engine but tied to it, as npm
+libraries are to Node. It also answers which specialists work where: a
+project of a company the person works for uses only the public software
+roles, and the person's own projects add their private team.
+
+**Tradeoffs.**
+
+- The role API is now a promise: changing it breaks other people's packages,
+  as changing Node's API breaks libraries.
+- The packages that come with Jaynes still live in its repository, under
+  `packages/`, outside the engine's code and shipped with it, because their
+  tests use the engine's test helpers and every engine change must be checked
+  against them. A repository of their own can come when someone else
+  publishes roles.
+- A linked folder's Python runs when Jaynes lists the project's roles, so it
+  must be the person's own.
+
+**Built 2026-11-10.** The private direction and design roles are a linked
+package of the private repository, used by the projects that list it.
+
 ## 2026-11-10: The person's own roles, and a role that plans
 
 **Decided.** A person keeps their own roles, such as a company's private
-specialists, in a folder outside Jaynes and adds it once with `jaynes roles add
-<folder>`. Every role file and every Python file with a role in it there is a
-role started by its name, and one named like a built-in role takes its place.
-`jaynes roles` lists them, the person's first, each with a sentence on what it
-is for, which a role now says (`about`). A run records the role's file by its
-full path, so it continues from any folder.
+specialists, outside Jaynes, and `jaynes roles` lists every role a run can
+start by name, each with a sentence on what it is for, which a role now says
+(`about`). A run records the role's file by its full path, so it continues
+from any folder. **Changed the same day:** the folder became a package; see
+"Roles are packages, as libraries are for npm".
 
 A role plans a request when a step of it delivers a plan (`jaynes.plan.Plan`):
 the runs, each with a role by its name, a task and the runs it builds on, and
@@ -125,6 +170,9 @@ for the software roles only.
 **Why.** Whoever installs Jaynes gets software roles that do real work on day
 one instead of examples, and these roles are where the engine's new parts, such
 as the hidden cases and the merge alone, are proven.
+
+**Changed 2026-11-10:** they stay public and keep improving, in the package
+`software` that comes with Jaynes, outside the engine's code.
 
 **Tradeoffs.**
 
@@ -550,9 +598,9 @@ repository history is public and removing them would not make them private.
 
 **Changed 2026-11-09:** the software roles stay public and keep improving.
 
-**Answered 2026-11-10.** Jaynes finds private specialists in the folders the
-person adds with `jaynes roles add`; see "The person's own roles, and a role
-that plans".
+**Answered 2026-11-10.** Private specialists are a package the person adds to
+the projects that use them with `jaynes add`; see "Roles are packages, as
+libraries are for npm".
 
 ## 2026-11-07: What counts as proof that a step got it right
 

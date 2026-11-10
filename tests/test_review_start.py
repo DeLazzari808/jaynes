@@ -26,6 +26,15 @@ from tests import test_role_file as role_file
 from tests.test_review import JAR, NoRedirect, form, get, post, serving
 
 
+
+def shipped(home: Path) -> list[str]:
+    """The roles of the packages that come with Jaynes, as the home installed them, in the page's order."""
+    from jaynes import catalog
+    found = [e.ref for e in catalog.entries(home)]
+    assert [Path(r.rpartition(":")[0]).stem for r in found] == ["build_feature", "fix_bug", "small_change", "redesign",
+                                                               "screen_design", "visual_identity"]
+    return found
+
 def start(base: str, fields: dict[str, str]) -> str:
     """Posts the new-run form and returns the run it redirects to."""
     req = urllib.request.Request(base + "/start", data=urllib.parse.urlencode(fields).encode())
@@ -51,10 +60,7 @@ def options(page: str) -> list[str]:
 def test_the_demo_role_can_be_started_from_the_page_and_stops_for_you(served: tuple[str, Path]) -> None:
     base, home = served
     page = get(base + "/new")
-    assert options(page) == ["jaynes.demo:ROLE", "jaynes.roles.visual_identity:ROLE",
-                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE",
-                             "jaynes.roles.build_feature:ROLE", "jaynes.roles.small_change:ROLE",
-                             "jaynes.roles.screen_design:ROLE"]
+    assert options(page) == ["jaynes.demo:ROLE", *shipped(home)]
 
     assert '<option value="jaynes.demo:ROLE" selected>' in page  # with nothing run yet
     run = start(base, {**form(page), "role": "jaynes.demo:ROLE", "ref": "", "task": "People"})
@@ -71,10 +77,7 @@ def test_roles_already_run_are_offered_with_their_runtimes(served: tuple[str, Pa
     cli.main(["run", "--home", str(home), "--role", "tests.stopped:ROLE", "--task", "t",
               "--runtime", "quick=tests.stopped:Agent"])
     page = get(base + "/new")
-    assert options(page) == ["jaynes.demo:ROLE", "jaynes.roles.visual_identity:ROLE",
-                             "jaynes.roles.redesign:ROLE", "jaynes.roles.fix_bug:ROLE",
-                             "jaynes.roles.build_feature:ROLE", "jaynes.roles.small_change:ROLE",
-                             "jaynes.roles.screen_design:ROLE", "tests.stopped:ROLE"]
+    assert options(page) == ["jaynes.demo:ROLE", *shipped(home), "tests.stopped:ROLE"]
     assert '<option value="tests.stopped:ROLE" selected>' in page  # the role run last is proposed first
     run = start(base, {**form(page), "role": "tests.stopped:ROLE", "ref": "", "task": "again"})
     store = Store(home / "jaynes.sqlite3")

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from jaynes.conductor import Conductor
 from jaynes.role import Checked, Fail, Pass, Witnesses
-from jaynes.roles import small_change as sc
+from software import small_change as sc
 from jaynes.verify import verify
 from tests.fakes import Scripted
 from tests.test_fix_bug import PYTHON, copy, edit, git, pytestmark, python, repo  # noqa: F401  # pyright: ignore[reportUnusedImport]

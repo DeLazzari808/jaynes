@@ -75,6 +75,7 @@ done = design.step("accept", needs=build, stop=stop(budget=0.05, sampled=False))
 | Term | Meaning |
 |---|---|
 | Role | A kind of work: screen design, copy review, bug fix |
+| Package | A set of roles, installed at a version and used by the projects that list it, as an npm library; the engine has no role of its own |
 | Step | One unit of a role's method, with a required output |
 | Check | Code that must pass before the next step starts |
 | Stop | A step where the method needs a person |
@@ -110,13 +111,14 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | A local API with every action of the page (`/api/` on the page's address, JSON), and the MCP server (`jaynes mcp`) the plugin starts in Claude Code: an agent answers what holds a run and sends a blocked run back; only you answer samples, drop a run, undo and resume | Works in tests; a Claude Code agent used it on a scratch home |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
 | Box for previews on macOS; web access per step, with every address recorded | Works |
-| Built-in roles: visual-identity, redesign (from references) | Works, first real runs in progress |
-| Built-in role fix-bug: a failing test first, then a fix, both run in the box | Works; first real run delivered its branch |
-| Built-in roles build-feature (the agreed plan's tests first, shown as examples with sketches of the screens, then code that keeps the project's identity) and small-change (no stop unless the change is big) | build-feature delivered four slices of a real Go project; small-change works in tests |
-| Built-in role screen-design: your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
+| Package design, which comes with Jaynes: visual-identity, redesign (from references) | Works, first real runs in progress |
+| Package software, which comes with Jaynes: fix-bug, a failing test first, then a fix, both run in the box | Works; first real run delivered its branch |
+| Package software: build-feature (the agreed plan's tests first, shown as examples with sketches of the screens, then code that keeps the project's identity) and small-change (no stop unless the change is big) | build-feature delivered four slices of a real Go project; small-change works in tests |
+| Package design: screen-design, your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
 | Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
 | A request as a plan of runs (`jaynes plan`): each run starts once the runs it builds on delivered, from where their delivery landed, without waiting for samples; the page shows the plan | Works in tests and on a scratch page |
-| Your own roles in a folder outside Jaynes (`jaynes roles add`), listed by `jaynes roles` and started by name; a role whose step delivers a plan, which Jaynes checks and starts once its run delivered | Works in tests; a private direction role planned a real request with Claude Code |
+| Roles are packages, as npm libraries: `jaynes add` installs one at a fixed version, from git or a folder of yours, for one project or every project; `jaynes roles` lists what a project can start; the engine has no role of its own | Works in tests and on a scratch home with a private package |
+| A role whose step delivers a plan, which Jaynes checks and starts once its run delivered | Works in tests; a private direction role planned a real request with Claude Code |
 
 Missing, roughly in order:
 
@@ -143,8 +145,8 @@ Missing, roughly in order:
 - **The page as an app.** Stops are answered on the page, and the terminal
   only says where; next, the page installed as an app (a PWA) with macOS
   notifications.
-- **More built-in roles** that need no design taste to check, such as
-  upgrading dependencies.
+- **More roles in the software package** that need no design taste to check,
+  such as upgrading dependencies.
 - **Two or three directions to choose from** in redesign. Stops can let you
   choose among an output's items now; the design roles still propose one
   direction.
@@ -219,6 +221,18 @@ Or by hand:
 uv tool install --reinstall git+https://github.com/alk0x1/jaynes
 jaynes skill                   # without the plugin: /jaynes in Claude Code, stops in its dialog
 jaynes                         # opens the page on http://127.0.0.1:8740
+```
+
+Roles come in packages. Jaynes installs two by itself, `software`
+(build-feature, fix-bug, small-change) and `design` (visual-identity,
+redesign, screen-design), for every project. Add your own for one project or
+for all:
+
+```sh
+jaynes add ~/my-team --project .            # a folder with jaynes-package.toml, linked: edits apply at once
+jaynes add https://github.com/you/roles     # from git, at its newest commit; jaynes update moves it
+jaynes roles                                # what this project can start, your packages first
+jaynes packages                             # what is installed, and where each is used
 ```
 
 Everything else happens in the page:

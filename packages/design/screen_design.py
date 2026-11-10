@@ -38,11 +38,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from jaynes import inputs, project as repo, screens as sc
+from jaynes import inputs, runners, suite
+from jaynes import project as repo
+from jaynes import screens as sc
 from jaynes.browser import DESKTOP, PHONE, BrowserError, open_page
 from jaynes.role import Back, Blocked, Choice, Fail, Input, Pass, Picture, Shown, StepContext, Witnesses, role, stop
-from jaynes.roles import fix_bug as fb
-from jaynes.roles import small_change as sm
 
 TOOL_SECONDS = 600
 EXPECTS = ("expectText", "expectRoute")
@@ -706,7 +706,7 @@ def slice_works(out: Built, needs: Witnesses) -> Pass | Fail:
         return Fail("the slice's path does not reach its ending on the changed product:", *errors)
     command = needs[RUNNER].value.command
     if command:
-        ran = fb._ran(needs, command)  # pyright: ignore[reportPrivateUsage]
+        ran = suite.ran(needs, command)
         if isinstance(ran, Fail):
             return ran
         if ran.code != 0:
@@ -874,6 +874,21 @@ CITE = ("Quote only what the snapshot shows: a citation names one of its files (
         "query names a list of a response (copy a fact's query from inputs/snapshot.json) and which Jaynes computes; "
         "leave its value empty if you do not know it, and Jaynes tells you.")
 
+TESTS = ("**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**", "**/test_*.py", "**/*_test.py",
+         "**/*.test.*", "**/*.spec.*", "**/*_test.go", "**/*_spec.rb", "**/*Test.java", "**/*Tests.cs")
+
+
+class Suite(BaseModel):
+    command: str = Field(description="runs the project's whole test suite; empty when the project has none")
+
+
+def find_suite(ctx: StepContext) -> Suite:
+    """The project's suite, the one the person gave at the start, or none."""
+    assert ctx.needs.project is not None
+    found = runners.detect(ctx.needs.project, str(ctx.started.get("suite") or ""))
+    return Suite(command=found.suite if found else "")
+
+
 ROLE = role("screen-design", inputs=INPUTS,
             about="Designs a screen from how the person uses it, following a design method kept in a file; it "
             "needs a preview and the screen's path in it.")
@@ -916,7 +931,7 @@ REQUIREMENTS = ROLE.step(
                  "recommendation and why. Defer a break only with a reason. Mark the first slice: the smallest path "
                  "that works end to end, its moment, and where that moment must end, as a route and a text that shows "
                  "it ended there.")
-RUNNER = ROLE.step("runner", output=sm.Suite, run_by=sm.find_suite, project="read", max_turns=1)
+RUNNER = ROLE.step("runner", output=Suite, run_by=find_suite, project="read", max_turns=1)
 TEST = ROLE.step(
     "test", output=Test, needs=[PATHS, REQUIREMENTS], project="read", check=fails_first, inputs=["method"],
     instructions="Write the test of the first slice as a path in the closed vocabulary: the owner's clicks through "
@@ -927,7 +942,7 @@ TEST = ROLE.step(
                  "Jaynes tells you what it reported.")
 IMPLEMENT = ROLE.step(
     "implement", output=Built, needs=[RUNNER, REQUIREMENTS, TEST], project="write",
-    may_change=("**", *(f"!{t}" for t in fb.TESTS)), check=slice_works, deadline=3600.0,
+    may_change=("**", *(f"!{t}" for t in TESTS)), check=slice_works, deadline=3600.0,
     inputs=["method", "heuristics"],
     instructions="Build the first slice so its path (inputs/test.json) reaches the approved ending, in the product's "
                  "approved brand and design system. Change the product's code, never its tests. List each change the "

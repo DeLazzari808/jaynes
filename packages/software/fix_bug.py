@@ -18,7 +18,7 @@ import re
 
 from pydantic import BaseModel, Field
 
-from jaynes import project, proof, runners, sandbox, suite
+from jaynes import project, proof, runners, suite
 from jaynes.role import Back, Disputes, Fail, Pass, Shown, StepContext, Witnesses, role, stop
 from jaynes.runners import Runner
 
@@ -83,18 +83,7 @@ STATUS = {"fail", "failed", "failure", "failures", "error", "errors", "not", "ok
           "tests", "setup", "build"}  # words every failing run prints, whatever made it fail
 
 
-def _ran(needs: Witnesses, command: str) -> suite.Ran | Fail:
-    """The command's result, or why it says nothing about the project: no box, or the box refused what it tried."""
-    try:
-        ran = suite.run(needs, command)
-    except sandbox.Unavailable as err:
-        return Fail(str(err))
-    refused = [line.strip() for line in ran.printed.splitlines() if "operation not permitted" in line.lower()]
-    if ran.code != 0 and refused:
-        return Fail(f"the box refused what {command} tried to do, so its failure says nothing about the project. "
-                    "This is Jaynes's to fix, not yours; tell the person. What the box refused:\n"
-                    + "\n".join(refused[:5]))
-    return ran
+_ran = suite.ran  # by this name, as the checks call it
 
 
 def _quoted(failure: str, ran: suite.Ran, why: str) -> Fail | None:

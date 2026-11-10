@@ -13,7 +13,7 @@ import pytest
 from jaynes import runners, sandbox, suite
 from jaynes.conductor import Conductor
 from jaynes.role import Checked, Fail, Pass, Witnesses
-from jaynes.roles import fix_bug as fb
+from software import fix_bug as fb
 from jaynes.runners import Runner
 from jaynes.verify import verify
 from tests.fakes import Action, Scripted, write

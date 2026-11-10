@@ -17,7 +17,7 @@ from typing import Any
 import pytest
 
 from jaynes.conductor import AnswerRejected, Conductor, RunResult
-from jaynes.roles import screen_design as sd
+from design import screen_design as sd
 from tests.needs import chrome_runs
 from jaynes.runtime import TurnResult
 

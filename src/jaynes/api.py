@@ -306,7 +306,7 @@ def start(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
     ref = _text(f, "ref").strip() or _text(f, "role")
     if ref and not ref.endswith(".toml") and ":" not in ref:  # a role by its name, as jaynes run takes it
         try:
-            ref = catalog.ref(ref, r.c.home)
+            ref = catalog.ref(ref, r.c.home, Path(_text(f, "project").strip()) if _text(f, "project").strip() else None)
         except catalog.Unknown as err:
             raise Refused(400, str(err)) from None
     task = _text(f, "task").strip()

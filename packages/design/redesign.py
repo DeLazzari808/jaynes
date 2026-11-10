@@ -15,8 +15,8 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 from jaynes.role import Fail, Pass, Witnesses, role, stop
-from jaynes.roles import references as rf
-from jaynes.roles import visual_identity as vi
+from . import references as rf
+from . import visual_identity as vi
 
 MARKUP = ("**/*.html", "**/*.jsx", "**/*.tsx", "**/*.vue", "**/*.svelte")
 MOTION = ("@keyframes", "animation:", "transition:")
