@@ -45,7 +45,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import api, bounds, guard, install, login, outcome, role_file, roles, sandbox, skill, update
+from jaynes import api, bounds, guard, install, login, outcome, plan, role_file, roles, sandbox, skill, update
 from jaynes import project as repo
 from jaynes.conductor import (By, Conductor, RunState, StepState, Waiting, continue_in_background, holds, project,
                               return_to)
@@ -874,11 +874,75 @@ class Review:
                        "towards trusting a step.", [self._home_row(w, now) for w in looks], "No samples.")
                 + part("Delivered", f"{last} Undo is on each run's page.",
                        [self._delivery_row(d, now) for d in new], "Nothing new was delivered.", older)
-                + part("Running now", "Runs working, or paused until their quota resets.",
-                       [self._home_row(w, now) for w in moving], "Nothing is running.",
+                + part("Running now", "Runs working, or paused until their quota resets, and the runs of a "
+                       "request that start once the ones before them delivered.",
+                       [self._home_row(w, now) for w in moving] + self._plan_rows(), "Nothing is running.",
                        '<p><a class="btn go" href="/new">Start a run</a></p>' if not moving else "")
                 + '</div>')
         return page("Jaynes review", self.sidebar(None), main, self.seq())
+
+    def _plan_rows(self) -> list[str]:
+        """A request whose plan still has runs to start, in one row."""
+        rows: list[str] = []
+        for req in plan.requests(self.c):
+            try:
+                places = plan.places(self.c, req)
+            except plan.PlanError:
+                continue
+            later = [x for x in places if x.state == "planned"]
+            if not later or any(x.state == "stopped" for x in places):
+                continue
+            done = sum(x.state == "delivered" for x in places)
+            nxt = "; ".join(f"{x.planned.name}, {x.why}" for x in later)
+            rows.append(f'<a class="hrow" href="/request/{q(req.id)}"><div><div class="t">{marked(headline(req.text))}'
+                        f'</div><div class="q">Next: {esc(nxt)}</div><div class="m"><span class="chip blue">plan'
+                        f'</span><span>{done} of {len(places)} runs delivered</span></div></div></a>')
+        return rows
+
+    def request_page(self, rid: str) -> str:
+        """A request in the person's words, and its plan: each run, what it follows, and where it is."""
+        found = plan.requests(self.c, rid)
+        if not found:
+            return self.not_found(f"No request {rid}")
+        req = found[0]
+        try:
+            places = plan.places(self.c, req)
+        except plan.PlanError as err:
+            return self.not_found(f"The plan of {rid} cannot be read: {err}")
+        holding = {w.run_id: w for w in self.queue() if w.needs_person}
+        rows: list[str] = []
+        for x in places:
+            p, w = x.planned, holding.get(x.planned.run)
+            chip = {"planned": '<span class="chip blue">planned</span>', "delivered": '<span class="chip green">'
+                    'delivered</span>', "stopped": '<span class="chip red">stopped</span>'}.get(
+                x.state, '<span class="chip amber">holds</span>' if w is not None and w.holding else
+                '<span class="chip blue">working</span>')
+            said = x.why or (self._question_of(w, self.role_of(p.run)) if w is not None and w.kind == "stop" else
+                             w.reasons[0] if w is not None and w.reasons else "")
+            try:
+                role = plan.load(p.role).name
+            except plan.PlanError:
+                role = p.role
+            follows = f"after {', '.join(p.after)}" if p.after else "first"
+            inner = (f'<div><div class="t">{esc(p.name)}: {marked(headline(p.task))}</div>'
+                     + (f'<div class="q">{marked(headline(said, 140))}</div>' if said else "")
+                     + f'<div class="m">{chip}<span>{esc(role)}</span><span>{esc(follows)}</span></div></div>')
+            started = x.state != "planned" and list(self.c.store.events("RunStarted", run_id=p.run))
+            rows.append(f'<a class="hrow" href="/run/{q(p.run)}">{inner}</a>' if started else
+                        f'<div class="hrow">{inner}</div>')
+        done = sum(x.state == "delivered" for x in places)
+        state = plan.status(self.c, req)
+        main = (f'<div class="crumbs"><b>Request</b><span class="r">{esc(rid)}</span></div><div class="body home">'
+                f'<div><h1>{marked(headline(req.text))}</h1><div class="sub">{done} of {len(places)} runs delivered'
+                + {"delivered": ": every run delivered.", "stopped": ": a run will not deliver, so the runs after "
+                   "it will not start.", "working": ". Each run starts once the runs it follows delivered, without "
+                   "waiting for their samples."}[state]
+                + '</div></div>'
+                + (f'<details class="fold"><summary>The whole request</summary><div class="task">{marked(req.text)}'
+                   '</div></details>' if headline(req.text) != req.text else "")
+                + f'<section class="part"><div class="phead"><h2>Plan</h2><span>{len(places)}</span></div>'
+                f'<div class="rows">{"".join(rows)}</div></section></div>')
+        return page("Request", self.sidebar(None), main, self.seq())
 
     def _home_row(self, w: Waiting, now: float) -> str:
         """A run in one row: what it was asked and, below, what it waits for or where it is, with its steps."""
@@ -1270,6 +1334,19 @@ class Review:
                 f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
                 f'<div class="row"><span style="flex:1"></span><button class="btn">Dismiss</button>{go}</div></form>')
 
+    def _part_of(self, run_id: str) -> str:
+        """For a run of a request's plan: which request, and its place in the plan."""
+        try:
+            found = plan.of_run(self.c, run_id)
+        except plan.PlanError:
+            return ""
+        if found is None:
+            return ""
+        req, p = found
+        at = [x.name for x in req.runs].index(p.name) + 1
+        return (f'<div class="sub">Run {esc(p.name)}, {at} of {len(req.runs)} in the plan of '
+                f'<a href="/request/{q(req.id)}">{marked(headline(req.text))}</a>.</div>')
+
     def run_page(self, run_id: str) -> str:
         events = list(self.c.store.events(run_id=run_id))
         log = self.c.home / "runs" / run_id / "continue.log"
@@ -1325,7 +1402,7 @@ class Review:
         task = str(started.get("task", ""))
         whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{marked(task)}</div></details>'
                  if headline(task) != task else "")
-        body = (call + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
+        body = (call + self._part_of(run_id) + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
                 f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
                 + self._corrections(run_id)
                 + f'<details class="fold"><summary>Details <span>turns, tokens and events</span></summary>'
@@ -2156,6 +2233,8 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                     self._send(200, app.run_page(run_id))
                 case ["run", run_id]:
                     self._send(200, app.run_page(run_id))
+                case ["request", rid]:
+                    self._send(200, app.request_page(rid))
                 case ["new"]:
                     self._send(200, app.new_page())
                 case ["preview", run_id, which]:
@@ -2270,14 +2349,18 @@ def ensure_page(home: Path, port: int = 8740) -> None:
 
 
 def _wake(home: Path, every: float, stopping: threading.Event) -> None:
-    """Continue each run whose pause ended, once per reset: one that pauses again waits for its new reset."""
+    """Continue each run whose pause ended, once per reset: one that pauses again waits for its new reset. Start the
+    runs of a plan whose earlier runs delivered, in case the process that delivered them did not."""
     tried: set[tuple[str, float]] = set()
     while not stopping.wait(every):
         try:
-            for due in Conductor(home).due():
+            c = Conductor(home)
+            for due in c.due():
                 if due not in tried:
                     tried.add(due)
                     continue_in_background(home, due[0])
+            if c.halted() is None:
+                plan.advance_all(c)
         except Exception:  # a locked or half-written log is read again on the next tick
             continue
 

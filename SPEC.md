@@ -344,6 +344,27 @@ attached files; the action gate is not installed inside conductor turns yet
 role's fingerprint is unchanged; `OutcomeObserved` (section 6.2) is not
 recorded yet.
 
+### 5.1 Plans of runs
+
+A request that needs several roles is a plan: `jaynes plan FILE --project DIR`
+with `{"request": ..., "runs": [{"name", "role", "task", "after", ...}]}`. A
+run's `after` lists runs before it in the plan, so a plan never loops; a run
+with a project may follow at most one run whose delivery is a branch. Each run
+gets its id when the plan is recorded, and starts, as `jaynes run` with the
+request and its name, once every run it follows delivered: merged; on its
+branch when its role does not merge or a merge was skipped; or every step
+checked when it has no project. Open samples do not count. It works from the
+person's branch when the runs it follows merged, or from the one branch it
+follows otherwise (`base` in `RunStarted`), and its task adds the request and
+what each earlier run delivered. A run dismissed, ended or undone stops the runs
+after it. The run that delivers starts the next ones (`jaynes run` does it as it
+returns), under a lock per request; the review page does it every 15 s for
+every request still working, and starts again a run marked started whose
+`RunStarted` has not arrived after 60 s. `jaynes wait <request>` returns when
+the request delivered or stopped, or when something new holds one of its runs.
+The page shows `/request/<id>` and, under Running now, the requests whose next
+runs wait.
+
 ## 6. Stops and attention
 
 ### 6.1 At a stop
@@ -604,7 +625,7 @@ Conductor events:
 
 | Event | Payload |
 |---|---|
-| `RunStarted` | role, task, role fingerprint, role reference and runtime overrides (for `jaynes run <id>`), inputs as resolved with their digests |
+| `RunStarted` | role, task, role fingerprint, role reference and runtime overrides (for `jaynes run <id>`), inputs as resolved with their digests; for a plan's run, the request and its name in the plan, and the project's base when it works from an earlier run's branch |
 | `StepStarted` | step, round, attempt, executor, workspace manifest hash; for an irreversible step, effect, idempotency key and payload |
 | `TurnFinished` | step, attempt, files changed, tokens in and out from the runtime meter and the part of tokens in read back from the cache, model, seconds; on a web step, what it read; the shell commands the turn ran as the runtime saw them (the last 50, each with whether it exited 0 and the last 2000 characters of its output) |
 | `TurnRejected` | step, attempt, reason: `write_boundary`, `schema`, `check`, `deadline`, `runtime`, `executor`; reasons |
@@ -621,6 +642,8 @@ Conductor events:
 | `Merged` | the branch merged into, the merge commit, the run's branch commit it merged, and `over`, the one merged before, for a correction |
 | `MergeSkipped` | the run's branch commit and why it did not merge by itself |
 | `MergeUndone` | the branch, the merges reverted and the commits that revert them, the person's note, by; `incomplete` when not every revert landed |
+| `RequestPlanned` | the request's id instead of a run: the request in the person's words, the project, and each planned run with its id, role reference, task, the runs it follows and its flags |
+| `RequestRunStarted` | the request's id: the name and id of a planned run Jaynes started |
 | `Halted` | no run: by and a note; every run stops before its next step and merges nothing |
 | `Resumed` | no run: by, always a person; the halt is lifted |
 | `DeliveryCorrected` | id, the step that erred, the stop it counts on and its fingerprint, kind (`error`, `preference`, `info`), note, by, the kind it was before when a person refiled it |

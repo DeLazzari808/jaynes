@@ -22,6 +22,8 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
    - `visual-identity` if it is about the look: colors, fonts, a style.
    If none fits, or the folder is not in a git repository, do the task yourself as usual and say nothing about
    Jaynes.
+   If the request needs more than one of these roles, one building on another, such as a look with
+   `visual-identity` and then a screen in it, do not pick one: plan it as in 5.
 2. In the background, from the project's folder, run
    `jaynes run --here --role <role> --task "<the task>" --project .`
    If the project has a dev server, or the task adds one, always add `--preview "<its command, with {port} as
@@ -46,3 +48,18 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
      `jaynes/<run>`, with `not_merged` in a few words when it is printed, and offer to merge it.
 4. Never answer a stop yourself and never choose for the person: only the person answers, on the page. Never
    open the page's link yourself; Jaynes calls the person to it.
+5. A plan: write it as JSON to a file outside the project, such as `/tmp/plan.json`:
+   `{"request": "<the request, in the person's words>", "runs": [{"name": "look", "role": "visual-identity",
+   "task": "<what this run does>"}, {"name": "screen", "role": "screen-design", "task": "<...>", "after":
+   ["look"]}]}`. A run lists in `after` the runs it builds on, which come before it; runs that build on none of
+   each other run at the same time. Give each run what `jaynes run` would take as fields: `preview`,
+   `preview_path`, `preview_ports`, `suite` and `inputs` (an object of name to value). Then, in the background,
+   from the project's folder, run `jaynes plan <the file> --project .`
+   Each run starts once the runs it builds on delivered, from where their delivery landed, and its task names
+   what they delivered; it never waits for their samples. When it is refused, it says why: fix the plan and run
+   it again. It prints one line of JSON with the `request`, its `page`, and each run's `state` (planned,
+   working, delivered or stopped). Tell the person the plan in one line, the runs in order, with the `page`
+   link, then run `jaynes wait <request>` in the background. It returns with a new line of JSON when the
+   request's `status` is `delivered` or `stopped`, or when a run `holds` for the person: tell them its
+   `question` or `reasons`, with its `page`, and wait again; when it delivered, say in one sentence where each
+   run landed.

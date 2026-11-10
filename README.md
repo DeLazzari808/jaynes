@@ -106,7 +106,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
 | Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
 | Halt all on the page (and `jaynes halt`): no run takes a step or merges until you resume | Works in tests |
-| The page at login on macOS: always at http://127.0.0.1:8740/, started by a launch agent the person's page adds, opening no tab; switch on Setup | Works in tests; launchd started it on Alan's Mac |
+| The page at login on macOS: always at http://127.0.0.1:8740/, started by a launch agent the person's page adds, opening no tab; switch on Setup | Works in tests; launchd started it on a real Mac |
 | The page's home in four parts: what holds a run waits for you, the samples the runs went past, what was delivered since your last visit with its hidden checks, and what runs now; the browser opens by itself only for what holds a run | Works in tests and on a scratch page |
 | A local API with every action of the page (`/api/` on the page's address, JSON), and the MCP server (`jaynes mcp`) the plugin starts in Claude Code: an agent answers what holds a run and sends a blocked run back; only you answer samples, drop a run, undo and resume | Works in tests; a Claude Code agent used it on a scratch home |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
@@ -116,6 +116,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Built-in roles build-feature (the agreed plan's tests first, shown as examples with sketches of the screens, then code that keeps the project's identity) and small-change (no stop unless the change is big) | build-feature delivered four slices of a real Go project; small-change works in tests |
 | Built-in role screen-design: your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
 | Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
+| A request as a plan of runs (`jaynes plan`): each run starts once the runs it builds on delivered, from where their delivery landed, without waiting for samples; the page shows the plan | Works in tests and on a scratch page |
 
 Missing, roughly in order:
 
@@ -128,6 +129,9 @@ Missing, roughly in order:
   history; a new preference is not yet kept as taste memory; every project
   waits 7 days, not yet a time of its own. A step cannot yet start over from
   scratch, giving its reason, instead of correcting on top.
+- **The direction specialist.** The agent in Claude Code writes a request's
+  plan; a specialist that plans and has its own count of right and wrong
+  plans is not built, and a plan cannot be started or changed from the page.
 - **small-change merging alone.** It has no hidden checks yet, so the
   person still merges it.
 - **Halting a turn under way.** Halt all stops every run before its next

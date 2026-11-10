@@ -11,6 +11,8 @@
                                     file (.toml) or module:attribute, on the git repository at DIR
                                     --here: started from an agent's terminal, which asks the stops there
   jaynes run ID                     continue a run from its log (after a crash, a pause or a stop)
+  jaynes plan FILE [--project DIR]  a request that needs more than one role: its runs, each starting once the
+                                    runs it follows delivered; - reads the plan from stdin
   jaynes check ROLE                 find what a role gets wrong before any agent runs
   jaynes queue                      stops waiting for an answer, blocked and idle runs, then running and paused
   jaynes answer RUN STEP ANSWER     accept, change (--output JSON), return or context (--note); the run continues
@@ -236,6 +238,11 @@ def cmd_run(args: argparse.Namespace) -> None:
                                   "ports": _ports(args.preview_ports or "")}
         if args.suite:
             started["suite"] = args.suite
+        if args.base:
+            started["base"] = args.base
+        if args.request:
+            rid, _, name = args.request.partition(":")
+            started["request"] = {"id": rid, "name": name}
         if args.input:
             if any("=" not in pair for pair in args.input):
                 sys.exit("--input takes name=value")
@@ -267,7 +274,63 @@ def cmd_run(args: argparse.Namespace) -> None:
             time.sleep(2)
     if result.status in ("waiting", "blocked"):
         ensure_page(c.home)  # in case it was closed while the run worked
+    _next_in_plan(c, run_id)
     print(json.dumps(_where(c, run_id, result), ensure_ascii=False))
+
+
+def _next_in_plan(c: Conductor, run_id: str) -> None:
+    """Start the runs of the run's request that waited for its delivery."""
+    from jaynes import plan
+    try:
+        if (found := plan.of_run(c, run_id)) is not None:
+            plan.advance(c, found[0].id)
+    except plan.PlanError as err:  # the page looks again, and shows why
+        print(f"the next runs of the plan did not start: {err}", file=sys.stderr)
+
+
+def cmd_plan(args: argparse.Namespace) -> None:
+    """Record a request's plan, start the runs that follow no other, and print where each run is."""
+    from jaynes import plan
+    from jaynes.conductor import Conductor
+    from jaynes.project import ProjectError
+    from jaynes.review import ensure_page
+    c = Conductor(_home(args))
+    try:
+        raw = sys.stdin.read() if args.plan == "-" else Path(args.plan).read_text(encoding="utf-8")
+        data = json.loads(raw)
+    except OSError as err:
+        sys.exit(f"the plan was not read: {err}")
+    except ValueError as err:
+        sys.exit(f"the plan is not JSON: {err}")
+    try:
+        text, runs = plan.parse(data, has_project=bool(args.project))
+        req = plan.record(c, text, runs, Path(args.project) if args.project else None)
+    except plan.PlanError as err:
+        sys.exit("the plan is refused:\n" + "\n".join(f"- {r}" for r in err.reasons))
+    except ProjectError as err:
+        sys.exit(str(err))
+    ensure_page(c.home)  # the person sees the plan, and is called at what holds its runs
+    plan.advance(c, req.id)
+    print(json.dumps(_request_where(c, req.id), ensure_ascii=False))
+
+
+def _request_where(c: Conductor, rid: str) -> dict[str, Any]:
+    """Where a request is, as one line of JSON: each run's place, and what holds it for the person."""
+    from jaynes import plan
+    from jaynes.ask import page
+    [req] = plan.requests(c, rid)
+    holding = {w.run_id: w for w in c.queue() if w.holding}
+    runs: list[dict[str, Any]] = []
+    for x in plan.places(c, req):
+        one: dict[str, Any] = {"name": x.planned.name, "run": x.planned.run, "state": x.state}
+        if x.why:
+            one["why"] = x.why
+        if (w := holding.get(x.planned.run)) is not None:
+            one["holds"] = {"question": w.question, "reasons": list(w.reasons),
+                            "page": f"{page(c.home)}/{'stop' if w.kind == 'stop' else 'run'}/{w.run_id}"
+                                    + (f"/{w.step}" if w.kind == "stop" else "")}
+        runs.append(one)
+    return {"request": rid, "status": plan.status(c, req), "page": f"{page(c.home)}/request/{rid}", "runs": runs}
 
 
 def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
@@ -299,16 +362,28 @@ def _where(c: Conductor, run_id: str, result: Any) -> dict[str, Any]:
 
 def cmd_wait(args: argparse.Namespace) -> None:
     """Wait until the person answers the run's stop on the page, then go on with the run as ``jaynes run`` does,
-    and print where it is then. The page may already be going on with it; this waits for that to let go."""
+    and print where it is then. The page may already be going on with it; this waits for that to let go. A
+    request waits until it delivered, stopped, or something new holds one of its runs."""
     from jaynes.conductor import Conductor, RunBusy
     c = Conductor(_home(args))
+    if args.run.startswith("q"):
+        from jaynes import plan
+        if not plan.requests(c, args.run):
+            sys.exit(f"no request {args.run} in {c.home}")
+        held = {r["run"] for r in _request_where(c, args.run)["runs"] if "holds" in r}
+        while True:
+            out = _request_where(c, args.run)
+            if out["status"] != "working" or {r["run"] for r in out["runs"] if "holds" in r} - held:
+                print(json.dumps(out, ensure_ascii=False))
+                return
+            time.sleep(args.every)
     while any(w.run_id == args.run and w.needs_person for w in c.queue()):
         time.sleep(args.every)
     while True:
         try:
             cmd_run(argparse.Namespace(id=args.run, role=None, home=args.home, here=False, preview=None,
                                        preview_path=None, preview_ports=None, suite=None, input=[], runtime=[],
-                                       project=None))
+                                       project=None, base=None, request=None))
             return
         except RunBusy:
             time.sleep(args.every)
@@ -590,6 +665,16 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--here", action="store_true",
                    help="started from an agent's terminal: its stops are asked there, and the page opens only when asked")
     r.add_argument("--home")
+    r.add_argument("--base", help=argparse.SUPPRESS)  # a plan's later run: the commit it works from
+    r.add_argument("--request", help=argparse.SUPPRESS)  # a plan's run: request:name
+    pl = sub.add_parser("plan", help="a request that needs more than one role: its runs, each starting once the "
+                                     "runs it follows delivered")
+    pl.add_argument("plan", help='the plan as JSON in a file, or - for stdin: {"request": "<the person\'s words>", '
+                                 '"runs": [{"name": "identity", "role": "visual-identity", "task": "...", '
+                                 '"after": []}, ...]}; a run may also give preview, preview_path, preview_ports, '
+                                 'suite and inputs, as jaynes run takes them')
+    pl.add_argument("--project", help="the folder in a git repository every run works on")
+    pl.add_argument("--home")
     k = sub.add_parser("check", help="find what a role gets wrong before any agent runs")
     k.add_argument("role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change, screen-design), a role file (.toml) or module:attribute")
     q = sub.add_parser("queue")
@@ -675,7 +760,8 @@ def main(argv: list[str] | None = None) -> int:
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
      "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
-     "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct, "halt": cmd_halt}[args.cmd](args)
+     "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct, "halt": cmd_halt,
+     "plan": cmd_plan}[args.cmd](args)
     return 0
 
 

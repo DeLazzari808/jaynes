@@ -239,6 +239,32 @@ single role.
 - A wrong plan sends every later run the wrong way until someone sees it.
 - One more agent per request costs tokens.
 
+**Built 2026-11-10, the engine's part.** `jaynes plan` takes the request in the
+person's words and its runs, each with a role, a task and the runs it builds
+on, and Jaynes checks the plan before anything starts. Until the direction
+specialist exists, the agent in Claude Code writes the plan, as the guide
+says. Rules that came up while building it:
+
+- A run starts once every run it builds on delivered: merged, on its branch
+  when it does not merge or could not, or with its outputs when it has no
+  project. It never waits for their samples, which correct on top later.
+- It works from where the delivery landed: the person's branch once the
+  earlier run merged, or the earlier run's branch when it did not. A run can
+  build on at most one run whose delivery is a branch, since it works from one
+  commit.
+- Its task carries the request in the person's words and, for each earlier
+  run, where it landed and the files it changed, or its outputs when it has
+  no project.
+- A run dropped, ended by its output or undone stops the runs after it.
+- The run that delivers starts the next ones; the page looks again every 15
+  seconds, so a plan goes on when that process dies, and starts again a run
+  that has not recorded its start 60 seconds after it was started.
+- The page shows each request with its plan, and the home lists the requests
+  whose next runs wait for earlier ones.
+
+Not built yet: the direction specialist and its count, starting a plan from
+the page or the API, and changing a plan once it started.
+
 ## 2026-11-07: A stop no longer holds the run
 
 **Decided.** A run does not wait for the person's answer. It goes on with the

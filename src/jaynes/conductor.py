@@ -299,15 +299,16 @@ def continue_in_background(home: Path, run_id: str, *start: str) -> subprocess.P
 
 def start_in_background(home: Path, run_id: str, ref: str, task: str, runtimes: Mapping[str, str],
                         project: str = "", preview: str = "", preview_path: str = "",
-                        preview_ports: str = "", suite: str = "",
-                        inputs: Mapping[str, str] | None = None) -> subprocess.Popen[bytes]:
-    """Start a new run of the role at ``ref`` detached, as ``jaynes run <id> --role ref --task task``."""
+                        preview_ports: str = "", suite: str = "", inputs: Mapping[str, str] | None = None,
+                        extra: Sequence[str] = ()) -> subprocess.Popen[bytes]:
+    """Start a new run of the role at ``ref`` detached, as ``jaynes run <id> --role ref --task task``; ``extra``
+    are more of its flags."""
     overrides = [arg for name, target in runtimes.items() for arg in ("--runtime", f"{name}={target}")]
     on = [arg for flag, value in (("--project", project), ("--preview", preview), ("--preview-path", preview_path),
                                   ("--preview-ports", preview_ports), ("--suite", suite))
           if value for arg in (flag, value)]
     on += [arg for name, value in (inputs or {}).items() for arg in ("--input", f"{name}={value}")]
-    return continue_in_background(home, run_id, "--role", ref, "--task", task, *overrides, *on)
+    return continue_in_background(home, run_id, "--role", ref, "--task", task, *overrides, *on, *extra)
 
 
 def holds(opened: Mapping[str, Any]) -> bool:
@@ -376,6 +377,7 @@ class Conductor:
                                                          self.home / "runs" / run_id / "inputs")
                 if project is not None:
                     root, base = repo.resolve(project)
+                    base = str(extra.pop("base", None) or base)  # a plan's later run works from an earlier branch
                     extra["project"] = {"root": str(root), "base": base, "branch": repo.current_branch(root)}
                 self._emit(run_id, "RunStarted", {**extra, "role": role.name, "task": task,
                                                   "fingerprint": role.fingerprint()})
