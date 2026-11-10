@@ -18,10 +18,10 @@ import pytest
 
 from jaynes.conductor import AnswerRejected, Conductor, RunResult
 from jaynes.roles import screen_design as sd
-from jaynes.roles.references import chrome
+from tests.needs import chrome_runs
 from jaynes.runtime import TurnResult
 
-pytestmark = pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+pytestmark = chrome_runs
 
 PRODUCT = Path(__file__).parent / "product"
 BOOKS = "api/data-books-json.json"  # the summary of /data/books.json

@@ -14,11 +14,17 @@ allows the rest of the system, so toolchains work, and denies the ways out:
 Reading the rest of the disk is allowed; with no network, no writes outside and no other process to drive,
 what is read has no way out but the named ports. Elsewhere there is no box yet: project commands refuse to
 run unless ``JAYNES_UNBOXED=1`` accepts running them unboxed.
+
+macOS opens no box inside another unless both are the same, as when Jaynes's own suite runs in a run's box and
+its tests start previews. There project commands run in the box they are already in, which confines them.
 """
 
 from __future__ import annotations
 
+import ctypes
+import functools
 import os
+import subprocess
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass, field
@@ -47,7 +53,25 @@ class Box:
 
 
 def available() -> bool:
-    return sys.platform == "darwin" and SANDBOX_EXEC.exists()
+    """Jaynes can open its box here."""
+    return sys.platform == "darwin" and SANDBOX_EXEC.exists() and not inside()
+
+
+@functools.cache
+def inside() -> bool:
+    """Already in a box that macOS opens no other box inside, so what runs here is confined by it."""
+    if sys.platform != "darwin" or not SANDBOX_EXEC.exists():
+        return False
+    try:
+        check = ctypes.CDLL("/usr/lib/libSystem.dylib").sandbox_check
+        check.restype, check.argtypes = ctypes.c_int, [ctypes.c_int, ctypes.c_char_p, ctypes.c_int]
+        if check(os.getpid(), None, 0) != 1:
+            return False
+        trial = subprocess.run([str(SANDBOX_EXEC), "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                               capture_output=True, timeout=10)
+    except (OSError, AttributeError, subprocess.SubprocessError):
+        return False
+    return trial.returncode != 0
 
 
 def _lit(p: Path | str) -> str:
@@ -80,7 +104,7 @@ def command(script: str, box: Box) -> list[str]:
     """The argv that runs the shell ``script`` inside ``box``."""
     if available():
         return [str(SANDBOX_EXEC), "-p", profile(box), "/bin/sh", "-c", script]
-    if os.environ.get("JAYNES_UNBOXED") == "1":
+    if inside() or os.environ.get("JAYNES_UNBOXED") == "1":
         return ["/bin/sh", "-c", script]
     raise Unavailable("Jaynes has no box for project commands on this system yet; set JAYNES_UNBOXED=1 to run "
                       "them unboxed, with the agent's changes, on your machine")

@@ -194,8 +194,9 @@ def test_the_history_page_shows_the_report(served: tuple[str, Path], monkeypatch
 
 
 def test_setup_warns_when_jaynes_runs_from_a_temporary_environment(
-        served: tuple[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+        served: tuple[str, Path], tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     base, _ = served
+    monkeypatch.setenv("HOME", str(tmp_path / "user"))  # never the person's ~/.claude, which a box hides
     assert "temporary" not in get(base + "/setup")
     monkeypatch.setattr("jaynes.install.sys.prefix", "/Users/x/.cache/uv/archive-v0/abc")
     assert "temporary" in get(base + "/setup") and "uv tool install git+https://github.com/alk0x1/jaynes" in get(base + "/setup")

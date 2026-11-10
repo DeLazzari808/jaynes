@@ -12,10 +12,10 @@ from typing import Any
 import pytest
 
 from jaynes.browser import open_page, route_matches
-from jaynes.roles.references import chrome
+from tests.needs import chrome_runs
 
 PRODUCT = Path(__file__).parent / "product"
-needs_chrome = pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+needs_chrome = chrome_runs
 
 
 def served_product(root: Path) -> tuple[ThreadingHTTPServer, list[tuple[str, str]]]:

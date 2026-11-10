@@ -105,8 +105,31 @@ def test_its_temporary_and_cache_folders_are_inside_it(tmp_path: Path) -> None:
     assert all(env[k].startswith(str(tmp_path / "tmp")) for k in ("TMPDIR", "npm_config_cache", "XDG_CACHE_HOME"))
 
 
+INNER = """
+import subprocess, sys
+from pathlib import Path
+from jaynes import sandbox
+inner = Path(sys.argv[1]) / "inner"  # any box but the very same one: macOS opens only that one inside it
+inner.mkdir()
+r = subprocess.run(sandbox.command("echo ran", sandbox.Box((inner,))), capture_output=True, text=True)
+print(sandbox.available(), r.returncode, r.stdout.strip(), r.stderr.strip())
+"""
+
+
+@boxed
+def test_inside_a_box_a_project_command_runs_in_the_box_it_is_already_in(tmp_path: Path) -> None:
+    """macOS opens no box inside another, as when Jaynes's own suite runs in a run's box; that box confines it."""
+    script = tmp_path / "inner.py"
+    script.write_text(INNER)
+
+    r = sh(f"{sys.executable} -B {script} {tmp_path}", Box((tmp_path,)))
+
+    assert r.stdout.strip() == "False 0 ran", r.stdout + r.stderr
+
+
 def test_without_a_box_project_commands_refuse_to_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(sandbox, "available", lambda: False)
+    monkeypatch.setattr(sandbox, "inside", lambda: False)
     monkeypatch.delenv("JAYNES_UNBOXED", raising=False)
     with pytest.raises(Unavailable, match="JAYNES_UNBOXED"):
         sandbox.command("true", Box((tmp_path,)))

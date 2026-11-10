@@ -13,7 +13,7 @@ from jaynes.conductor import Conductor
 from jaynes.role import Blocked, Checked, Fail, Pass, StepContext, Witnesses
 from jaynes.roles import build_feature as bf
 from jaynes.roles import fix_bug as fb
-from jaynes.roles.references import chrome
+from tests.needs import chrome_runs
 from jaynes.verify import verify
 from tests.fakes import Scripted, write
 from tests.test_fix_bug import (  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -150,7 +150,7 @@ def test_the_build_may_not_bring_a_colour_or_font_the_project_did_not_have(repo:
     assert isinstance(bf.keeps_identity(bf.Built(summary="s", files=[]), Witnesses(ran_by(identity=NONE), free)), Pass)
 
 
-@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+@chrome_runs
 def test_jaynes_draws_each_screen_the_agent_described_and_nothing_else(tmp_path: Path) -> None:
     drawn = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
                             "screen": SCREEN + "<img src='https://example.com/x.png'>"},
@@ -163,7 +163,7 @@ def test_jaynes_draws_each_screen_the_agent_described_and_nothing_else(tmp_path:
     assert sorted(p.name for p in (tmp_path / "files").iterdir()) == ["example-1.png"]
 
 
-@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+@chrome_runs
 def test_a_sketch_without_a_charset_keeps_its_accents(tmp_path: Path) -> None:
     (tmp_path / "example-1.html").write_text("<p>Tarefa concluída · 2 pts</p>", encoding="utf-8")
     with bf._served(tmp_path) as origin, bf.open_page(origin) as page:  # pyright: ignore[reportPrivateUsage]
@@ -247,7 +247,7 @@ def test_with_a_preview_each_screen_names_its_page_and_jaynes_photographs_it_for
     assert isinstance(elsewhere, Fail) and "is not a path on the product" in elsewhere.reasons[0]
 
 
-@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+@chrome_runs
 def test_the_merge_stop_shows_each_page_on_the_real_screen_and_claims_no_example(repo: Path, tmp_path: Path) -> None:
     built = copy(repo, tmp_path, {"mul.html": SCREEN})
     agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
@@ -271,7 +271,7 @@ def test_the_merge_stop_shows_each_page_on_the_real_screen_and_claims_no_example
     assert "not each example" in shown[2].text  # the data on the computer is not the example's: T-7 was never there
 
 
-@pytest.mark.skipif(chrome() is None, reason="needs Google Chrome")
+@chrome_runs
 def test_examples_on_the_same_page_share_one_picture_that_claims_none_of_them(repo: Path, tmp_path: Path) -> None:
     built = copy(repo, tmp_path, {"mul.html": SCREEN})
     agreed = spec(examples=[{"case": "Multiplying 2 by 3", "result": "gives 6", "test": "test_mul_multiplies",
