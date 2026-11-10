@@ -41,7 +41,7 @@ from jaynes.gate import Window
 from jaynes.preview import link_dependencies
 from jaynes import inputs as run_inputs
 from jaynes import outcome, proof
-from jaynes.role import OUTPUT, Asks, Blocked, Checked, Cost, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
+from jaynes.role import DISPUTES, OUTPUT, Asks, Blocked, Checked, Cost, Disputes, Fail, History, Note, Pass, Role, Step, StepContext, Witnesses
 from jaynes.runtime import QuotaExhausted, Runtime, RuntimeFailure, TurnTimeout
 from jaynes.store import Event, Store
 
@@ -996,6 +996,9 @@ class Conductor:
             return None
         try:
             failures = self._check(step, value, needs)
+        except Disputes as err:
+            self._dispute(run_id, role, step, err, st, received)
+            return None
         except Blocked as err:
             self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [str(err)[:2000]], "received": received,
                                               **({"asks": True} if isinstance(err, Asks) else {})})
@@ -1018,6 +1021,23 @@ class Conductor:
                                           "round": st.returns.get(step.name, 0) + 1}))
         self.store.append_all([(kind, p, run_id, self.clock()) for kind, p in rows])
         return None
+
+    def _dispute(self, run_id: str, role: Role, step: Step[Any], err: Disputes, st: RunState,
+                 received: Any) -> None:
+        """The agents settle it first: the step that made what stands in the way runs again with what the agent
+        said, and the steps after it. When they still disagree, the person chooses in plain words."""
+        names = [x.name for x in role.steps]
+        rounds = st.returns.get(step.name, 0)
+        if err.to in names and names.index(err.to) < names.index(step.name) and rounds < DISPUTES:
+            self._emit(run_id, "StepReturned", {"step": step.name, "to": err.to, "reasons": [err.said[:2000]],
+                                                "reset": names[names.index(err.to):names.index(step.name) + 1],
+                                                "round": rounds + 1})
+            return
+        times = {1: "once", 2: "twice"}.get(rounds, f"{rounds} times")
+        plain = (f"Two agents disagree about a {err.about}: the one at {step.name} says it is wrong, and the one at "
+                 f"{err.to} kept it {times}. Fix the {err.about}, or keep it.")
+        self._emit(run_id, "RunBlocked", {"step": step.name, "reasons": [plain], "received": received, "asks": True,
+                                          "dispute": {"to": err.to, "about": err.about, "said": err.said[:2000]}})
 
     def _back(self, step: Step[Any], value: Any, needs: Witnesses, st: RunState) -> list[str]:
         """What the step's output found that sends an earlier step back, while rounds remain; a broken

@@ -31,7 +31,7 @@ import threading
 import time
 import urllib.parse
 from collections import defaultdict
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from http.cookies import CookieError, SimpleCookie
@@ -973,6 +973,17 @@ class Review:
                              f"{esc(tail)}</pre></div></div>")
             main = crumbs + f'<div class="body">{"".join(parts)}</div>' + self._run_bar(run_id, cont=True)
             return page(f"Idle: {run_id}", self.sidebar((run_id, step)), main, self.seq())
+        dispute = (st.blocked or {}).get("dispute") if w.kind == "blocked" else None
+        if dispute:
+            about = esc(str(dispute["about"]))
+            parts.append(f'<div><h1>Two agents disagree about a {about}</h1>'
+                         f'<div class="sub">{marked(w.reasons[0]) if w.reasons else ""}</div></div>'
+                         f'<div><div class="label">What the agent at {esc(step)} says</div><div class="box"><table>'
+                         f'<tr><td>{marked(str(dispute["said"]))}</td></tr></table></div></div>'
+                         f'<details class="fold"><summary>What the agent did</summary>'
+                         f'{self._turns(events, step, s.round)}</details>')
+            main = crumbs + f'<div class="body">{"".join(parts)}</div>' + self._dispute_bar(run_id, step, dispute)
+            return page(f"Blocked: {step}", self.sidebar((run_id, step)), main, self.seq())
         if w.kind == "blocked" and (st.blocked or {}).get("at") == "branch":
             parts.append("<div><h1>This run is blocked after its last step</h1>"
                          '<div class="sub">Every step finished, but its changes did not reach your repository:</div>'
@@ -1237,6 +1248,24 @@ class Review:
                 f'send back)"><div class="acts"><select name="to" title="It and every step after it run again">'
                 f'{options}</select><button class="btn" formaction="/dismiss" formnovalidate>Dismiss</button>'
                 f'<button class="btn solid">Send back</button></div></div></form>')
+
+    def _dispute_bar(self, run_id: str, step: str, dispute: Mapping[str, Any]) -> str:
+        """Two buttons, nothing to write: fix what the agent says is wrong, or keep it and have the agent work with
+        it. Each sends the run back as Send back does, with the note written for the agent."""
+        about, to, said = str(dispute["about"]), str(dispute["to"]), str(dispute["said"])
+        def button(label: str, back_to: str, note: str, solid: bool) -> str:
+            return (f'<form method="post" action="/send-back" style="display:inline">'
+                    f'<input type="hidden" name="token" value="{esc(self.shared.token)}">'
+                    f'<input type="hidden" name="run" value="{esc(run_id)}">'
+                    f'<input type="hidden" name="to" value="{esc(back_to)}">'
+                    f'<input type="hidden" name="note" value="{esc(note)}">'
+                    f'<button class="btn{" solid" if solid else ""}">{esc(label)}</button></form>')
+        return ('<div class="bar"><div class="row"><div class="acts">'
+                + button(f"Fix the {about}", to, f"The agent at {step} says this {about} is wrong; fix it: {said}", True)
+                + button(f"Keep the {about}", step, f"The {about} is right as it is; make your work pass it.", False)
+                + f'<form method="post" action="/dismiss" style="display:inline"><input type="hidden" name="token" '
+                f'value="{esc(self.shared.token)}"><input type="hidden" name="run" value="{esc(run_id)}">'
+                '<button class="btn">Dismiss</button></form></div></div></div>')
 
     def _run_bar(self, run_id: str, cont: bool) -> str:
         """Dismiss, and Continue for a run whose process is gone: each button posts the same hidden fields."""

@@ -156,28 +156,30 @@ def test_the_merge_says_what_changed_and_that_the_tests_pass() -> None:
     assert len(changed.text) <= fb.SUMMARY + 1 and changed.text.endswith("…")
 
 
-def test_an_agent_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Path, tmp_path: Path) -> None:
+def test_an_agent_that_a_test_stops_sends_it_back_and_the_person_chooses_only_if_they_still_disagree(
+        repo: Path, tmp_path: Path) -> None:
     say = "tests/test_zero.py expects 0 for add(0, 0), which the task changes"
     agent = Scripted(name="claude", plan={
         ("cases", 1): write(CASES),
-        ("reproduce", 1): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
-        ("fix", 1): write({"summary": "s", "files": [], "wrong_test": say}),
-        ("reproduce", 2): edit({"tests/test_add.py": TEST}, reproduction().model_dump()),
+        **{("reproduce", n): edit({"tests/test_add.py": TEST}, reproduction().model_dump()) for n in (1, 2, 3)},
+        **{("fix", n): write({"summary": "s", "files": [], "wrong_test": say}) for n in (1, 2, 3)},
     })
     c = Conductor(tmp_path / "home", runtimes={"claude": lambda: agent})
     c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1", project=repo)
     c.answer(fb.ROLE, "r1", "reproduce", "accept", by="person")
-    blocked = c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1")
-    assert (blocked.status, blocked.step) == ("blocked", "fix") and say in blocked.reasons[0]
-    assert "send the run back to reproduce" in blocked.reasons[0]
-    [waiting] = c.queue()
-    assert waiting.kind == "blocked" and waiting.waits  # a question for the person, not a failure to look into later
-    assert [e.payload for e in c.store.events("TurnRejected", run_id="r1")] == []  # no attempt spent on it
+    seen = [c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1")]
+    while seen[-1].status == "waiting" and len(seen) < 6:  # the reproduction's stop, opened again on each round
+        c.answer(fb.ROLE, "r1", "reproduce", "accept", by="person")
+        seen.append(c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1"))
 
-    c.send_back(fb.ROLE, "r1", "reproduce", note="the test should expect 1", by="person")
-    c.run(fb.ROLE, "add(2, 2) gives 0", run_id="r1")
-    assert "the test should expect 1" in [p for p in agent.prompts if "# Step: reproduce\n" in p][-1]
-    assert ("stop", "reproduce") in [(w.kind, w.step) for w in c.queue()]
+    blocked = seen[-1]
+    assert (blocked.status, blocked.step) == ("blocked", "fix")
+    assert blocked.reasons[0].startswith("Two agents disagree about a test")
+    assert all(say in p for p in agent.prompts if "# Step: reproduce\n" in p and p is not agent.prompts[1])
+    assert len(list(c.store.events("StepReturned", run_id="r1"))) == 2
+    [waiting] = [w for w in c.queue() if w.kind == "blocked"]
+    assert waiting.waits  # a question for the person, not a failure to look into later
+    assert [e.payload for e in c.store.events("TurnRejected", run_id="r1")] == []  # no attempt spent on it
 
 
 def test_a_fix_with_a_long_summary_is_refused(repo: Path, tmp_path: Path) -> None:

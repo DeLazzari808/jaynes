@@ -216,6 +216,14 @@ Rules:
   After `rounds` returns in a run, the output goes on as it is and later
   steps, and the person, see what remains. A broken `when` sends nothing
   back.
+- A check raises `Disputes(to, said, about)` when the agent says an earlier
+  step's output stands in its way, such as a test it may not change
+  (build-feature's and fix-bug's `wrong_test`). The agents settle it first:
+  `to` and every step after it run again with what the agent said in `to`'s
+  prompt, up to `DISPUTES` (2) times in a run. When they still disagree, the
+  run blocks and the page says in plain words that two agents disagree, with
+  two buttons and nothing to write: Fix the test sends `to` back with what
+  the agent said, and Keep the test sends the step back to work with it.
 - `hidden=True` marks proof the maker cannot see: the step reads only the
   task, so it needs no earlier step and changes no project, and it comes
   before every step that changes the project. No agent step may need it;

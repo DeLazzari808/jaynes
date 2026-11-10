@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from jaynes.conductor import Conductor
-from jaynes.role import Blocked, Checked, Fail, Pass, StepContext, Witnesses
+from jaynes.role import Checked, Disputes, Fail, Pass, StepContext, Witnesses
 from jaynes.roles import build_feature as bf
 from jaynes.roles import fix_bug as fb
 from tests.needs import chrome_runs
@@ -311,10 +311,11 @@ def test_writing_the_tests_of_a_large_slice_has_as_long_as_building_it() -> None
     assert bf.SPECIFY.deadline == bf.BUILD.deadline and fb.REPRODUCE.deadline == fb.FIX.deadline
 
 
-def test_a_build_that_a_test_stops_says_so_and_jaynes_asks_the_person(repo: Path, tmp_path: Path) -> None:
+def test_a_build_that_a_test_stops_says_so_and_the_tests_are_written_again(repo: Path, tmp_path: Path) -> None:
     needs = Witnesses(ran_by(specify=Checked("specify", spec(), "h", "c")), repo, source=repo)
-    with pytest.raises(Blocked, match="send the run back to specify"):
+    with pytest.raises(Disputes) as raised:
         bf.built(bf.Built(summary="s", files=[], wrong_test="test_zero expects the old total"), needs)
+    assert (raised.value.to, raised.value.said) == ("specify", "test_zero expects the old total")
 
 
 def test_the_merge_stop_names_files_as_the_person_finds_them_in_the_repository() -> None:

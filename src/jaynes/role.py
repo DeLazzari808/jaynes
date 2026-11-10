@@ -61,6 +61,19 @@ class Asks(Blocked):
     """Raised by a check when only the person can decide: the run blocks and waits for them as a stop does."""
 
 
+DISPUTES = 2  # times the agents settle a dispute among themselves before the person chooses
+
+
+class Disputes(Asks):
+    """Raised by a check when the agent says an earlier step's output stands in its way, such as a test it may not
+    change: Jaynes sends step ``to`` back with what the agent ``said``, up to ``DISPUTES`` times in a run, and only
+    then the person chooses: fix that ``about``, or keep it."""
+
+    def __init__(self, to: str, said: str, about: str) -> None:
+        self.to, self.said, self.about = to, said.strip(), about
+        super().__init__(f"The agent says the {about} from {to} is wrong: {self.said}")
+
+
 class Witnesses:
     """The checked outputs a step needs, read by step, and the step's copy of the project if it has one.
 

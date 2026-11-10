@@ -2,6 +2,28 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-09: Agents settle a wrong test between themselves
+
+**Decided.** When the agent writing the code says a test it may not change is
+wrong, Jaynes sends the tests back to the agent that wrote them, with what it
+said, up to twice in a run. The person is called only when the two still
+disagree, and then the page says so in plain words with two buttons: Fix the
+test, or Keep the test.
+
+**Why.** The run blocked and showed the person the agent's own words, full of
+test names and paths, and asked them to write a note and pick a step. Alan
+answered that it was hard to read and not what he wanted: on the loop, a
+dispute between agents is theirs to settle first.
+
+**Tradeoffs.**
+
+- The agent writing the tests could give in to a wrong claim. The agent
+  writing the code still never changes the tests, and the hidden cases still
+  prove the result.
+- Each round runs the tests and the code again, which costs time and tokens.
+
+**Built 2026-11-09.**
+
 ## 2026-11-09: A guard against the irreversible comes with the plugin
 
 **Decided.**

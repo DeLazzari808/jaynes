@@ -19,7 +19,7 @@ import re
 from pydantic import BaseModel, Field
 
 from jaynes import project, proof, runners, sandbox, suite
-from jaynes.role import Asks, Back, Fail, Pass, Shown, StepContext, Witnesses, role, stop
+from jaynes.role import Back, Disputes, Fail, Pass, Shown, StepContext, Witnesses, role, stop
 from jaynes.runners import Runner
 
 TESTS = ("**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**", "**/test_*.py", "**/*_test.py",
@@ -54,7 +54,7 @@ class Reproduction(BaseModel):
 
 
 WRONG_TEST = ("empty, unless a test you may not change expects what the task changes: then name the test and what "
-              "it should expect, and Jaynes stops and asks the person")
+              "it should expect, and Jaynes sends it back to the agent that wrote the tests")
 
 
 class Fix(BaseModel):
@@ -141,10 +141,10 @@ def fails_for_the_bug(out: Reproduction, needs: Witnesses) -> Pass | Fail:
 
 
 def speak_up(wrong_test: str, tests_step: str) -> None:
-    """An agent that may not touch the tests says which one stands in its way: only the person can change that."""
+    """An agent that may not touch the tests says which one stands in its way: the step that wrote it runs again
+    with what the agent said, and the person chooses only when the two agents still disagree."""
     if wrong_test.strip():
-        raise Asks(f"The agent says a test must change first: {wrong_test.strip()} If you agree, send the run back "
-                      f"to {tests_step} and say what the test should expect.")
+        raise Disputes(tests_step, wrong_test, about="test")
 
 
 def fixed(out: Fix, needs: Witnesses) -> Pass | Fail:
