@@ -1,9 +1,9 @@
 """A request becomes a plan of runs, one per role: the delivery of one enters the next, and runs that do not depend
 on each other run at the same time.
 
-Whoever starts the request writes its plan: today the agent in Claude Code, later a direction specialist. Jaynes
-checks the plan, records it with the request in the person's words, and starts each run once every run it follows
-has delivered: merged, on its branch, or with its outputs when it has no project. It never waits for samples, which
+Whoever starts the request writes its plan: the agent in Claude Code, or a run of a role whose step delivers a
+``Plan``, such as a direction specialist, whose plan starts once that run delivered. Jaynes checks the plan, records
+it with the request in the person's words, and starts each run once every run it follows has delivered: merged, on its branch, or with its outputs when it has no project. It never waits for samples, which
 come later and correct on top. A later run works from where the earlier delivery landed, the person's branch once
 it merged or the earlier run's branch when it did not, and its task names what the earlier runs delivered. The run
 that delivers starts the next ones, and the person's page looks again every few seconds, so a plan goes on after a
@@ -13,16 +13,17 @@ crash.
 from __future__ import annotations
 
 import fcntl
-import importlib
 import json
 import re
-import sys
 from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from pydantic import BaseModel, Field
+
+from jaynes import catalog
 from jaynes.conductor import Conductor, RunState, new_run_id, project, start_in_background
 from jaynes.role import Role
 
@@ -30,6 +31,29 @@ NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
 MOST = 20  # runs in one plan
 SHOWN = 4000  # characters of an earlier run's outputs a later run's task carries, when it has no branch
 GRACE = 60.0  # seconds a run marked as started has to record its start before it is started again
+
+
+class Run(BaseModel):
+    """One run of a plan a step delivers."""
+
+    name: str = Field(description="lowercase letters, digits and dashes, unique in the plan, such as identity")
+    role: str = Field(description="the role's name, from the roles you can use")
+    task: str = Field(description="what this run does, complete enough that its agent needs nothing else")
+    after: list[str] = Field(default_factory=list[str],
+                             description="the runs listed before this one whose delivery it builds on")
+    preview: str = Field("", description="the command that serves the project, with {port} as the port, when the run "
+                                         "changes something the person sees")
+    preview_path: str = Field("", description="the path of the screen the run changes, in the preview")
+    suite: str = Field("", description="the command that runs the project's tests, when Jaynes cannot find it")
+    inputs: dict[str, str] = Field(default_factory=dict[str, str], description="the role's inputs, by name")
+
+
+class Plan(BaseModel):
+    """What a planning step delivers: the runs a request needs. The request is the run's own task, in the person's
+    words, so the plan never rewords it."""
+
+    runs: list[Run]
+    why: str = Field(description="in a sentence or two, why these roles in this order, and why no other")
 
 
 class PlanError(ValueError):
@@ -62,35 +86,25 @@ class Request:
     project: str | None  # the folder every run works on, if any
     runs: tuple[Planned, ...]
     at: float
+    by: str | None = None  # the run whose step delivered the plan, when a role planned it
 
     def named(self, name: str) -> Planned:
         return next(p for p in self.runs if p.name == name)
 
 
-def ref(name: str) -> str:
-    """A role's reference as runs record it: a built-in's module:attribute, or a role file's absolute path."""
-    from jaynes.roles import BUILT_IN
-    if name.endswith(".toml"):
-        return str(Path(name).resolve())
-    if ":" in name:
-        return name
-    if name not in BUILT_IN:
-        raise PlanError([f"no built-in role {name!r}: use one of {', '.join(BUILT_IN)}, a role file (.toml), or "
-                         "module:attribute"])
-    return BUILT_IN[name]
+def ref(name: str, home: Path) -> str:
+    """A role's reference as runs record it, from its name among the person's roles and the built-in ones, a role
+    file, or a module's attribute."""
+    try:
+        return catalog.ref(name, home)
+    except catalog.Unknown as err:
+        raise PlanError([str(err)]) from None
 
 
 def load(reference: str) -> Role:
     from jaynes.role_file import RoleFileError
-    from jaynes.role_file import load as load_file
     try:
-        if reference.endswith(".toml"):
-            found: object = load_file(Path(reference))
-        else:
-            module, _, attr = reference.partition(":")
-            if str(Path.cwd()) not in sys.path:  # a role in the current folder, as jaynes run finds it
-                sys.path.insert(0, str(Path.cwd()))
-            found = getattr(importlib.import_module(module), attr)
+        found = catalog.load(reference)
     except (RoleFileError, ImportError, AttributeError, ValueError) as err:
         raise PlanError([f"the role {reference} does not load: {err}"]) from None
     if not isinstance(found, Role):
@@ -111,7 +125,7 @@ def _pairs(x: Mapping[str, object], key: str, where: str) -> dict[str, str]:
     return dict(cast(dict[str, str], value))
 
 
-def parse(data: object, has_project: bool) -> tuple[str, list[Planned]]:
+def parse(data: object, has_project: bool, home: Path) -> tuple[str, list[Planned]]:
     """The request and its runs from a plan, or every reason it is refused. A run follows only runs listed before
     it, so a plan never loops, and it may follow at most one run with a project that does not merge, since it
     works from one branch."""
@@ -154,7 +168,7 @@ def parse(data: object, has_project: bool) -> tuple[str, list[Planned]]:
         if not task:
             reasons.append(f"{where}: task must say what this run does")
         try:
-            reference = ref(_text(x, "role"))
+            reference = ref(_text(x, "role"), home)
             role = load(reference)
             from jaynes import verify
             if problems := verify.verify(role):
@@ -175,15 +189,15 @@ def new_request_id() -> str:
     return "q" + new_run_id()[1:]
 
 
-def record(c: Conductor, text: str, runs: Sequence[Planned], folder: Path | None) -> Request:
-    """Record the request with its plan; nothing starts yet."""
+def record(c: Conductor, text: str, runs: Sequence[Planned], folder: Path | None, by: str | None = None) -> Request:
+    """Record the request with its plan; nothing starts yet. ``by`` is the run that planned it."""
     rid = new_request_id()
     where = None
     if folder is not None:
         from jaynes.project import resolve
         where = str(resolve(folder)[0])
-    c.store.append("RequestPlanned", {"request": text, "project": where, "runs": [asdict(p) for p in runs]},
-                   run_id=rid)
+    c.store.append("RequestPlanned", {"request": text, "project": where, "runs": [asdict(p) for p in runs],
+                                      **({"by": by} if by else {})}, run_id=rid)
     return requests(c, rid)[0]
 
 
@@ -193,7 +207,7 @@ def _request(e: Any) -> Request:
                          str(r.get("preview", "")), str(r.get("preview_path", "")), str(r.get("preview_ports", "")),
                          str(r.get("suite", "")), dict(r.get("inputs") or {}), dict(r.get("runtimes") or {}))
                  for r in cast(list[dict[str, Any]], p["runs"]))
-    return Request(str(e.run_id), str(p["request"]), p.get("project"), runs, float(e.ts))
+    return Request(str(e.run_id), str(p["request"]), p.get("project"), runs, float(e.ts), p.get("by"))
 
 
 def requests(c: Conductor, rid: str | None = None) -> list[Request]:
@@ -228,9 +242,9 @@ def delivered(role: Role, st: RunState) -> bool:
         return True
     if st.branch is not None:
         return not role.merges or bool(st.merged) or st.not_merged is not None
-    if (st.started or {}).get("project"):
+    if (st.started or {}).get("project") and any(s.project == "write" for s in role.steps):
         return False
-    return all(st.step(s.name).checked is not None for s in role.steps)
+    return all(st.step(s.name).checked is not None for s in role.steps)  # outputs alone, or it only read the project
 
 
 def stopped(st: RunState) -> str | None:
@@ -383,8 +397,63 @@ def advance(c: Conductor, rid: str, start: Start | None = None) -> list[str]:
     return begun
 
 
+def planned_by(c: Conductor, run_id: str) -> Request | None:
+    """The request a run planned, once its plan was recorded."""
+    return next((r for r in requests(c) if r.by == run_id), None)
+
+
+def from_run(c: Conductor, run_id: str, start: Start | None = None) -> Request | None:
+    """Once a run whose step delivers a plan delivered, record its plan as a request in the run's own task, on the
+    run's project, and start it; the request, when the run planned one. Only once per run."""
+    first = next(iter(c.store.events("RunStarted", run_id=run_id)), None)
+    if first is None or not first.payload.get("plans") or not first.payload.get("ref"):
+        return None
+    with _locked(c, run_id) as mine:
+        if not mine:
+            return None
+        if (known := planned_by(c, run_id)) is not None:
+            return known
+        st = _state(c, run_id)
+        role = load(str(first.payload["ref"]))
+        steps = [x for x in role.steps if x.output is not None and issubclass(x.output, Plan)]
+        if st is None or not steps or not delivered(role, st):
+            return None
+        h = (st.step(steps[-1].name).checked or {}).get("output_hash")
+        path = c.home / "objects" / f"{h}.json"
+        if not h or not path.is_file():
+            return None
+        out = Plan.model_validate_json(path.read_text())
+        given: object = first.payload.get("project")
+        folder = str(cast(dict[str, object], given).get("root") or "") if isinstance(given, dict) else ""
+        given_agents: object = first.payload.get("runtimes")  # its runs use the agents the planning run was given
+        agents = {str(k): str(v) for k, v in cast(dict[object, object], given_agents).items()} \
+            if isinstance(given_agents, dict) else {}
+        text, runs = parse({"request": str(first.payload["task"]),
+                            "runs": [{**r.model_dump(), "runtimes": agents} for r in out.runs]},
+                           has_project=bool(folder), home=c.home)
+        req = record(c, text, runs, Path(folder) if folder else None, by=run_id)
+    advance(c, req.id, start)
+    return req
+
+
+def reasons(c: Conductor, out: Plan, has_project: bool) -> list[str]:
+    """Why Jaynes would refuse the plan, the check every planning step gets."""
+    try:
+        parse({"request": "the run's task", "runs": [r.model_dump() for r in out.runs]}, has_project, c.home)
+    except PlanError as err:
+        return err.reasons
+    return []
+
+
 def advance_all(c: Conductor, start: Start | None = None) -> None:
-    """Advance every request still working: what the person's page does every few seconds."""
+    """Start the plans of runs that delivered one, and advance every request still working: what the person's page
+    does every few seconds."""
+    for e in c.store.events("RunStarted"):
+        if e.payload.get("plans") and planned_by(c, str(e.run_id)) is None:
+            try:
+                from_run(c, str(e.run_id), start)
+            except PlanError:
+                continue  # its check passed when it was made; a role removed since then leaves it as it is
     for req in requests(c):
         if status(c, req) == "working":
             advance(c, req.id, start)

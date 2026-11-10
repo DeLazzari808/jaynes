@@ -116,6 +116,7 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Built-in role screen-design: your design method from how the screen is used (moments, objects, walkthrough, requirements), then one slice measured, proved and reviewed; Jaynes's own Chrome on data frozen at the start | Works in tests on an invented product; no real run yet |
 | Inputs a role declares, frozen at the start; choosing among an output's items at a stop; Jaynes sending a step back with what it found | Works |
 | A request as a plan of runs (`jaynes plan`): each run starts once the runs it builds on delivered, from where their delivery landed, without waiting for samples; the page shows the plan | Works in tests and on a scratch page |
+| Your own roles in a folder outside Jaynes (`jaynes roles add`), listed by `jaynes roles` and started by name; a role whose step delivers a plan, which Jaynes checks and starts once its run delivered | Works in tests; a private direction role planned a real request with Claude Code |
 
 Missing, roughly in order:
 
@@ -128,9 +129,9 @@ Missing, roughly in order:
   history; a new preference is not yet kept as taste memory; every project
   waits 7 days, not yet a time of its own. A step cannot yet start over from
   scratch, giving its reason, instead of correcting on top.
-- **The direction specialist.** The agent in Claude Code writes a request's
-  plan; a specialist that plans and has its own count of right and wrong
-  plans is not built, and a plan cannot be started or changed from the page.
+- **Changing a plan.** A role can plan a request, and its plan's sample
+  counts; but a plan cannot be started from the page or changed once it
+  started, so a return makes a new plan that does not replace it.
 - **small-change merging alone.** It has no hidden checks yet, so the
   person still merges it.
 - **Halting a turn under way.** Halt all stops every run before its next

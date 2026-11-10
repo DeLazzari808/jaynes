@@ -2,6 +2,46 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: The person's own roles, and a role that plans
+
+**Decided.** A person keeps their own roles, such as a company's private
+specialists, in a folder outside Jaynes and adds it once with `jaynes roles add
+<folder>`. Every role file and every Python file with a role in it there is a
+role started by its name, and one named like a built-in role takes its place.
+`jaynes roles` lists them, the person's first, each with a sentence on what it
+is for, which a role now says (`about`). A run records the role's file by its
+full path, so it continues from any folder.
+
+A role plans a request when a step of it delivers a plan (`jaynes.plan.Plan`):
+the runs, each with a role by its name, a task and the runs it builds on, and
+why these roles. That step is shown the roles it can use, never another role
+that plans, and Jaynes checks its plan as it checks a plan from the person's
+agent, sending the step back with the reasons. Once the run delivered, Jaynes
+records the request in the run's own task, the person's words, on the run's
+project, with the agents the run was given, and starts it. The guide runs such
+a role for every request that is more than a small change.
+
+**Why.** The direction specialist decided on 2026-11-07 is private, so Jaynes
+had to find roles that live outside it; and the plan is the specialist's
+delivery, which only the engine can start, check and count.
+
+**Tradeoffs.**
+
+- Every request but a small one costs one more run, a minute or less.
+- The plan's sample counts like any other: a return or a correction against
+  its step is the direction's error. A return makes it plan again, but the new
+  plan does not replace the one already started; changing a plan once it
+  started is still not built.
+- A Python file in an added folder runs when Jaynes lists the roles, so the
+  folder must be the person's own.
+
+**Built 2026-11-10.** The direction and the design roles (visual-identity,
+redesign, screen-design) now live in the private repository and improve there;
+their copies in Jaynes stay as examples. A real direction run with Claude Code
+planned a request on a test landing page in 44 seconds: a dark look with
+visual-identity, then the waitlist form with screen-design after it, with the
+design method as its input, and said why build-feature was not needed.
+
 ## 2026-11-10: The page does not start at login
 
 **Decided.** The Mac does not start the page when the person logs in. The page
@@ -256,8 +296,9 @@ says. Rules that came up while building it:
 - The page shows each request with its plan, and the home lists the requests
   whose next runs wait for earlier ones.
 
-Not built yet: the direction specialist and its count, starting a plan from
-the page or the API, and changing a plan once it started.
+Not built yet: starting a plan from the page or the API, and changing a plan
+once it started. The direction specialist and its count came the same day, in
+"The person's own roles, and a role that plans".
 
 ## 2026-11-07: A stop no longer holds the run
 
@@ -509,8 +550,9 @@ repository history is public and removing them would not make them private.
 
 **Changed 2026-11-09:** the software roles stay public and keep improving.
 
-**Open.** How Jaynes finds private specialists that live outside it when the
-person asks for a change.
+**Answered 2026-11-10.** Jaynes finds private specialists in the folders the
+person adds with `jaynes roles add`; see "The person's own roles, and a role
+that plans".
 
 ## 2026-11-07: What counts as proof that a step got it right
 

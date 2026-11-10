@@ -212,7 +212,8 @@ def show_fixed(_: None, needs: Witnesses) -> list[Shown]:
             *proof.shown_in(needs, PROVE), *_examples(found, more=True), changed_files(made.files)]
 
 
-ROLE = role("fix-bug", merges=True)
+ROLE = role("fix-bug", merges=True,
+            about="Fixes a bug the request describes: proves it with a failing test, then fixes it.")
 # a run that finds no runner blocks at once with how to give one: trying again finds the same files
 RUNNER = ROLE.step("runner", output=Runner, run_by=find_runner, project="read", max_turns=1)
 # written from the task alone, before the work; only Jaynes and the person see it

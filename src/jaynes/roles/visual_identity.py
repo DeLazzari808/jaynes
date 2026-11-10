@@ -113,7 +113,7 @@ def palette_applied(out: Applied, needs: Witnesses) -> Pass | Fail:
     return in_style_files(needs.project, needs[DIRECTION].value.palette)
 
 
-ROLE = role("visual-identity")
+ROLE = role("visual-identity", about="The look: colors, fonts and a style, applied to the project.")
 CURRENT = ROLE.step(
     "current", output=Current, project="read", check=cited_in_project,
     instructions="Read the project and describe its visual identity as it is today: the colours and fonts it "

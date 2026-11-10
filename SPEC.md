@@ -365,6 +365,30 @@ the request delivered or stopped, or when something new holds one of its runs.
 The page shows `/request/<id>` and, under Running now, the requests whose next
 runs wait.
 
+A role plans when a step's output is `jaynes.plan.Plan` (`runs`, each with
+`name`, `role` by name, `task`, `after`, `preview`, `preview_path`, `suite`,
+`inputs`; and `why`). The step's prompt lists the roles from `jaynes roles`
+that do not plan, each with its `about`, inputs and whether it changes or
+merges the project; the conductor checks the plan as `jaynes plan` would, and
+its reasons send the step back. The run's `RunStarted` carries `plans: true`.
+Once the run delivered (a role that only reads the project delivers when every
+step is checked), `jaynes run` records `RequestPlanned` with `by` the run's id,
+the run's task as the request and its project and runtimes, and advances it;
+the page's sweep does the same for a planning run whose process died. The
+request page links the run, and the planning step's sample says that a return
+does not replace the plan already started.
+
+### 5.2 Where roles come from
+
+A role is started by its name, a role file's path, a Python file's
+`path.py:attribute`, or `module:attribute`. Names come from `jaynes roles`: the
+folders in the home's `roles.json` (`jaynes roles add|remove <folder>`), in
+order, each file's roles by `name`, the first file with a name winning; then
+the built-in roles whose name no folder took. A Python file is imported by its
+path, with its folder at the end of the import path, so it imports the files
+next to it by name; a file that does not import is left out. `RunStarted`
+records the reference, a file by its absolute path.
+
 ## 6. Stops and attention
 
 ### 6.1 At a stop
@@ -638,7 +662,7 @@ Conductor events:
 | `Merged` | the branch merged into, the merge commit, the run's branch commit it merged, and `over`, the one merged before, for a correction |
 | `MergeSkipped` | the run's branch commit and why it did not merge by itself |
 | `MergeUndone` | the branch, the merges reverted and the commits that revert them, the person's note, by; `incomplete` when not every revert landed |
-| `RequestPlanned` | the request's id instead of a run: the request in the person's words, the project, and each planned run with its id, role reference, task, the runs it follows and its flags |
+| `RequestPlanned` | the request's id instead of a run: the request in the person's words, the project, each planned run with its id, role reference, task, the runs it follows and its flags, and `by`, the run that planned it, when a role did |
 | `RequestRunStarted` | the request's id: the name and id of a planned run Jaynes started |
 | `Halted` | no run: by and a note; every run stops before its next step and merges nothing |
 | `Resumed` | no run: by, always a person; the halt is lifted |

@@ -55,7 +55,8 @@ def bigger(out: Changed, patch: str) -> bool:
     return lines(patch) > LIMIT
 
 
-ROLE = role("small-change")
+ROLE = role("small-change",
+            about="A small change: a few lines in one or two files, such as a typo, a rename, a value or a message.")
 RUNNER = ROLE.step("runner", output=Suite, run_by=find_suite, project="read", max_turns=1)
 ROLE.step(
     "change", output=Changed, needs=[RUNNER], project="write", may_change=("**",), check=passes, deadline=3600.0,

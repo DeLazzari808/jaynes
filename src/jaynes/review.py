@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import errno
 import html
-import importlib
 import json
 import math
 import os
@@ -45,7 +44,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import api, bounds, guard, install, outcome, plan, role_file, roles, sandbox, skill, update
+from jaynes import api, bounds, catalog, guard, install, outcome, plan, roles, sandbox, skill, update
 from jaynes import project as repo
 from jaynes.conductor import (By, Conductor, RunState, StepState, Waiting, continue_in_background, holds, project,
                               return_to)
@@ -747,12 +746,8 @@ class Review:
 
     def import_role(self, ref: str) -> Role | None:
         if ref not in self.shared.roles:
-            module, _, attr = ref.partition(":")
             try:
-                if ref.endswith(".toml"):
-                    found = role_file.load(Path(ref))
-                else:
-                    found = getattr(importlib.import_module(module), attr) if module and attr else None
+                found = catalog.load(ref) if ref else None
             except Exception:
                 return None  # not cached, so a fixed import works without a restart
             if not isinstance(found, Role):
@@ -917,13 +912,14 @@ class Review:
                     'delivered</span>', "stopped": '<span class="chip red">stopped</span>'}.get(
                 x.state, '<span class="chip amber">holds</span>' if w is not None and w.holding else
                 '<span class="chip blue">working</span>')
-            said = x.why or (self._question_of(w, self.role_of(p.run)) if w is not None and w.kind == "stop" else
-                             w.reasons[0] if w is not None and w.reasons else "")
+            follows = f"after {', '.join(p.after)}" if p.after else "first"
+            said = (x.why if x.why != follows else "") or (
+                self._question_of(w, self.role_of(p.run)) if w is not None and w.kind == "stop" else
+                w.reasons[0] if w is not None and w.reasons else "")
             try:
                 role = plan.load(p.role).name
             except plan.PlanError:
                 role = p.role
-            follows = f"after {', '.join(p.after)}" if p.after else "first"
             inner = (f'<div><div class="t">{esc(p.name)}: {marked(headline(p.task))}</div>'
                      + (f'<div class="q">{marked(headline(said, 140))}</div>' if said else "")
                      + f'<div class="m">{chip}<span>{esc(role)}</span><span>{esc(follows)}</span></div></div>')
@@ -937,6 +933,8 @@ class Review:
                 + {"delivered": ": every run delivered.", "stopped": ": a run will not deliver, so the runs after "
                    "it will not start.", "working": ". Each run starts once the runs it follows delivered, without "
                    "waiting for their samples."}[state]
+                + (f' Planned by <a href="/run/{q(req.by)}">run {esc(req.by)}</a>, whose plan you can sample there.'
+                   if req.by else '')
                 + '</div></div>'
                 + (f'<details class="fold"><summary>The whole request</summary><div class="task">{marked(req.text)}'
                    '</div></details>' if headline(req.text) != req.text else "")
@@ -1076,7 +1074,13 @@ class Review:
         sub = (f'<div class="sub">{len(rejected)} earlier attempt{"s" if len(rejected) != 1 else ""} '
                f'rejected by Jaynes before you saw it: {esc(rejected[-1].payload["reasons"][0])}</div>'
                if rejected and rejected[-1].payload.get("reasons") else "")
-        if s.open_stop is not None and not w.holds and not (st.merged and st.undone is None):
+        made = plan.planned_by(self.c, run_id) if target is not None and target.output is not None \
+            and issubclass(target.output, plan.Plan) else None
+        if s.open_stop is not None and made is not None:
+            sub += (f'<div class="sub">Jaynes started <a href="/request/{q(made.id)}">this plan</a> once the run '
+                    'delivered it. A return counts against the plan, but a plan made again does not replace the one '
+                    'started: drop a run on its page to stop it and the runs after it.</div>')
+        elif s.open_stop is not None and not w.holds and not (st.merged and st.undone is None):
             sub += ('<div class="sub">The run went on with this without waiting for you. A return corrects on top of '
                     'what it did: only what used it runs again.</div>')
         elif s.open_stop is not None and w.holds and not holds(s.open_stop[1]):
@@ -1341,7 +1345,9 @@ class Review:
         except plan.PlanError:
             return ""
         if found is None:
-            return ""
+            made = plan.planned_by(self.c, run_id)
+            return (f'<div class="sub">This run planned <a href="/request/{q(made.id)}">the request\'s runs</a>, '
+                    f'{len(made.runs)} of them.</div>' if made is not None else "")
         req, p = found
         at = [x.name for x in req.runs].index(p.name) + 1
         return (f'<div class="sub">Run {esc(p.name)}, {at} of {len(req.runs)} in the plan of '
@@ -1427,6 +1433,8 @@ class Review:
     def known_roles(self) -> dict[str, dict[str, str]]:
         """Roles a run can be started with and their runtime overrides: those that come with Jaynes, then each one run."""
         known = {k: dict(v) for k, v in BUILT_IN.items()}
+        for e in catalog.entries(self.c.home):  # the person's own roles, and a built-in one theirs took the place of
+            known.setdefault(e.ref, {})
         for ev in self.c.store.events("RunStarted"):
             if "ref" in ev.payload:
                 known[str(ev.payload["ref"])] = {str(k): str(v) for k, v in dict(ev.payload["runtimes"]).items()}

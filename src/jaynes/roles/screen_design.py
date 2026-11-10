@@ -874,7 +874,9 @@ CITE = ("Quote only what the snapshot shows: a citation names one of its files (
         "query names a list of a response (copy a fact's query from inputs/snapshot.json) and which Jaynes computes; "
         "leave its value empty if you do not know it, and Jaynes tells you.")
 
-ROLE = role("screen-design", inputs=INPUTS)
+ROLE = role("screen-design", inputs=INPUTS,
+            about="Designs a screen from how the person uses it, following a design method kept in a file; it "
+            "needs a preview and the screen's path in it.")
 SNAPSHOT = ROLE.step("snapshot", output=Snapshot, run_by=take_snapshot, project="read", effect="read", max_turns=1)
 MOMENTS = ROLE.step(
     "moments", output=Moments, needs=[SNAPSHOT], check=moments_cited, stop=stop(0.2, sampled=False),

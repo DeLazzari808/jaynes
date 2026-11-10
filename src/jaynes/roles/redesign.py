@@ -69,7 +69,7 @@ def applied(out: Applied, needs: Witnesses) -> Pass | Fail:
     return Fail(*reasons) if reasons else Pass()
 
 
-ROLE = role("redesign")
+ROLE = role("redesign", about="Redesigns the look from links or pictures of interfaces the person likes.")
 REFERENCES = ROLE.step("references", output=rf.References, run_by=rf.gather, max_turns=1, effect="web")
 CURRENT = ROLE.step(
     "current", output=Current, project="read", check=cited,

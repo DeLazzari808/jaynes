@@ -31,7 +31,7 @@ from pydantic import BaseModel
 
 from jaynes.role import Role, Stop, Step, Witnesses, role, stop
 
-ROLE_KEYS = {"name", "agent", "method", "method_file", "step"}
+ROLE_KEYS = {"name", "agent", "method", "method_file", "about", "step"}
 STEP_KEYS = {"name", "output", "needs", "check", "stop", "run_by", "agent", "instructions", "max_turns", "deadline",
              "question", "project", "may_change", "web", "effect", "ends",
              "max_messages"}
@@ -77,7 +77,7 @@ def _role(data: dict[str, Any], folder: Path) -> Role:
     if "name" not in data:
         raise ValueError("the role needs a name")
     method: str | Path = folder / data["method_file"] if "method_file" in data else data.get("method", "")
-    r = role(data["name"], data.get("agent", "claude"), method)
+    r = role(data["name"], data.get("agent", "claude"), method, about=str(data.get("about", "")))
     for s in data.get("step", []):
         if "name" not in s:
             raise ValueError("every step needs a name")

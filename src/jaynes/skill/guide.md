@@ -10,7 +10,13 @@ written where the agent could read it), `preference` when it is a new preference
 when the world changed or a new fact appeared. Tell the person in one line which run it corrects and the kind,
 and that they can change the kind on the run's `page`, as printed. Then carry out the fix as below.
 
-1. Pick the role from the task:
+1. Run `jaynes roles`: one line of JSON per role a run can start by name, with what it is for (`about`); the
+   person's own roles come first, and `plans` is true for a role that plans a request. If one plans, and the
+   request is more than a small change, run it instead of picking a role yourself, as in 2 with its name and the
+   request in the person's words as the task: when it delivered its plan, Jaynes starts the plan by itself, and the
+   line it prints carries the `request`; tell the person the plan in one line, the runs in order, with the
+   request's `page`, and go on as in 5 with `jaynes wait <request>`. Otherwise pick the role from the task, among
+   the person's own roles first, by their `about`, and else:
    - `small-change` if it is small: a few lines in one or two files, such as a typo, a rename, a value, a message;
    - `fix-bug` if it describes a bug;
    - `build-feature` if it adds or changes what the code does;
@@ -19,7 +25,8 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
      screen>`; add the theme they judge in, a copy of the data the product reads (`--input data=<folder>:<where
      in the project>`), and their measuring tools, if they named them;
    - `redesign` if it names links or pictures of interfaces the person likes;
-   - `visual-identity` if it is about the look: colors, fonts, a style.
+   - `visual-identity` if it is about the look: colors, fonts, a style;
+   - a role of the person's own when its `about` fits the task better.
    If none fits, or the folder is not in a git repository, do the task yourself as usual and say nothing about
    Jaynes.
    If the request needs more than one of these roles, one building on another, such as a look with
@@ -51,7 +58,7 @@ and that they can change the kind on the run's `page`, as printed. Then carry ou
 5. A plan: write it as JSON to a file outside the project, such as `/tmp/plan.json`:
    `{"request": "<the request, in the person's words>", "runs": [{"name": "look", "role": "visual-identity",
    "task": "<what this run does>"}, {"name": "screen", "role": "screen-design", "task": "<...>", "after":
-   ["look"]}]}`. A run lists in `after` the runs it builds on, which come before it; runs that build on none of
+   ["look"]}]}`, each role by its name as `jaynes roles` lists it. A run lists in `after` the runs it builds on, which come before it; runs that build on none of
    each other run at the same time. Give each run what `jaynes run` would take as fields: `preview`,
    `preview_path`, `preview_ports`, `suite` and `inputs` (an object of name to value). Then, in the background,
    from the project's folder, run `jaynes plan <the file> --project .`

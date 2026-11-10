@@ -33,9 +33,7 @@ from __future__ import annotations
 
 import argparse
 import collections
-import importlib
 import json
-import os
 import subprocess
 import sys
 import time
@@ -159,27 +157,24 @@ def cmd_simulate(args: argparse.Namespace) -> None:
 DEFAULT_RUNTIMES = {"claude": "jaynes.runtimes:ClaudeRuntime", "codex": "jaynes.runtimes:CodexRuntime"}
 
 
-def role_ref(name: str) -> str:
-    """A built-in role's name, as its module:attribute; anything with a colon is already one, and a role file is
-    its absolute path, so a run continued from another folder finds it."""
-    from jaynes.roles import BUILT_IN
-    if name.endswith(".toml"):
-        return str(Path(name).resolve())
-    if ":" in name:
-        return name
-    if name not in BUILT_IN:
-        sys.exit(f"no built-in role {name!r}: use one of {', '.join(BUILT_IN)}, a role file (.toml), or "
-                 "module:attribute")
-    return BUILT_IN[name]
+def role_ref(name: str, home: Path) -> str:
+    """A role's reference as a run records it: one of the person's roles or a built-in one by its name, a role
+    file's or a Python file's absolute path, or module:attribute, so a run continued from another folder finds it."""
+    from jaynes import catalog
+    try:
+        return catalog.ref(name, home)
+    except catalog.Unknown as err:
+        sys.exit(str(err))
 
 
 def load_ref(ref: str) -> Any:
-    module, _, attr = ref.partition(":")
-    if not module or not attr:
-        sys.exit(f"expected module:attribute, got {ref!r}")
-    if os.getcwd() not in sys.path:  # a role in the current folder, as continue_in_background already allows
-        sys.path.insert(0, os.getcwd())
-    return getattr(importlib.import_module(module), attr)
+    from jaynes import catalog
+    try:
+        return catalog.load(ref)
+    except ImportError as err:
+        if ":" not in ref:
+            sys.exit(f"expected module:attribute, got {ref!r}")
+        raise err
 
 
 def _home(args: argparse.Namespace) -> Path:
@@ -199,9 +194,9 @@ def _started(c: Conductor, run_id: str) -> tuple[Role, str, str, dict[str, str]]
 
 def _role(ref: str) -> Role:
     from jaynes.role import Role
-    from jaynes.role_file import RoleFileError, load
+    from jaynes.role_file import RoleFileError
     try:
-        r = load(Path(ref)) if ref.endswith(".toml") else load_ref(ref)
+        r = load_ref(ref)
     except RoleFileError as err:
         sys.exit(str(err))
     if not isinstance(r, Role):
@@ -222,7 +217,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             sys.exit("a new run needs --role and --task")
         if any("=" not in pair for pair in args.runtime):
             sys.exit("--runtime takes name=module:attribute")
-        ref, task, run_id = role_ref(args.role), args.task, args.id or new_run_id()
+        ref, task, run_id = role_ref(args.role, c.home), args.task, args.id or new_run_id()
         extra = dict(pair.split("=", 1) for pair in args.runtime)
         r = _role(ref)
         if problems := verify.verify(r):  # before any agent works for it
@@ -275,15 +270,20 @@ def cmd_run(args: argparse.Namespace) -> None:
     if result.status in ("waiting", "blocked"):
         ensure_page(c.home)  # in case it was closed while the run worked
     _next_in_plan(c, run_id)
-    print(json.dumps(_where(c, run_id, result), ensure_ascii=False))
+    out = _where(c, run_id, result)
+    from jaynes import plan
+    if (req := plan.planned_by(c, run_id)) is not None:  # its delivery was a plan, which started
+        out["request"] = _request_where(c, req.id)
+    print(json.dumps(out, ensure_ascii=False))
 
 
 def _next_in_plan(c: Conductor, run_id: str) -> None:
-    """Start the runs of the run's request that waited for its delivery."""
+    """Start the runs of the run's request that waited for its delivery, or the plan the run delivered."""
     from jaynes import plan
     try:
         if (found := plan.of_run(c, run_id)) is not None:
             plan.advance(c, found[0].id)
+        plan.from_run(c, run_id)
     except plan.PlanError as err:  # the page looks again, and shows why
         print(f"the next runs of the plan did not start: {err}", file=sys.stderr)
 
@@ -303,7 +303,7 @@ def cmd_plan(args: argparse.Namespace) -> None:
     except ValueError as err:
         sys.exit(f"the plan is not JSON: {err}")
     try:
-        text, runs = plan.parse(data, has_project=bool(args.project))
+        text, runs = plan.parse(data, has_project=bool(args.project), home=c.home)
         req = plan.record(c, text, runs, Path(args.project) if args.project else None)
     except plan.PlanError as err:
         sys.exit("the plan is refused:\n" + "\n".join(f"- {r}" for r in err.reasons))
@@ -389,8 +389,30 @@ def cmd_wait(args: argparse.Namespace) -> None:
             time.sleep(args.every)
 
 
+def cmd_roles(args: argparse.Namespace) -> None:
+    """List the roles a run can start by name, one line of JSON each; or add or remove a folder of the person's."""
+    from jaynes import catalog
+    home = _home(args)
+    if args.action:
+        if not args.folder:
+            sys.exit(f"jaynes roles {args.action} needs a folder")
+        if args.action == "add":
+            try:
+                folder = catalog.add(home, Path(args.folder))
+            except catalog.Unknown as err:
+                sys.exit(str(err))
+            print(f"added {folder}")
+        elif catalog.remove(home, Path(args.folder)):
+            print(f"removed {Path(args.folder).expanduser().resolve()}")
+        else:
+            sys.exit(f"{Path(args.folder).expanduser().resolve()} was not added")
+    for e in catalog.entries(home):
+        print(json.dumps({"name": e.name, "about": e.about, "from": e.folder or "jaynes", "plans": e.plans,
+                          "ref": e.ref}, ensure_ascii=False))
+
+
 def cmd_check(args: argparse.Namespace) -> None:
-    r = _role(role_ref(args.role))
+    r = _role(role_ref(args.role, _home(args)))
     problems = verify.verify(r)
     print(verify.report(r, problems))
     if problems:
@@ -676,7 +698,13 @@ def main(argv: list[str] | None = None) -> int:
     pl.add_argument("--project", help="the folder in a git repository every run works on")
     pl.add_argument("--home")
     k = sub.add_parser("check", help="find what a role gets wrong before any agent runs")
-    k.add_argument("role", help="a built-in role (visual-identity, redesign, fix-bug, build-feature, small-change, screen-design), a role file (.toml) or module:attribute")
+    k.add_argument("role", help="a role by its name, as jaynes roles lists them, a role file (.toml), a Python "
+                                "file's path.py:attribute, or module:attribute")
+    k.add_argument("--home")
+    rl = sub.add_parser("roles", help="the roles a run can start by name, and the folders of your own roles")
+    rl.add_argument("action", nargs="?", choices=["add", "remove"], help="add or remove a folder of your own roles")
+    rl.add_argument("folder", nargs="?", help="a folder of role files (.toml) and Python files with roles")
+    rl.add_argument("--home")
     q = sub.add_parser("queue")
     q.add_argument("--home")
     w = sub.add_parser("answer")
@@ -758,7 +786,7 @@ def main(argv: list[str] | None = None) -> int:
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,
      "skill": cmd_skill, "update": cmd_update, "version": cmd_version, "ask": cmd_ask, "wait": cmd_wait, "output": cmd_output,
      "guide": cmd_guide, "delivered": cmd_delivered, "correct": cmd_correct, "halt": cmd_halt,
-     "plan": cmd_plan}[args.cmd](args)
+     "plan": cmd_plan, "roles": cmd_roles}[args.cmd](args)
     return 0
 
 

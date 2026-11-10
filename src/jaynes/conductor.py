@@ -349,6 +349,12 @@ def new_run_id() -> str:
 
 # --- conductor -----------------------------------------------------------------
 
+def _plans(step: Step[Any]) -> bool:
+    """Whether the step delivers a plan of runs."""
+    from jaynes.plan import Plan
+    return step.output is not None and issubclass(step.output, Plan)
+
+
 class Conductor:
     def __init__(self, home: Path, runtimes: Mapping[str, Callable[[], Runtime]] | None = None,
                  clock: Callable[[], float] = time.time, settle: float = outcome.SETTLE) -> None:
@@ -379,6 +385,9 @@ class Conductor:
                     root, base = repo.resolve(project)
                     base = str(extra.pop("base", None) or base)  # a plan's later run works from an earlier branch
                     extra["project"] = {"root": str(root), "base": base, "branch": repo.current_branch(root)}
+                from jaynes.catalog import plans
+                if plans(role):  # its delivery is a plan, which starts once the run delivered
+                    extra["plans"] = True
                 self._emit(run_id, "RunStarted", {**extra, "role": role.name, "task": task,
                                                   "fingerprint": role.fingerprint()})
             elif first.payload["role"] != role.name:
@@ -1197,6 +1206,8 @@ class Conductor:
         if step.instructions:
             lines += [step.instructions.rstrip(), ""]
         lines += [f"Task: {task}", ""]
+        if _plans(step):
+            lines += self._roles()
         if step.needs or s.previous:
             lines.append("Inputs, read-only:")
             lines += [f"- inputs/{n.name}.json: the checked output of step {n.name}" for n in step.needs]
@@ -1284,8 +1295,31 @@ class Conductor:
         except ValidationError as err:
             return _schema_reasons(err)
 
+    def _roles(self) -> list[str]:
+        """The roles a plan may use, as a planning step is shown them: each with what it is for and its inputs."""
+        from jaynes.catalog import entries
+        from jaynes.plan import load
+        lines = ["The task is the person's request, in their words. The roles you can use, by name:"]
+        for e in entries(self.home):
+            if e.plans:
+                continue
+            lines.append(f"- {e.name}: {e.about or 'no description'}")
+            try:
+                found = load(e.ref)
+            except Exception:
+                continue
+            lines += [f"  - input {n}{'' if i.required and not i.default else ' (optional)'}: {i.help}"
+                      for n, i in found.inputs.items()]
+            if any(s.project == "write" for s in found.steps):
+                lines.append("  - it changes the project" + (", and merges its change by itself once its hidden "
+                                                             "checks pass" if found.merges else ", on a branch"))
+        return [*lines, ""]
+
     def _check(self, step: Step[Any], value: Any, needs: Witnesses) -> list[str]:
         failures: list[str] = []
+        if _plans(step):  # Jaynes refuses the plan the way it would refuse it from the person's agent
+            from jaynes.plan import reasons
+            failures += reasons(self, value, has_project=bool(needs.started.get("project")))
         for check in step.checks:
             try:
                 result = cast(object, check(value, needs))  # user code; its annotation is not a guarantee

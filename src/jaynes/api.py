@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from jaynes import inputs as run_inputs
 from jaynes import project as repo
-from jaynes import proof, role_file, roles, verify
+from jaynes import catalog, proof, role_file, verify
 from jaynes.ask import page
 from jaynes.conductor import (LABELS, Answer, AnswerRejected, By, RunBusy, StepState, Waiting,
                               continue_in_background, new_run_id, project, start_in_background)
@@ -304,7 +304,11 @@ def resume(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
 def start(r: Review, f: dict[str, Any], by: By) -> dict[str, Any]:
     """Start a run of a role on a task, in the background."""
     ref = _text(f, "ref").strip() or _text(f, "role")
-    ref = roles.BUILT_IN.get(ref, ref)  # a built-in role by its name, as jaynes run takes it
+    if ref and not ref.endswith(".toml") and ":" not in ref:  # a role by its name, as jaynes run takes it
+        try:
+            ref = catalog.ref(ref, r.c.home)
+        except catalog.Unknown as err:
+            raise Refused(400, str(err)) from None
     task = _text(f, "task").strip()
     if not task:
         raise Refused(400, "a run needs a task")

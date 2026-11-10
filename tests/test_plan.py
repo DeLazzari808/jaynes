@@ -146,7 +146,7 @@ def test_a_run_that_will_not_deliver_stops_the_runs_after_it(
 
 
 @pytest.mark.parametrize(("runs_", "reason"), [
-    ([{"name": "a", "role": "nope", "task": "t"}], "run a: no built-in role 'nope'"),
+    ([{"name": "a", "role": "nope", "task": "t"}], "run a: no role 'nope'"),
     ([{"name": "a", "role": "small-change", "task": ""}], "run a: task must say what this run does"),
     ([{"name": "a", "role": "small-change", "task": "t", "after": ["b"]},
       {"name": "b", "role": "small-change", "task": "t"}], "run a follows b, which must be listed before it"),
@@ -157,9 +157,9 @@ def test_a_run_that_will_not_deliver_stops_the_runs_after_it(
       {"name": "c", "role": "small-change", "task": "t", "after": ["a", "b"]}],
      "run c follows more than one run that does not merge"),
 ])
-def test_a_plan_is_refused_with_why(runs_: list[dict[str, Any]], reason: str) -> None:
+def test_a_plan_is_refused_with_why(runs_: list[dict[str, Any]], reason: str, tmp_path: Path) -> None:
     with pytest.raises(plan.PlanError) as err:
-        plan.parse({"request": "r", "runs": runs_}, has_project=True)
+        plan.parse({"request": "r", "runs": runs_}, has_project=True, home=tmp_path)
     assert any(r.startswith(reason) for r in err.value.reasons), err.value.reasons
 
 
