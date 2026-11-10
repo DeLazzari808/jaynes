@@ -1433,12 +1433,23 @@ class Review:
     def known_roles(self) -> dict[str, dict[str, str]]:
         """Roles a run can be started with and their runtime overrides: those that come with Jaynes, then each one run."""
         known = {k: dict(v) for k, v in BUILT_IN.items()}
-        for e in catalog.entries(self.c.home):  # the roles of the packages every project uses
-            known.setdefault(e.ref, {})
+        now = {e.name: e.ref for e in catalog.entries(self.c.home)}  # the roles of the packages every project uses
+        for ref in now.values():
+            known.setdefault(ref, {})
         for ev in self.c.store.events("RunStarted"):
             if "ref" in ev.payload:
-                known[str(ev.payload["ref"])] = {str(k): str(v) for k, v in dict(ev.payload["runtimes"]).items()}
+                known[self.current(str(ev.payload["ref"]), now)] = {
+                    str(k): str(v) for k, v in dict(ev.payload["runtimes"]).items()}
         return known
+
+    def current(self, ref: str, now: Mapping[str, str]) -> str:
+        """A run's role as the page offers it again: a package's role by its version now, also for a run started on
+        an older version or before roles were packages."""
+        old = ref.partition(":")[0] in catalog.LEGACY or Path(ref.rpartition(":")[0]).is_relative_to(
+            self.c.home / "packages")
+        if old and (r := self.import_role(ref)) is not None and r.name in now:
+            return now[r.name]
+        return ref
 
     @staticmethod
     def default_project() -> str:
@@ -1450,12 +1461,14 @@ class Review:
 
     def new_page(self, error: str = "", fields: dict[str, str] | None = None) -> str:
         f = fields or {}
-        last = next((str(ev.payload["ref"]) for ev in reversed(list(self.c.store.events("RunStarted")))
-                     if ev.payload.get("ref")), DEMO)  # the role run last, else the demo
+        entries = catalog.entries(self.c.home)
+        now, package = {e.name: e.ref for e in entries}, {e.ref: e.package for e in entries}
+        last = next((self.current(str(ev.payload["ref"]), now) for ev in reversed(list(self.c.store.events(
+            "RunStarted"))) if ev.payload.get("ref")), DEMO)  # the role run last, else the demo
         chosen = f.get("role", last)
         options = "".join(f'<option value="{esc(ref)}"{" selected" if ref == chosen else ""}>'
-                          f'{esc(f"{r.name} ({ref})" if (r := self.import_role(ref)) else ref)}</option>'
-                          for ref in self.known_roles())
+                          f'{esc(f"{r.name} ({package.get(ref, ref)})" if (r := self.import_role(ref)) else ref)}'
+                          '</option>' for ref in self.known_roles())
         main = ('<div class="crumbs"><b>New run</b></div><div class="body">'
                 f'<form class="form" method="post" action="/start"><input type="hidden" name="token" value="{self.shared.token}">'
                 f'<label><span class="label">Role</span><select name="role">{options}</select></label>'

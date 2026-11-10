@@ -208,3 +208,19 @@ def test_a_run_started_when_roles_came_inside_jaynes_finds_its_role_in_the_packa
                       ("jaynes.roles.screen_design:ROLE", "screen-design")]:
         found = catalog.load(old)
         assert isinstance(found, Role) and found.name == name
+
+
+def test_the_new_run_page_offers_each_role_once_by_its_package_version_now(tmp_path: Path) -> None:
+    from jaynes import catalog
+    home = tmp_path / "home"
+    c = Conductor(home)
+    c.store.append("RunStarted", {"role": "build-feature", "task": "t", "fingerprint": "x", "runtimes": {},
+                                  "ref": "jaynes.roles.build_feature:ROLE"}, run_id="r1")  # from before packages
+    base, server = serving(home)
+    try:
+        page = get(f"{base}/new")
+    finally:
+        server.shutdown()
+    now = {e.name: e.ref for e in catalog.entries(home)}
+    assert "jaynes.roles.build_feature" not in page and page.count("build-feature (") == 1
+    assert f'<option value="{now["build-feature"]}" selected>build-feature (software)</option>' in page
