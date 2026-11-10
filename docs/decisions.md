@@ -2,6 +2,29 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: The docs live on jaynes.dev/docs; packages need no terminal
+
+**Decided.** People rarely type Jaynes's commands: their agent does. So the
+docs speak to two readers: the person, with what to say to the agent and where
+to click on the page, and the agent, with every command in full.
+
+- The docs are six pages on the site, `jaynes.dev/docs`: Get started, Runs and
+  stops, Roles that come with Jaynes, Packages, Write a role, and Commands.
+  Their sources are Markdown in `docs/manual/`; `docs/manual/build.py` writes
+  `site/docs/`, and a test fails when the site differs from what it builds.
+- The Commands page is built from the help `jaynes` itself prints, so it never
+  says what a command no longer does, and a new command fails the test until
+  it has a place there. Every command and option got a help text for it.
+- The README keeps what Jaynes is, the guarantee, the status and the roadmap;
+  how to use it moved to the docs, so there is one place to keep up.
+- Packages need no terminal: the page's Roles shows what is installed, which
+  projects use which, and adds or removes one, for the project the page was
+  opened from by default. An agent does the same through the API and the MCP
+  tools `packages`, `add_package` and `remove_package`, only when the person
+  asks, since a package's roles run code on their computer.
+- Costs: one dev dependency, `markdown-it-py`, only to build the docs; the
+  pages are static files, so the site still publishes as it did.
+
 ## 2026-11-10: Roles are packages, as libraries are for npm
 
 **Decided.** The engine brings no role of its own. Every set of roles is a

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Write a role · Jaynes docs</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%227%22 fill=%22%2307090d%22/%3E%3Cpath d=%22M11.5 14.6 20 9.6M11.5 17.4 20 22.4%22 stroke=%22%236fb4ff%22 stroke-width=%222%22/%3E%3Ccircle cx=%229%22 cy=%2216%22 r=%224.2%22 fill=%22%236fb4ff%22/%3E%3Ccircle cx=%2222.5%22 cy=%228.5%22 r=%223.2%22 fill=%22%23eef2f7%22/%3E%3Ccircle cx=%2222.5%22 cy=%2223.5%22 r=%223.2%22 fill=%22%23eef2f7%22/%3E%3C/svg%3E">
+<meta name="description" content="A role is your method for one kind of work, written as steps in order. Each step has a required output and, usually, a check: code that must pass before the next step starts. A step can stop for you, and a step can be run by Jaynes instead of the agent, for evidence the agent could invent.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+<header class="bar"><div class="wrap">
+<a class="logo" href="../index.html"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="3" fill="#6fb4ff"/><circle cx="15" cy="5" r="2.2" fill="#eef2f7"/><circle cx="15" cy="15" r="2.2" fill="#eef2f7"/><path d="M7.5 9 13 5.8M7.5 11 13 14.2" stroke="#6fb4ff" stroke-width="1.4"/></svg>Jaynes <span>docs</span></a>
+<nav aria-label="Site"><a href="../index.html">Home</a><a href="../learn.html">Learn</a><a href="index.html">Docs</a><a href="https://github.com/alk0x1/jaynes">GitHub</a></nav>
+</div></header>
+<div class="wrap docs">
+<aside><nav aria-label="Docs"><a href="index.html">Get started</a><a href="runs.html">Runs and stops</a><a href="roles.html">Roles that come with Jaynes</a><a href="packages.html">Packages</a><a href="write-a-role.html" aria-current="page">Write a role</a><a href="commands.html">Commands</a></nav></aside>
+<main><article>
+<h1>Write a role</h1>
+<p class="lede">A role is your method for one kind of work, written as steps in order. Each step has a required output and, usually, a check: code that must pass before the next step starts. A step can stop for you, and a step can be run by Jaynes instead of the agent, for evidence the agent could invent.</p>
+<h2 id="a-role-in-python">A role in Python</h2>
+<p>Save this as <code>count_words.py</code>:</p>
+<pre><code class="language-python">from pydantic import BaseModel
+
+from jaynes.role import Fail, Pass, StepContext, Witnesses, role
+
+
+class Topic(BaseModel):
+    topic: str
+    words: int
+
+
+class Sentence(BaseModel):
+    sentence: str
+
+
+def read_topic(ctx: StepContext) -&gt; Topic:
+    return Topic(topic=ctx.task, words=len(ctx.task.split()) + 5)
+
+
+def matches(out: Sentence, needs: Witnesses) -&gt; Pass | Fail:
+    want = needs[TOPIC].value.words
+    got = len(out.sentence.split())
+    return Pass() if got == want else Fail(f&quot;the sentence has {got} words; it must have exactly {want}&quot;)
+
+
+ROLE = role(&quot;count-words&quot;, agent=&quot;claude&quot;, about=&quot;Writes one sentence with an exact number of words.&quot;)
+TOPIC = ROLE.step(&quot;topic&quot;, output=Topic, run_by=read_topic)
+SENTENCE = ROLE.step(&quot;sentence&quot;, output=Sentence, needs=[TOPIC], check=matches,
+                     instructions=&quot;Write one sentence about the topic in inputs/topic.json with exactly &quot;
+                                  &quot;the number of words given there.&quot;)
+</code></pre>
+<p>Jaynes runs the first step itself. Claude Code, with your login, writes the sentence, and the check sends it back until the count is right. <code>about</code> says what the role is for; your agent reads it to pick a role for a request. Use <code>agent=&quot;codex&quot;</code> for Codex.</p>
+<p>Run it from the folder that holds the file:</p>
+<pre><code class="language-sh">jaynes run --role count_words:ROLE --task &quot;lighthouses in fog&quot;
+</code></pre>
+<p>Or start <code>jaynes</code> from that folder and type <code>count_words:ROLE</code> under New run. To run it by its name in a project, put it in a <a href="packages.html#make-a-package">package</a>.</p>
+<h2 id="a-role-in-toml">A role in TOML</h2>
+<p>The steps can live in a TOML file, with the models and checks staying in Python. Save the classes and functions above, without the last three lines, as <code>count_checks.py</code>, and change the check to read its need by name, <code>needs[&quot;topic&quot;]</code>. Then save this as <code>count_words.toml</code>:</p>
+<pre><code class="language-toml">name = &quot;count-words&quot;
+agent = &quot;claude&quot;
+about = &quot;Writes one sentence with an exact number of words.&quot;
+
+[[step]]
+name = &quot;topic&quot;
+output = &quot;count_checks:Topic&quot;
+run_by = &quot;count_checks:read_topic&quot;
+
+[[step]]
+name = &quot;sentence&quot;
+output = &quot;count_checks:Sentence&quot;
+needs = [&quot;topic&quot;]
+check = [&quot;count_checks:matches&quot;]
+stop = { budget = 0.2 }
+question = &quot;Is this sentence right: {out.sentence}?&quot;
+instructions = &quot;Write one sentence about the topic in inputs/topic.json with exactly the number of words given there.&quot;
+</code></pre>
+<pre><code class="language-sh">jaynes run --role count_words.toml --task &quot;lighthouses in fog&quot;
+</code></pre>
+<p>A key Jaynes does not know, a reference that does not import, or a question that names a field the output lacks is refused, with the step it is in.</p>
+<h2 id="stops">Stops</h2>
+<p><code>stop=stop(budget=0.2)</code> makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. <code>stop(budget=0.05, sampled=False)</code> always asks. <a href="runs.html#a-stop-asks-less-as-it-proves-right">Runs and stops</a> has how a stop earns that.</p>
+<h2 id="steps-that-act-on-the-world">Steps that act on the world</h2>
+<p>A step Jaynes runs that acts on the world declares it, with <code>effect</code>. A step with <code>effect=&quot;irreversible&quot;</code>, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with <code>ctx.idempotency_key</code> for the service it calls, and a run that stopped while it was running is blocked instead of running it again.</p>
+<h2 id="a-role-that-plans">A role that plans</h2>
+<p>A role whose step outputs <code>jaynes.plan.Plan</code> plans a request: its runs, each with a role, a task and the runs it builds on (<code>after</code>), and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.</p>
+<pre><code class="language-python">from jaynes.plan import Plan
+from jaynes.role import role, stop
+
+ROLE = role(&quot;direction&quot;, about=&quot;Plans a request: which roles, in what order, and why.&quot;)
+PLAN = ROLE.step(&quot;plan&quot;, output=Plan, project=&quot;read&quot;, stop=stop(0.2),
+                 instructions=&quot;Plan the request with the roles you were given.&quot;)
+</code></pre>
+<h2 id="check-a-role-before-it-runs">Check a role before it runs</h2>
+<p>Before any agent works, Jaynes checks the role and refuses it with a list of what to fix:</p>
+<ul>
+<li>a check, question or executor that reads a step its step does not need, or a step of another role;</li>
+<li>a check whose first argument is annotated with another step's output type;</li>
+<li>a step, other than the last, whose output no later step needs and no stop shows, unless it changes the project or acts.</li>
+</ul>
+<p><code>jaynes check count_words:ROLE</code> runs the same check alone.</p>
+<h2 id="what-a-role-may-import">What a role may import</h2>
+<p>A role may import these parts of Jaynes, the role API, version 1: <code>jaynes.role</code>, <code>jaynes.plan</code>, <code>jaynes.proof</code>, <code>jaynes.project</code>, <code>jaynes.runners</code>, <code>jaynes.suite</code>, <code>jaynes.sandbox</code>, <code>jaynes.screens</code>, <code>jaynes.browser</code> and <code>jaynes.inputs</code>. A package says which version it is written for, and Jaynes refuses one written for another.</p>
+<p>The roles that come with Jaynes are the longest examples: they are in <a href="https://github.com/alk0x1/jaynes/tree/main/packages">packages/</a> on GitHub.</p>
+
+</article>
+<footer class="pager"><a href="packages.html">&larr; Packages</a><a href="commands.html">Commands &rarr;</a></footer>
+</main>
+</div>
+</body>
+</html>

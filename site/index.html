@@ -267,6 +267,10 @@ footer .wrap { display: flex; gap: 20px; justify-content: space-between; flex-wr
   .qlist, .qmeta { border: 0; border-bottom: 1px solid var(--line); }
   .refs { grid-template-columns: minmax(0, 1fr); }
 }
+@media (max-width: 820px) {
+  header nav { gap: 16px; }
+  header nav a[href="#foundations"] { display: none; }
+}
 @media (max-width: 640px) {
   header nav { display: none; }
   header .gh { margin-left: auto; }
@@ -283,7 +287,7 @@ footer .wrap { display: flex; gap: 20px; justify-content: space-between; flex-wr
 <header class="bar">
   <div class="wrap">
     <a class="logo" href="#top"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="3" fill="#6fb4ff"/><circle cx="15" cy="5" r="2.2" fill="#eef2f7"/><circle cx="15" cy="15" r="2.2" fill="#eef2f7"/><path d="M7.5 9 13 5.8M7.5 11 13 14.2" stroke="#6fb4ff" stroke-width="1.4"/></svg>Jaynes <span>v0 · open source</span></a>
-    <nav aria-label="Sections"><a href="#layers">How it works</a><a href="#try">Try it</a><a href="#guarantee">Guarantee</a><a href="#foundations">Foundations</a><a href="learn.html">Learn</a><a href="#start">Get started</a></nav>
+    <nav aria-label="Sections"><a href="#layers">How it works</a><a href="#try">Try it</a><a href="#guarantee">Guarantee</a><a href="#foundations">Foundations</a><a href="learn.html">Learn</a><a href="docs/">Docs</a><a href="#start">Get started</a></nav>
     <a class="btn gh" href="https://github.com/alk0x1/jaynes">GitHub</a>
   </div>
 </header>
@@ -509,16 +513,16 @@ uv tool install git+https://github.com/alk0x1/jaynes
 jaynes</pre>
       <ol class="steps">
         <li>
+          <h3>Work as usual</h3>
+          <p>Approve a plan in Claude Code, "go ahead". Your agent hands it to Jaynes, which runs the method and tells you where it needs you. <a href="docs/">Get started</a></p>
+        </li>
+        <li>
+          <h3>Bring your team's roles</h3>
+          <p>Roles come in packages, as libraries do for npm. Software and design come with Jaynes; add a folder or a git repository of yours on the page, under Roles, or ask your agent. <a href="docs/packages.html">Packages</a></p>
+        </li>
+        <li>
           <h3>Watch the method hold</h3>
           <p>Start the demo from New run. A scripted agent works through a screen-design role, a check sends one step back, and the run stops for your answer. No API key, no quota.</p>
-        </li>
-        <li>
-          <h3>Measure what your agents already do without you</h3>
-          <p>History reads your Claude Code transcripts and shows how many tool calls a person approved. It changes nothing.</p>
-        </li>
-        <li>
-          <h3>Put the gate in front of your agents</h3>
-          <p>Setup installs it in Claude Code in one click. Your other hooks stay, and your settings file is backed up first.</p>
         </li>
       </ol>
     </div>
@@ -526,17 +530,20 @@ jaynes</pre>
       <table>
         <thead><tr><th>Part</th><th>State</th></tr></thead>
         <tbody>
-          <tr><td>Action gate for Claude Code: floors, sampled audits, anytime-valid certification</td><td><span class="chip green">works today</span></td></tr>
-          <tr><td>History report and guarantee simulation</td><td><span class="chip green">works today</span></td></tr>
           <tr><td>Step conductor for Claude Code (Codex also runs): checks, retries, resume after a crash</td><td><span class="chip green">works today</span></td></tr>
-          <tr><td>Review page and CLI answers</td><td><span class="chip green">works today</span></td></tr>
           <tr><td>Real projects: steps on copies, previews before and after, a branch at the end</td><td><span class="chip green">works today</span></td></tr>
-          <tr><td>Built-in roles visual-identity and redesign</td><td><span class="chip blue">first real runs in progress</span></td></tr>
-          <tr><td>Built-in role fix-bug: a failing test first, then a fix</td><td><span class="chip green">delivered its first branch</span></td></tr>
+          <tr><td>Runs that go on past a stop: you answer later, and a return corrects on top</td><td><span class="chip green">works today</span></td></tr>
+          <tr><td>Guard in every Claude Code session: asks before what cannot be undone in git and GitHub</td><td><span class="chip green">works today</span></td></tr>
+          <tr><td>Packages of roles, from a folder or git, per project or for all</td><td><span class="chip green">works today</span></td></tr>
+          <tr><td>Package software: build-feature, fix-bug, small-change</td><td><span class="chip green">delivered real branches</span></td></tr>
+          <tr><td>Package design: visual-identity, redesign, screen-design</td><td><span class="chip blue">examples, first real runs</span></td></tr>
+          <tr><td>Merging by itself after checks the agent never sees; Undo</td><td><span class="chip blue">works in tests</span></td></tr>
+          <tr><td>Plans of runs, and roles that plan a request</td><td><span class="chip blue">first real plan</span></td></tr>
+          <tr><td>Action gate, history report and guarantee simulation</td><td><span class="chip green">works today</span></td></tr>
           <tr><td>Judges calibrated on your answers</td><td><span class="chip plain">next</span></td></tr>
         </tbody>
       </table>
-      <div class="links"><a href="https://github.com/alk0x1/jaynes">GitHub</a><a href="https://github.com/alk0x1/jaynes#write-a-role">Write your own role</a></div>
+      <div class="links"><a href="docs/">Docs</a><a href="docs/write-a-role.html">Write your own role</a><a href="docs/commands.html">Commands</a><a href="https://github.com/alk0x1/jaynes">GitHub</a></div>
     </div>
   </div>
 </section>
