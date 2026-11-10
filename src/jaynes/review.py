@@ -976,8 +976,9 @@ class Review:
         dispute = (st.blocked or {}).get("dispute") if w.kind == "blocked" else None
         if dispute:
             about = esc(str(dispute["about"]))
+            rest = (w.reasons[0].split(": ", 1)[-1] if w.reasons else "").strip()  # the heading says the first part
             parts.append(f'<div><h1>Two agents disagree about a {about}</h1>'
-                         f'<div class="sub">{marked(w.reasons[0]) if w.reasons else ""}</div></div>'
+                         f'<div class="sub">{marked(rest[:1].upper() + rest[1:])}</div></div>'
                          f'<div><div class="label">What the agent at {esc(step)} says</div><div class="box"><table>'
                          f'<tr><td>{marked(str(dispute["said"]))}</td></tr></table></div></div>'
                          f'<details class="fold"><summary>What the agent did</summary>'
