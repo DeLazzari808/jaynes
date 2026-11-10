@@ -106,7 +106,6 @@ by Ville's inequality. Details in [SPEC.md](SPEC.md).
 | Proof the maker cannot see, in build-feature and fix-bug: cases written from the request alone before the work, run by Jaynes against the changed project served in a box; a failing case sends the maker back with its sentence only | Works in tests; no real run yet |
 | Merging alone, in build-feature and fix-bug: once every hidden check passes, Jaynes merges the branch into the branch you started from, only over a clean checkout, never pushing; a return merges the correction on top; Undo on the run's page reverts it | Works in tests; no real run yet |
 | Halt all on the page (and `jaynes halt`): no run takes a step or merges until you resume | Works in tests |
-| The page at login on macOS: always at http://127.0.0.1:8740/, started by a launch agent the person's page adds, opening no tab; switch on Setup | Works in tests; launchd started it on a real Mac |
 | The page's home in four parts: what holds a run waits for you, the samples the runs went past, what was delivered since your last visit with its hidden checks, and what runs now; the browser opens by itself only for what holds a run | Works in tests and on a scratch page |
 | A local API with every action of the page (`/api/` on the page's address, JSON), and the MCP server (`jaynes mcp`) the plugin starts in Claude Code: an agent answers what holds a run and sends a blocked run back; only you answer samples, drop a run, undo and resume | Works in tests; a Claude Code agent used it on a scratch home |
 | Real projects: steps on copies, previews before and after, a branch at the end | Works |
@@ -218,7 +217,7 @@ Or by hand:
 ```sh
 uv tool install --reinstall git+https://github.com/alk0x1/jaynes
 jaynes skill                   # without the plugin: /jaynes in Claude Code, stops in its dialog
-jaynes                         # opens the page on http://127.0.0.1:8740 (on macOS it starts by itself at login)
+jaynes                         # opens the page on http://127.0.0.1:8740
 ```
 
 Everything else happens in the page:
@@ -297,8 +296,7 @@ Everything else happens in the page:
   last commit; when the run finishes, the accepted changes are a branch,
   `jaynes/<run>`, and your checkout is untouched. The queue also lists runs
   that are working and runs paused because the agent's plan ran out; a paused
-  run continues by itself when the plan resets, while the page runs (on macOS
-  it starts at login, without opening a tab). At a
+  run continues by itself when the plan resets, while the page is open. At a
   stop that must never pass without you, such as the final accept, the A key
   accepts only when pressed twice.
 - **History** reads your Claude Code transcripts and shows how many tool calls a

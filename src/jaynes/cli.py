@@ -693,8 +693,6 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("--port", type=int, default=8740)
     v.add_argument("--home")
     v.add_argument("--open", action="store_true", help="open the page in the browser, unless it already runs")
-    v.add_argument("--at-login", action="store_true", help="how the page starts when you log in to your Mac: it "
-                   "opens no tab, calls you at what holds a run, and leaves quietly if the page already runs")
     sub.add_parser("policy")
     d = sub.add_parser("demo")
     d.add_argument("--port", type=int, default=8740)
@@ -754,8 +752,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "review":
         from jaynes.review import serve
-        person = args.open or args.at_login
-        serve(_home(args), args.port, browser=person, point=not person, show=not args.at_login)
+        serve(_home(args), args.port, browser=args.open, point=not args.open)
         return 0
     {"autonomy": cmd_autonomy, "history": cmd_history, "parity": cmd_parity, "simulate": cmd_simulate,
      "run": cmd_run, "check": cmd_check, "queue": cmd_queue, "answer": cmd_answer, "demo": cmd_demo,

@@ -2,27 +2,21 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
-## 2026-11-10: The page starts when the person logs in
+## 2026-11-10: The page does not start at login
 
-**Decided.** The person's page is always at http://127.0.0.1:8740/. On macOS,
-the first time the person's page starts, Jaynes adds a login item: a launch
-agent (`~/Library/LaunchAgents/dev.jaynes.page.plist`) that macOS starts at
-login. That page opens no tab, calls the person only for what holds a run, and
-continues the runs paused by a usage limit. Setup has a switch: off removes the
-file and is remembered. Only the home Jaynes uses by default gets the item, so
-a trial's home never replaces it.
+**Decided.** The Mac does not start the page when the person logs in. The page
+keeps one address, http://127.0.0.1:8740/, which the person bookmarks; any run
+or plan starts it, and `jaynes` alone in a terminal starts it if needed and
+opens it.
 
-**Why.** Alan never knew how to reach the page. It opened by itself only when
-something held a run, and after a restart its address did not answer until a
-run started. Runs paused by a usage limit also went on only while the page ran.
+**Why.** Alan never knew how to reach the page. A launch agent that started it
+at login was built, and Alan turned it down: he wants the page easy to find,
+not running by itself.
 
 **Tradeoffs.**
 
-- One more program runs all the time on the person's Mac, and macOS shows a
-  notice that a background item was added.
-- If Jaynes is uninstalled, the item stays until it is turned off on Setup or
-  removed by hand, and fails quietly at each login.
-- Only macOS. Elsewhere the page still starts with a run or with `jaynes`.
+- After a restart the address answers only once a run starts or the person
+  runs `jaynes`; a run paused by a usage limit waits until then.
 
 ## 2026-11-09: Agents settle a wrong test between themselves
 
