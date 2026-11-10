@@ -523,7 +523,11 @@ errors since the brake.
 ## 7. Review page
 
 A local web server started with `jaynes review` (port 8740), bound to
-127.0.0.1, built with the standard library. The layout keeps the queue on the
+127.0.0.1, built with the standard library. On macOS the person's page adds a
+launch agent, `dev.jaynes.page`, that runs `jaynes review --at-login` for the
+default home when the person logs in: it opens no tab, calls the person at what
+holds a run, and leaves quietly when the page already runs. Setup turns it off,
+which removes the file and keeps the choice in the home's `page.json`. The layout keeps the queue on the
 left and the open item on the right; every page shows the run's steps in
 order with how each was released (`by jaynes`, `checked`, `accepted`,
 `changed`, `sampled`, `waiting`, `blocked`).

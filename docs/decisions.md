@@ -2,6 +2,28 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: The page starts when the person logs in
+
+**Decided.** The person's page is always at http://127.0.0.1:8740/. On macOS,
+the first time the person's page starts, Jaynes adds a login item: a launch
+agent (`~/Library/LaunchAgents/dev.jaynes.page.plist`) that macOS starts at
+login. That page opens no tab, calls the person only for what holds a run, and
+continues the runs paused by a usage limit. Setup has a switch: off removes the
+file and is remembered. Only the home Jaynes uses by default gets the item, so
+a trial's home never replaces it.
+
+**Why.** Alan never knew how to reach the page. It opened by itself only when
+something held a run, and after a restart its address did not answer until a
+run started. Runs paused by a usage limit also went on only while the page ran.
+
+**Tradeoffs.**
+
+- One more program runs all the time on the person's Mac, and macOS shows a
+  notice that a background item was added.
+- If Jaynes is uninstalled, the item stays until it is turned off on Setup or
+  removed by hand, and fails quietly at each login.
+- Only macOS. Elsewhere the page still starts with a run or with `jaynes`.
+
 ## 2026-11-09: Agents settle a wrong test between themselves
 
 **Decided.** When the agent writing the code says a test it may not change is

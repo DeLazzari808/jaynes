@@ -45,7 +45,7 @@ from pygments.lexer import Lexer
 from pygments.lexers import get_lexer_for_filename  # pyright: ignore[reportUnknownVariableType]
 from pygments.util import ClassNotFound
 
-from jaynes import api, bounds, guard, install, outcome, role_file, roles, sandbox, skill, update
+from jaynes import api, bounds, guard, install, login, outcome, role_file, roles, sandbox, skill, update
 from jaynes import project as repo
 from jaynes.conductor import (By, Conductor, RunState, StepState, Waiting, continue_in_background, holds, project,
                               return_to)
@@ -1452,7 +1452,7 @@ class Review:
                 if g.hooked else '<span class="chip amber">not installed</span>')
         buttons = ('' if g.installed else '<button class="btn go" name="action" value="install">Install</button>') + \
             ('<button class="btn" name="action" value="remove">Remove</button>' if g.hooked else '')
-        main = ('<div class="crumbs"><b>Setup</b></div><div class="body">' + self._guard_part(error)
+        main = ('<div class="crumbs"><b>Setup</b></div><div class="body">' + self._guard_part(error) + self._login_part()
                 + '<div><h2>Action gate in Claude Code</h2><div class="sub">This one is optional. With it, every tool '
                 'call your Claude Code agents make goes through Jaynes. Actions that cannot be undone, like pushing, never run without you. '
                 'Everything else runs as it does today, except a random one in ten that asks you, so Jaynes can '
@@ -1499,6 +1499,23 @@ class Review:
                 + (f'<div class="err">{esc(error)}</div>' if error else '')
                 + f'</td></tr><tr><td>settings</td><td class="m">{esc(str(guard.path()))}</td></tr></table></div>')
 
+    def _login_part(self) -> str:
+        home = self.c.home
+        if not login.supported(home):
+            return ''
+        on = login.program() is not None
+        state = '<span class="chip green">on</span>' if on else '<span class="chip amber">off</span>'
+        switch = (f'<form method="post" action="/setup" class="inline owner">{state}<input type="hidden" '
+                  f'name="token" value="{self.shared.token}"><button class="btn" name="action" '
+                  f'value="{"login-off" if on else "login-on"}">{"Turn off" if on else "Turn on"}</button></form>')
+        return (f'<div><h2>The page at login</h2><div class="sub">This page is always at '
+                f'<span class="m">http://127.0.0.1:{login.port(home)}/</span>, so a bookmark finds it. Jaynes starts '
+                'it when you log in to your Mac, without opening a tab, so the address answers after a restart and '
+                'runs paused by a usage limit go on by themselves. Turning it off leaves this page running until '
+                'you log out.</div></div>'
+                f'<div class="box"><table class="kv"><tr><td>state</td><td>{switch}</td></tr>'
+                f'<tr><td>file</td><td class="m">{esc(str(login.plist()))}</td></tr></table></div>')
+
     def _command_part(self) -> str:
         if skill.installed():
             state = '<span class="chip green">added</span>'
@@ -1531,6 +1548,8 @@ class Review:
                 return 400, self.setup_page(str(err))
         elif action == "guard-owner-remove":
             guard.remove_owner(fields.get("owner", ""))
+        elif action in ("login-on", "login-off") and login.supported(self.c.home):
+            login.switch(self.c.home, action == "login-on")
         elif action == "skill":
             skill.install()
         elif action == "skill-remove":
@@ -2319,10 +2338,10 @@ def _running(home: Path, port: int) -> int | None:
     return pid if info.get("port") == port else None
 
 
-def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> None:
-    """Serve the page; ``browser`` opens it with its link, as the person, and makes it call the person at stops.
-    If ``home``'s page already runs on ``port``, ``point`` to it instead: its key stays in the browser that
-    opened it first."""
+def serve(home: Path, port: int, browser: bool = False, point: bool = True, show: bool = True) -> None:
+    """Serve the page; ``browser`` makes it the person's page, which calls the person at stops and starts again at
+    login, and, with ``show``, opens it now with its link, as the person. If ``home``'s page already runs on
+    ``port``, ``point`` to it instead: its key stays in the browser that opened it first."""
     home = home.resolve()
     home.mkdir(parents=True, exist_ok=True)  # a new home: the page records itself there before any request
     skill.refresh()
@@ -2344,6 +2363,11 @@ def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> N
         return
     mine, port = home / "review.json", server.server_address[1]  # port 0 picks a free one
     mine.write_text(json.dumps({"pid": os.getpid(), "port": port}))
+    if browser:
+        try:
+            login.install(home, port)
+        except OSError as err:  # the page serves without it
+            print(f"the page will not start at login: {err}", file=sys.stderr, flush=True)
 
     def leave(signum: int, frame: object) -> None:
         sys.exit(0)
@@ -2351,7 +2375,7 @@ def serve(home: Path, port: int, browser: bool = False, point: bool = True) -> N
     for sig in (signal.SIGTERM, signal.SIGHUP):  # a closed terminal or a kill still stops the previews
         signal.signal(sig, leave)
     print(f"Jaynes review on {server.link}  (Ctrl+C to stop)", flush=True)
-    if browser and not kept:
+    if browser and show and not kept:
         import webbrowser
         threading.Timer(0.5, webbrowser.open, [server.link]).start()
     try:
