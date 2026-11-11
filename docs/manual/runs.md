@@ -32,6 +32,8 @@ A stop the role marks as a floor asks on every run and only you answer it, but t
 | Context, with a note | The step runs again with what the agent could not have known | Not counted |
 | Choose | The items you picked, in your order, take the place of the output | Right, once the delivery holds |
 
+A return at a step Jaynes runs itself, such as one that only lays out the agent's work for you to choose, goes to the agent's step before it, since only an agent reads your note.
+
 In Claude Code's dialog you Accept or Return with a note. The page has all five. At a floor, the A key accepts only when you press it twice within two seconds, so a stray key does not let it through.
 
 Only you answer as a person. The page takes answers only from the browser it opened with its link. An agent's answer, through `jaynes answer` or the API, lets a stop that holds its run go on, but it never counts as right, so an agent cannot make a stop ask less by accepting its own work.

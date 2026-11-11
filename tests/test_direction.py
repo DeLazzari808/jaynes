@@ -319,3 +319,19 @@ def test_the_page_never_adds_a_package_for_every_project_unless_the_person_ticks
         assert status == 303 and packages.uses(home) == ["team", "software", "design"]
     finally:
         server.shutdown()
+
+
+def test_a_linked_role_changed_on_disk_is_read_again_by_a_process_that_loaded_it(tmp_path: Path) -> None:
+    import os
+    from jaynes import catalog
+    folder = tmp_path / "linked"
+    folder.mkdir()
+    (folder / "_helper.py").write_text("WORD = 'first'\n")
+    role_file = folder / "mine.py"
+    role_file.write_text("from jaynes.role import role\nfrom . import _helper\nROLE = role('mine', about=_helper.WORD)\n")
+    assert catalog.load(f"{role_file}:ROLE").about == "first"  # type: ignore[attr-defined]
+    (folder / "_helper.py").write_text("WORD = 'second'\n")
+    role_file.write_text("from jaynes.role import role\nfrom . import _helper\nROLE = role('mine', about=_helper.WORD + '!')\n")
+    for p in (folder / "_helper.py", role_file):  # a second later, as an edit is
+        os.utime(p, (p.stat().st_atime, p.stat().st_mtime + 2))
+    assert catalog.load(f"{role_file}:ROLE").about == "second!"  # type: ignore[attr-defined]

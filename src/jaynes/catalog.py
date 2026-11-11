@@ -44,10 +44,34 @@ def _package(folder: Path) -> str:
     return name
 
 
+_READ: dict[str, float] = {}  # each package file imported, by path, with the time it was last changed then
+
+
+def _fresh(package: str) -> None:
+    """Read again the files of a package that changed on disk since this process imported them, helpers first, as a
+    linked folder of the person's is edited while the page runs; an installed version never changes."""
+    loaded = [(name, m) for name, m in list(sys.modules.items()) if name.startswith(package + ".")]
+    for _, m in sorted(loaded, key=lambda x: not x[0].rsplit(".", 1)[-1].startswith("_")):
+        file = getattr(m, "__file__", None)
+        if file is None or not os.path.exists(file):
+            continue
+        if os.path.getmtime(file) != _READ.get(file, os.path.getmtime(file)):
+            importlib.reload(m)
+        _READ[file] = os.path.getmtime(file)
+
+
 def module(path: Path) -> ModuleType:
-    """A role's Python file, imported as part of its folder's package."""
+    """A role's Python file, imported as part of its folder's package; read again when it, or a file of its
+    package, changed since."""
     path = path.resolve()
-    return importlib.import_module(f"{_package(path.parent)}.{path.stem}")
+    package = _package(path.parent)
+    _fresh(package)
+    found = importlib.import_module(f"{package}.{path.stem}")
+    for name, m in list(sys.modules.items()):  # what this import brought in, helpers included, as read now
+        file = getattr(m, "__file__", None)
+        if name.startswith(package + ".") and file is not None and os.path.exists(file):
+            _READ.setdefault(file, os.path.getmtime(file))
+    return found
 
 
 def load(reference: str) -> object:

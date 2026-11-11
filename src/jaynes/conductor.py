@@ -332,8 +332,9 @@ def coin(run_id: str, step: str) -> float:
 
 
 def return_to(role: Role, step: str) -> str | None:
-    """Where a return from a stop with no output goes: the latest of its needs an agent runs, since only an agent
-    reads the note, else the nearest earlier step an agent runs, else the nearest earlier step with an output."""
+    """Where a return from a stop with no output, or from a step Jaynes runs, goes: the latest of its needs an agent
+    runs, since only an agent reads the note, else the nearest earlier step an agent runs, else the nearest earlier
+    step with an output."""
     names = [x.name for x in role.steps]
     here = role.steps[names.index(step)]
     earlier = [x for x in role.steps[:names.index(step)] if x.output is not None]
@@ -440,6 +441,11 @@ class Conductor:
             need = return_to(role, step)
             raise AnswerRejected([f"{step!r} has no output to rerun; return to {need!r} instead" if need else
                                   f"{step!r} has no output and no earlier step has one; nothing can run again"])
+        if to is None and answer in ("return", "context") and step in names \
+                and role.steps[names.index(step)].run_by is not None:  # Jaynes made it, and Jaynes reads no note
+            need = return_to(role, step)
+            if need is not None and role.steps[names.index(need)].run_by is None:
+                to = need
         if to is not None:
             if answer not in ("return", "context"):
                 raise AnswerRejected(["only return or context can go to an earlier step"])

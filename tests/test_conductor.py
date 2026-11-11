@@ -646,3 +646,20 @@ def test_a_stop_that_waits_holds_the_run_until_the_person_answers_and_keeps_ever
         c.answer(r, "r1", "pick", "accept", by="agent")  # only the person answers a choice of taste
     c.answer(r, "r1", "pick", "accept", by="person")
     assert c.run(r, "t", run_id="r1").status == "finished" and agent.counts == {"pick": 1, "build": 1}
+
+
+def test_a_return_at_a_stop_jaynes_made_goes_to_the_agent_step_before_it(tmp_path: Path) -> None:
+    from jaynes.role import StepContext
+    r = role("offer", agent="fake")
+    make = r.step("make", output=Note)
+
+    def offered(ctx: StepContext) -> Note:
+        return ctx.needs[make].value
+    r.step("pick", output=Note, needs=[make], run_by=offered, stop=stop(0.2, waits=True))
+    agent = Scripted({("make", 1): write({"text": "in portuguese"}), ("make", 2): write({"text": "in english"})})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    c.run(r, "t", run_id="r1")
+    c.answer(r, "r1", "pick", "return", note="write it in english", by="person")  # no step named
+    assert c.run(r, "t", run_id="r1").status == "waiting" and agent.counts == {"make": 2}
+    assert "write it in english" in agent.prompts[-1]  # the agent read the note; Jaynes's step could not
+    assert c.output("r1", r.steps[1]) == Note(text="in english")

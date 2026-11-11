@@ -409,7 +409,10 @@ tools `packages`, `add_package` and `remove_package`, do it for an agent the
 person asked.
 
 A role is started by its name, a role file's path, a Python file's
-`path.py:attribute`, or `module:attribute`. A name is looked up in the
+`path.py:attribute`, or `module:attribute`. A process that imported a package's
+file reads it again, with the package's helpers, once it changed on disk, so the
+page shows a linked folder's edits without a restart; steps are looked up by name,
+so a run that goes on after an edit finds its own. A name is looked up in the
 project's packages in order, the first package with it winning. A package's
 Python files are imported as one Python package per installed folder, so they
 import each other relatively (`from . import fix_bug`). `RunStarted` records
@@ -472,7 +475,7 @@ its stop closed changes nothing.
 |---|---|---|
 | accept | continues with the output as is | correct |
 | change | the person's edited output replaces the agent's and is rechecked | error |
-| return | the step reruns with the person's note in the prompt, on top of its previous output; or, with an earlier step named, that step does, and the error counts on its stop | error |
+| return | the step reruns with the person's note in the prompt, on top of its previous output; or, with an earlier step named, that step does, and the error counts on its stop; at a step Jaynes runs, with no step named, the agent's step before it does, since Jaynes reads no note | error |
 | context | the step reruns with the note; the agent was not at fault | not counted |
 | choose | the chosen items of the output, in the person's order, replace it and are rechecked | correct |
 

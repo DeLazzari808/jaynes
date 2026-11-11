@@ -1172,7 +1172,8 @@ class Review:
         main = (crumbs + f'<div class="body">{"".join(parts)}</div>'
                 + self._answer_bar(run_id, step, value, error, fields, editable=not pure,
                                    earlier=self._earlier(role, step),
-                                   default_to=return_to(role, step) if pure and role else None,
+                                   default_to=return_to(role, step) if role and (
+                                       pure or (target is not None and target.run_by is not None)) else None,
                                    floor=bool(s.open_stop and s.open_stop[1].get("status") == "floor"),
                                    items=items,
                                    evidence=str(s.open_stop[1].get("evidence") or "") if s.open_stop else ""))
