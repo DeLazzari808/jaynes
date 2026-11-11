@@ -85,6 +85,23 @@ instructions = &quot;Write one sentence about the topic in inputs/topic.json wit
 <p><code>stop=stop(budget=0.2)</code> makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. <code>stop(budget=0.05, sampled=False)</code> always asks. Most stops show the output and the run goes on; <code>stop(0.2, waits=True)</code> holds the run until you answer, for a choice that is yours to make, such as a look among three. It always asks, and only you answer it. <a href="runs.html#a-stop-asks-less-as-it-proves-right">Runs and stops</a> has how a stop earns that.</p>
 <h2 id="steps-that-act-on-the-world">Steps that act on the world</h2>
 <p>A step Jaynes runs that acts on the world declares it, with <code>effect</code>. A step with <code>effect=&quot;irreversible&quot;</code>, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with <code>ctx.idempotency_key</code> for the service it calls, and a run that stopped while it was running is blocked instead of running it again.</p>
+<h2 id="tools-the-agent-can-call">Tools the agent can call</h2>
+<p>The agent of a step works in a closed box: no internet and no tools but its own files. <code>web=True</code> lets it read pages as text. When it needs more, the role gives it tools: plain functions that Jaynes runs outside the box while the agent works, recording every call.</p>
+<pre><code class="language-python">from pathlib import Path
+from jaynes.browser import photograph
+from jaynes.role import ToolContext, role
+
+def capture(ctx: ToolContext, url: str) -&gt; list[object]:
+    &quot;&quot;&quot;A picture of the web page at url. Only pages on the public internet.&quot;&quot;&quot;
+    out = ctx.folder / &quot;ref-1.jpg&quot;
+    return [photograph(url, out), out]
+
+ROLE = role(&quot;look-alike&quot;)
+ROLE.step(&quot;direction&quot;, output=Direction, tools=[capture],
+          instructions=&quot;Look at every link the task names with capture first.&quot;)
+</code></pre>
+<p>A tool's first argument is the <code>ToolContext</code>: the run, the step, the task, what the person said in the run so far, and <code>folder</code>, where it leaves files. Its other arguments are a <code>str</code>, <code>int</code>, <code>float</code> or <code>bool</code>, and its docstring is what the agent is told it does. It returns text, a <code>Path</code> to a picture in <code>folder</code>, which the agent sees, or a list of both. The pictures stay among the step's files, so the stop shows you what the agent saw. <code>jaynes.browser.photograph</code> takes a picture of a page on the public internet, and refuses this computer and its network.</p>
+<p>A picture a stop shows can link the page it was drawn from: <code>Picture(step, &quot;direction-1.png&quot;, page=&quot;direction-1.html&quot;)</code>. The page opens in a new tab, where it runs no script and reaches nothing.</p>
 <h2 id="a-role-that-plans">A role that plans</h2>
 <p>A role whose step outputs <code>jaynes.plan.Plan</code> plans a request: its runs, each with a role, a task, the runs it builds on (<code>after</code>) and, when a team planned it, the <code>specialist</code> who does it; and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.</p>
 <pre><code class="language-python">from jaynes.plan import Plan

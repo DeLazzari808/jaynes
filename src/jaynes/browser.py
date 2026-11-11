@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -138,6 +139,7 @@ class Page:
     origin: str  # scheme://host:port of the product; nothing else is reached
     deny: tuple[str, ...] = ()  # paths of GETs with effects, matched as a prefix
     record: bool = False  # keep the bodies of the product's JSON responses
+    web: bool = False  # a page of the public internet instead: any GET to a public address, nothing else
     blocked: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
     responses: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     _ws: _Socket | None = None
@@ -149,6 +151,7 @@ class Page:
     _loaded: bool = False
     _meta: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     _finished: list[str] = field(default_factory=list[str])
+    _public: dict[str, bool] = field(default_factory=dict[str, bool])
 
     # lifecycle ----------------------------------------------------------------
 
@@ -243,6 +246,16 @@ class Page:
             if url.startswith(("data:", "blob:")):
                 self._tell("Fetch.continueRequest", requestId=p["requestId"])
                 return
+            if self.web:
+                host = urlsplit(url).hostname or ""
+                if host not in self._public:
+                    self._public[host] = public(url)
+                if verb == "GET" and self._public[host]:
+                    self._tell("Fetch.continueRequest", requestId=p["requestId"])
+                else:
+                    self.blocked.append({"method": verb, "path": f"<not public: {host}>"})
+                    self._tell("Fetch.failRequest", requestId=p["requestId"], errorReason="BlockedByClient")
+                return
             own = url.startswith(self.origin + "/") or url == self.origin
             path = urlsplit(url).path if own else ""
             if own and verb == "GET" and not any(path == d or path.startswith(d.rstrip("/") + "/") for d in self.deny):
@@ -319,7 +332,11 @@ class Page:
         return dict(out.get("result") or {}).get("value")
 
     def screenshot(self, path: Path) -> None:
-        data = self.call("Page.captureScreenshot", format="png")["data"]
+        """A PNG, or a JPEG when ``path`` ends in .jpg, which weighs a tenth for a photograph of a busy page."""
+        jpeg = path.suffix.lower() in (".jpg", ".jpeg")
+        shot = self.call("Page.captureScreenshot", format="jpeg", quality=80) if jpeg else \
+            self.call("Page.captureScreenshot", format="png")
+        data = shot["data"]
         path.write_bytes(base64.b64decode(data))
 
     def location(self) -> str:
@@ -416,6 +433,47 @@ def route_matches(route: str, where: str) -> bool:
 
 def open_page(origin: str, deny: Sequence[str] = (), record: bool = False) -> Page:
     return Page(origin.rstrip("/"), tuple(deny), record)
+
+
+def public(url: str) -> bool:
+    """Whether ``url`` is http or https to a host whose every address is on the public internet: never this
+    computer, its network, or a name that does not resolve."""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    try:
+        found = socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80),
+                                   proto=socket.IPPROTO_TCP)
+    except (OSError, UnicodeError, ValueError):
+        return False
+    try:
+        return bool(found) and all(ipaddress.ip_address(str(a[4][0]).split("%")[0]).is_global for a in found)
+    except ValueError:
+        return False
+
+
+def photograph(url: str, out: Path, size: tuple[int, int] = DESKTOP, tallest: int = 2400) -> str:
+    """A picture of the public page at ``url`` in ``out``, as tall as its content up to ``tallest``; its title.
+    Every request the page makes goes on only to the public internet, so it cannot reach this computer, its
+    network, or Jaynes's own page."""
+    if not public(url):
+        raise BrowserError(f"{url} is not a page on the public internet")
+    with Page("", web=True) as page:
+        page.view("light", size)
+        page._loaded = False  # pyright: ignore[reportPrivateUsage]
+        went = page.call("Page.navigate", url=url)
+        if went.get("errorText"):
+            raise BrowserError(f"{url} did not open: {went['errorText']}")
+        deadline = time.monotonic() + 20
+        while not page._loaded and time.monotonic() < deadline:  # pyright: ignore[reportPrivateUsage]
+            page.pump(0.1)
+        page.settle(limit=10.0)
+        tall = page.evaluate("Math.max(document.documentElement.scrollHeight, document.body ? "
+                             "document.body.scrollHeight : 0)")
+        page.view("light", (size[0], min(max(int(tall or 0), size[1]), tallest)))
+        page.settle(limit=4.0)
+        page.screenshot(out)
+        return str(page.evaluate("document.title") or "")
 
 
 _WATCH = """(() => {

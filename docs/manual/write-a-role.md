@@ -86,6 +86,29 @@ A key Jaynes does not know, a reference that does not import, or a question that
 
 A step Jaynes runs that acts on the world declares it, with `effect`. A step with `effect="irreversible"`, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with `ctx.idempotency_key` for the service it calls, and a run that stopped while it was running is blocked instead of running it again.
 
+## Tools the agent can call
+
+The agent of a step works in a closed box: no internet and no tools but its own files. `web=True` lets it read pages as text. When it needs more, the role gives it tools: plain functions that Jaynes runs outside the box while the agent works, recording every call.
+
+```python
+from pathlib import Path
+from jaynes.browser import photograph
+from jaynes.role import ToolContext, role
+
+def capture(ctx: ToolContext, url: str) -> list[object]:
+    """A picture of the web page at url. Only pages on the public internet."""
+    out = ctx.folder / "ref-1.jpg"
+    return [photograph(url, out), out]
+
+ROLE = role("look-alike")
+ROLE.step("direction", output=Direction, tools=[capture],
+          instructions="Look at every link the task names with capture first.")
+```
+
+A tool's first argument is the `ToolContext`: the run, the step, the task, what the person said in the run so far, and `folder`, where it leaves files. Its other arguments are a `str`, `int`, `float` or `bool`, and its docstring is what the agent is told it does. It returns text, a `Path` to a picture in `folder`, which the agent sees, or a list of both. The pictures stay among the step's files, so the stop shows you what the agent saw. `jaynes.browser.photograph` takes a picture of a page on the public internet, and refuses this computer and its network.
+
+A picture a stop shows can link the page it was drawn from: `Picture(step, "direction-1.png", page="direction-1.html")`. The page opens in a new tab, where it runs no script and reaches nothing.
+
 ## A role that plans
 
 A role whose step outputs `jaynes.plan.Plan` plans a request: its runs, each with a role, a task, the runs it builds on (`after`) and, when a team planned it, the `specialist` who does it; and why. The step sees the roles the project can use. When its run delivers, Jaynes checks the plan and starts it by itself.

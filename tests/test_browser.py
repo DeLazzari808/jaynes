@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from jaynes.browser import open_page, route_matches
+from jaynes.browser import BrowserError, open_page, photograph, route_matches
 from tests.needs import chrome_runs
 
 PRODUCT = Path(__file__).parent / "product"
@@ -102,3 +102,13 @@ def test_a_route_names_any_one_segment_with_angle_brackets() -> None:
     assert not route_matches("/books/<id>", "/books/b2/edit")
     assert route_matches("/?view=books&id=<id>", "/?view=books&id=b2")
     assert not route_matches("/?view=books&id=<id>", "/?view=people&id=b2")
+
+
+def test_only_a_page_of_the_public_internet_is_photographed() -> None:
+    from jaynes.browser import public
+    for url in ("http://127.0.0.1:8740/", "http://localhost/", "http://10.0.0.1/", "http://192.168.1.1/x",
+                "http://[::1]/", "file:///etc/passwd", "javascript:alert(1)", "http://169.254.169.254/latest",
+                "data:text/html,hi", "https://nothing.invalid/"):
+        assert not public(url), url
+    with pytest.raises(BrowserError, match="not a page on the public internet"):
+        photograph("http://127.0.0.1:8740/", Path("/nonexistent/x.png"))

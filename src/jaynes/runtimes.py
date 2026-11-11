@@ -23,11 +23,13 @@ import signal
 import subprocess
 import time
 from datetime import datetime, timedelta
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from jaynes import suite
+from jaynes import tools as role_tools
 from jaynes.runtime import QuotaExhausted, Ran, RuntimeFailure, TurnResult, TurnTimeout
 
 LIMIT = re.compile(r"usage limit|hit your (\S+ )?limit|limit reached|rate.?limit|quota", re.I)
@@ -129,14 +131,17 @@ def toolchains(workspace: Path) -> list[Path]:
     return sorted(found)
 
 
-def claude_settings(workspace: Path, web: bool = False, scratch: Path | None = None) -> dict[str, Any]:
-    """On a project step the box also opens the installed dependencies and local ports, for the project's tests."""
+def claude_settings(workspace: Path, web: bool = False, scratch: Path | None = None,
+                    tools: Sequence[str] = ()) -> dict[str, Any]:
+    """On a project step the box also opens the installed dependencies and local ports, for the project's tests.
+    ``tools`` are the role's tools the turn may call, by name."""
     project = workspace / "project"
     reads = [str(workspace), *(str(p) for p in suite.reads(project) + toolchains(workspace))] if project.is_dir() \
         else [str(workspace)]
     return {
         "permissions": {"defaultMode": "dontAsk",
-                        "allow": ["Read(./**)", "Edit(./**)", "Write(./**)", "Bash"] + (WEB_TOOLS if web else []),
+                        "allow": ["Read(./**)", "Edit(./**)", "Write(./**)", "Bash"] + (WEB_TOOLS if web else [])
+                        + [f"mcp__{role_tools.SERVER}__{t}" for t in tools],
                         "deny": ([] if web else WEB_TOOLS) + ["Agent", "Task", "NotebookEdit"],
                         "blockReadsOutsideWorkingDirectories": True,
                         "disableBypassPermissionsMode": "disable"},
@@ -233,16 +238,19 @@ class ClaudeRuntime:
         self.max_messages = max_messages  # the deadline is what usually ends a long turn
 
     def command(self, workspace: Path, web: bool = False, scratch: Path | None = None,
-                max_messages: int | None = None) -> list[str]:
+                max_messages: int | None = None, tools: role_tools.Offered | None = None) -> list[str]:
+        servers = {role_tools.SERVER: {"type": "stdio", "command": tools.command[0], "args": list(tools.command[1:])}
+                   } if tools else {}
         args = [_binary("claude"), "-p", "--output-format", "stream-json", "--verbose", "--setting-sources", "",
-                "--settings", json.dumps(claude_settings(workspace, web, scratch)), "--strict-mcp-config",
-                "--mcp-config", '{"mcpServers":{}}', "--no-session-persistence",
+                "--settings", json.dumps(claude_settings(workspace, web, scratch, tools.names if tools else ())),
+                "--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": servers}), "--no-session-persistence",
                 "--permission-mode", "dontAsk", "--max-turns", str(max_messages or self.max_messages)]
         return [*args, "--model", self.model, "--effort", self.effort]
 
     def turn(self, workspace: Path, scratch: Path, prompt: str, deadline: float, web: bool = False,
-             max_messages: int | None = None) -> TurnResult:
-        code, out, err = _run(self.command(workspace, web, scratch, max_messages), workspace, scratch, prompt, deadline,
+             max_messages: int | None = None, tools: role_tools.Offered | None = None) -> TurnResult:
+        code, out, err = _run(self.command(workspace, web, scratch, max_messages, tools), workspace, scratch, prompt,
+                              deadline,
                               {"CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1", **_project_env(workspace, scratch)})
         result, read = claude_result(out)
         if result.get("is_error") or code != 0:

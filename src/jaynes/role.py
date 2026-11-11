@@ -155,6 +155,60 @@ class StepContext:
     history: History = field(default_factory=History)  # what was said and spent in the run so far
 
 
+@dataclass(frozen=True)
+class ToolContext:
+    """What a role's tool receives when an agent calls it. ``folder`` is where it leaves files: they become the
+    step's files, so the person sees what the agent saw. ``history`` holds what the person said in the run, so a tool
+    can tell what they named."""
+
+    run_id: str
+    step: str
+    task: str
+    folder: Path
+    history: History = field(default_factory=History)
+
+
+ToolParam = type[str] | type[int] | type[float] | type[bool]
+PARAMS: dict[Any, str] = {str: "string", int: "integer", float: "number", bool: "boolean",
+                          "str": "string", "int": "integer", "float": "number", "bool": "boolean"}
+
+
+@dataclass(frozen=True)
+class Tool:
+    """A function of the role that the agent of a step may call during its turn, run by Jaynes outside the agent's
+    box, with every call recorded. It is ``fn(ctx, **arguments)``; its docstring is what the agent is told it does.
+    It returns text, a ``Path`` to a picture it left in ``ctx.folder``, which the agent sees, or a list of both."""
+
+    name: str
+    about: str
+    fn: Callable[..., Any]
+    params: tuple[tuple[str, str, bool], ...]  # name, JSON type, required
+
+    def schema(self) -> dict[str, Any]:
+        return {"type": "object", "properties": {n: {"type": t} for n, t, _ in self.params},
+                "required": [n for n, _, req in self.params if req]}
+
+
+def tool(fn: Callable[..., Any] | Tool) -> Tool:
+    """``fn`` as a tool of the role: its name, its docstring as what it does, its arguments after the first from
+    their annotations, each a str, int, float or bool."""
+    if isinstance(fn, Tool):
+        return fn
+    about = inspect.getdoc(fn) or ""
+    if not about.strip():
+        raise ValueError(f"tool {fn.__name__!r} has no docstring; it is what the agent is told the tool does")
+    params = list(inspect.signature(fn).parameters.values())
+    if not params:
+        raise ValueError(f"tool {fn.__name__!r} takes no context; its first argument receives a ToolContext")
+    found: list[tuple[str, str, bool]] = []
+    for p in params[1:]:
+        kind = PARAMS.get(p.annotation)
+        if kind is None or p.kind not in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY):
+            raise ValueError(f"tool {fn.__name__!r}: argument {p.name!r} must be a str, int, float or bool")
+        found.append((p.name, kind, p.default is p.empty))
+    return Tool(fn.__name__, about, fn, tuple(found))
+
+
 # What a trusted executor does to the world. Only ``irreversible`` changes how it runs: after a floor stop over the
 # payload, once, with a key, never resumed after a crash. The others say what it touches: nothing, what it reads,
 # copies it writes, or the web.
@@ -210,12 +264,14 @@ class Choice:
 @dataclass(frozen=True)
 class Picture:
     """A picture a step of the run left, by the step's name and the file's path among its files. ``region`` is the
-    part to show, as x, y, width and height in its pixels; the whole picture is a click away."""
+    part to show, as x, y, width and height in its pixels; the whole picture is a click away, and so is ``page``,
+    the page it was drawn from, opened where it can run nothing and reach nothing."""
 
     step: str
     file: str
     caption: str = ""
     region: tuple[int, ...] = ()
+    page: str = ""  # the HTML page among the step's files that the picture is of; the person can open it
 
 
 @dataclass(frozen=True)
@@ -274,6 +330,7 @@ class Step(Generic[T]):
     max_files: int = 20  # files a trusted executor may leave
     shows: Callable[[Any, Witnesses], list[Shown]] | None = None  # how the stop shows the output to the person
     hidden: bool = False  # written from the request alone, before the work; no agent ever receives it
+    tools: tuple[Tool, ...] = ()  # the role's functions its agent may call, run by Jaynes and recorded
 
     @property
     def executor(self) -> str:
@@ -302,6 +359,8 @@ class Step(Generic[T]):
             parts.append(f"inputs:{','.join(self.inputs)}")
         if self.hidden:
             parts.append("hidden")
+        if self.tools:
+            parts.append("tools:" + ",".join(f"{t.name}:{code_hash(t.fn)}" for t in self.tools))
         return _sha("\0".join(parts))
 
     def stop_fingerprint(self, model: str, inputs: str = "") -> str:
@@ -341,7 +400,7 @@ class Role:
              max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
              inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
              max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None,
-             hidden: bool = False) -> Step[T]:
+             hidden: bool = False, tools: Sequence[Callable[..., Any] | Tool] = ()) -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -392,6 +451,11 @@ class Role:
             raise ValueError(f"step {name!r} is run by an agent, which may not receive the hidden {', '.join(seen)}")
         if web and (output is None or run_by is not None):
             raise ValueError(f"step {name!r} reads the web but no agent runs it")
+        offered = tuple(tool(t) for t in tools)
+        if offered and (output is None or run_by is not None):
+            raise ValueError(f"step {name!r} offers tools but no agent runs it")
+        if dup := sorted({t.name for t in offered if [x.name for x in offered].count(t.name) > 1}):
+            raise ValueError(f"step {name!r} offers two tools called {', '.join(dup)}")
         if effect is not None and effect not in EFFECTS:
             raise ValueError(f"step {name!r} declares effect {effect!r}; it must be one of {', '.join(EFFECTS)}")
         if effect is not None and run_by is None:
@@ -408,7 +472,8 @@ class Role:
                           instructions, max_turns, deadline, cast(Callable[[Any, Witnesses], str] | None, question),
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
                           max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
-                          back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows), hidden)
+                          back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows), hidden,
+                          offered)
         self.steps.append(s)
         return s
 

@@ -2,6 +2,32 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-10: A role gives its agents tools, which Jaynes runs and records
+
+**Decided.** A step can offer tools of its role: functions the agent calls while
+it works, through an MCP server Jaynes starts for the turn. Jaynes runs each
+call in its own process, outside the agent's box, and records it with the
+turn: the tool, its arguments, whether it worked, what it said, and the files
+it left. The pictures a tool returns reach the agent as images and stay among
+the step's files, so the stop shows the person what the agent saw.
+
+- Why: Alan asked what happens when he sends a reference link. The agent saw
+  only the address: its box has no network and no browser. Doing every capture
+  in a step Jaynes runs before the agent was the first idea, but a return with
+  new links goes straight to the agent and skips that step. A tool works
+  wherever the agent meets a link, in any role.
+- Jaynes's browser gets `photograph`: a picture of a page on the public
+  internet. Every request the page makes goes on only to public addresses, so a
+  tool cannot reach this computer, its network or Jaynes's own page.
+- A picture a stop shows can carry the page it was drawn from. The page link
+  opens it in a sandbox with no script, no form and nothing loaded from
+  elsewhere, since an agent wrote it.
+- Only the Claude runtime offers tools. A step with tools on another runtime
+  is refused, as a step that reads the web is.
+
+**Open.** A check cannot yet see the calls: "every link the person named was
+looked at" is an instruction, not a check.
+
 ## 2026-11-10: Choices of taste wait for the person; a plan names its specialists
 
 **Decided.** A role can mark a stop as one that waits: `stop(budget,

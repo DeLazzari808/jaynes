@@ -67,6 +67,8 @@ DEMO = "jaynes.demo:ROLE"
 BUILT_IN = {DEMO: {"scripted": "jaynes.demo:Agent"}}  # the demo; every other role comes from a package
 StageState = Literal["jaynes", "checked", "accepted", "changed", "sampled", "waiting", "blocked", "running", "todo"]
 
+PAGE_POLICY = ("sandbox; default-src 'none'; style-src 'unsafe-inline'; font-src data:; img-src data:; "
+               "form-action 'none'; base-uri 'none'")  # how a page an agent wrote is served
 PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp",
             ".gif": "image/gif"}  # no SVG: it can carry scripts
 
@@ -447,6 +449,7 @@ details.others[open] > summary span:first-child::before { content: "\\25BE  "; }
 .card .txt { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; }
 .card .txt b { font-weight: 500; }
 .card .txt p { margin: 2px 0 0; color: var(--dim); }
+.card .txt p.open { margin-top: 6px; font-size: 13px; }
 .card.pick { cursor: pointer; }
 .card.pick:hover { border-color: var(--line-2); }
 .card.pick:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -1250,6 +1253,11 @@ class Review:
             ident = str(x.get("id") or "")
             pick = ident in choosable
             text = f"<p>{marked(str(x['text'])).replace(chr(10), '<br>')}</p>" if x.get("text") else ""
+            pages = [(str(pic["step"]), str(pic.get("page") or "")) for pic in
+                     cast(list[dict[str, Any]], x.get("pictures") or []) if pic.get("page")]
+            links = [f'<a href="/page/{q(run_id)}/{q(step)}/{q(page)}" target="_blank" rel="noopener">Open the page'
+                     '</a>' for step, page in pages if page in self._files(st, step)]
+            text += f'<p class="open">{" · ".join(links)}</p>' if links else ""
             cards.append(f'<div class="card{" pick" if pick else ""}"' + (f' data-id="{esc(ident)}" tabindex="0"' if pick else "")
                          + '><div class="txt">' + ('<i class="n"></i>' if pick else "")
                          + f'<div><b>{marked(str(x["title"]))}</b>{text}</div></div>{row}</div>')
@@ -1277,6 +1285,13 @@ class Review:
         """The files a step's checked output carries: path to object."""
         checked = st.steps.get(step, StepState()).checked or {}
         return cast(dict[str, str], checked.get("files") or {})
+
+    def page_file(self, run_id: str, step: str, rel: str) -> bytes | None:
+        """A page a step of the run left, which a picture was drawn from; served where it runs nothing."""
+        files = self._files(project(self.c.store.events(run_id=run_id)), step)
+        if Path(rel).suffix.lower() not in (".html", ".htm") or rel not in files:
+            return None
+        return (self.c.home / "objects" / str(files[rel])).read_bytes()
 
     def picture(self, run_id: str, step: str, rel: str) -> tuple[bytes, str] | None:
         """A picture a step of the run left, with its type; other files are not served."""
@@ -2226,7 +2241,8 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
             return None
 
         def _send(self, status: int, body: str | bytes, kind: str = "text/html; charset=utf-8",
-                  location: str | None = None, frame: str = "DENY", cookie: str | None = None) -> None:
+                  location: str | None = None, frame: str = "DENY", cookie: str | None = None,
+                  policy: str | None = None) -> None:
             if isinstance(body, str) and kind.startswith("text/html"):
                 notice = (f'<div class="notice">{NOT_PERSON}</div>' if not self._person() else
                           Review(home, shared).banner())
@@ -2240,6 +2256,9 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Frame-Options", frame)
+            if policy:
+                self.send_header("Content-Security-Policy", policy)
+                self.send_header("X-Content-Type-Options", "nosniff")
             if location:
                 self.send_header("Location", location)
             self.end_headers()
@@ -2363,6 +2382,12 @@ def make_server(home: Path, port: int = 8740, idle_after: float = 10.0, wake_eve
                         self._send(302, "", location=out)
                     else:
                         self._send(status, out, frame="SAMEORIGIN")
+                case ["page", run_id, step, *rel] if rel:
+                    page = app.page_file(run_id, step, "/".join(rel))
+                    if page is None:
+                        self._send(404, app.not_found("Not found"))
+                    else:  # an agent wrote it: it runs no script, sends no form and reaches nothing outside it
+                        self._send(200, page, policy=PAGE_POLICY)
                 case ["file", run_id, step, *rel] if rel:
                     found = app.picture(run_id, step, "/".join(rel))
                     if found is None:

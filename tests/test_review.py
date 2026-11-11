@@ -253,6 +253,29 @@ def test_a_stop_shows_the_pictures_its_inputs_left_and_what_it_read_on_the_web(t
         server.shutdown()
 
 
+
+def test_a_picture_drawn_from_a_page_links_the_page_served_where_it_runs_nothing(tmp_path: Path) -> None:
+    from tests.paged import PAGE
+    cli.main(["run", "--home", str(tmp_path), "--role", "tests.paged:ROLE", "--task", "t",
+              "--runtime", "quick=tests.paged:Agent"])
+    [run] = Store(tmp_path / "jaynes.sqlite3").runs()
+    base, server = serving(tmp_path)
+    try:
+        page = get(base + f"/stop/{run}/pick")
+        link = f"/page/{run}/draw/direction-1.html"
+        assert f'<a href="{link}" target="_blank" rel="noopener">Open the page</a>' in page
+        assert "missing.html" not in page  # a page the step did not leave is not linked
+        with urllib.request.urlopen(base + link, timeout=10) as r:
+            policy = r.headers["Content-Security-Policy"]
+            assert r.read() == PAGE.encode() and r.headers["Content-Type"].startswith("text/html")
+        assert policy.startswith("sandbox;") and "default-src 'none'" in policy and "script-src" not in policy
+        for path in (f"/page/{run}/draw/direction-1.png", f"/page/{run}/draw/missing.html", f"/page/{run}/pick/x.html"):
+            with pytest.raises(urllib.error.HTTPError) as err:
+                urllib.request.urlopen(base + path, timeout=10)
+            assert err.value.code == 404
+    finally:
+        server.shutdown()
+
 def test_a_stop_shows_the_commands_the_agent_ran_and_how_each_ended(tmp_path: Path) -> None:
     cli.main(["run", "--home", str(tmp_path), "--role", "tests.stopped:ROLE", "--task", "t",
               "--runtime", "quick=tests.stopped:Tested"])
