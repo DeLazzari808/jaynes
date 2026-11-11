@@ -300,6 +300,16 @@ aside .strip i { width: auto; flex: 0 1 14px; min-width: 3px; }
 .stages small { font-family: var(--mono); font-size: 11px; color: var(--dim); display: block; }
 .stages .todo b { color: var(--faint); font-weight: 400; }
 .stages .waiting b, .stages .waiting small { color: var(--amber); }
+.stages.told li { padding: 7px 0; }
+.stages.told b { white-space: normal; }
+.stages .who { font-family: var(--display); font-weight: 400; color: var(--faint); margin-left: 8px; font-size: 11px; }
+.stages .about { margin: 2px 0 1px; font-size: 13px; line-height: 1.45; color: var(--ink); max-width: 70ch; }
+.stages .todo .about { color: var(--dim); }
+.after { list-style: none; margin: 6px 0 0; padding: 0; }
+.after li { padding: 5px 0; font-size: 13px; line-height: 1.45; }
+.after b { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.after .m { margin-left: 8px; color: var(--faint); }
+.after p { margin: 2px 0 0; color: var(--dim); max-width: 70ch; }
 .stages .blocked b, .stages .blocked small { color: var(--red); }
 .foot { margin-top: auto; padding: 14px 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; color: var(--dim); display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
 .foot b { color: var(--ink); font-weight: 500; text-align: right; }
@@ -669,14 +679,28 @@ def _size(picture: Path) -> tuple[int, int] | None:
     return (width, height) if width and height else None
 
 
-def stage_list(items: list[Stage]) -> str:
-    """The open queue item's stages, top to bottom, each with how it was released and how long it took."""
-    rows = "".join(
-        f'<li class="{s.state}"><span class="dot"></span><div><div class="r"><b>{esc(s.name)}</b>'
-        f'<em>{"" if s.seconds is None else "under 1s" if s.seconds < 1 else age(s.seconds)}</em></div>'
-        + (f"<small>{esc(s.detail)}</small>" if s.detail else "") + "</div></li>"
-        for s in items)
-    return f'<ul class="stages">{rows}</ul>'
+def who(step: Step[Any]) -> str:
+    """Who does a step and whether it asks the person, in a few words."""
+    by = "" if step.output is None else "Jaynes" if step.run_by is not None else "an agent"
+    asks = "" if step.stop is None else "you" if not step.stop.sampled else "you, until it earns your trust"
+    return ", then ".join(x for x in (by, asks) if x)
+
+
+def stage_list(items: list[Stage], role: Role | None = None) -> str:
+    """The run's stages, top to bottom, each with how it was released and how long it took; with the role, also
+    who does each and what it does, as the role tells the person."""
+    by = {s.name: s for s in role.steps} if role is not None else {}
+    rows: list[str] = []
+    for s in items:
+        step = by.get(s.name)
+        said = (f'<p class="about">{marked(step.about)}</p>' if step is not None and step.about else "")
+        mark = f'<span class="who">{esc(who(step))}</span>' if step is not None else ""
+        rows.append(
+            f'<li class="{s.state}"><span class="dot"></span><div><div class="r"><b>{esc(s.name)}{mark}</b>'
+            f'<em>{"" if s.seconds is None else "under 1s" if s.seconds < 1 else age(s.seconds)}</em></div>'
+            + said + (f"<small>{esc(s.detail)}</small>" if s.detail else "") + "</div></li>")
+    told = any(s.about for s in by.values())
+    return f'<ul class="stages{" told" if told else ""}">{"".join(rows)}</ul>'
 
 
 def stage_strip(items: list[Stage]) -> str:
@@ -1136,6 +1160,7 @@ class Review:
         if len(rest) > LONG_REST:  # a summary written into the question: folded, the page opens on what matters
             ask = f'<details class="fold"><summary>The whole question</summary>{ask}</details>'
         parts.append(f"<div><h1>{marked(head)}</h1>{ask}{sub}</div>")
+        parts.append(self._steps_part(run_id, events, st, role, step))
         parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
         # in front, what the person judges; behind Details, the output, its checks, turns and statistics
         details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]
@@ -1181,6 +1206,60 @@ class Review:
                                    items=items,
                                    evidence=str(s.open_stop[1].get("evidence") or "") if s.open_stop else ""))
         return page(f"Stop: {step}", self.sidebar((run_id, step)), main, self.seq())
+
+    def _steps_part(self, run_id: str, events: list[Event], st: RunState, role: Role | None, here: str) -> str:
+        """Where a stop is in its run, and the run in its plan: what this step does and what the person decides,
+        then every step with what it does, and the runs that wait for this one. Open when the role is short."""
+        if role is None:
+            return ""
+        names = [s.name for s in role.steps]
+        at = next((s for s in role.steps if s.name == here), None)
+        if at is None:
+            return ""
+        place = f"Step {names.index(here) + 1} of {len(names)}"
+        line = (f'<div class="sub"><b>{place}.</b> {marked(at.about)}</div>' if at.about else "")
+        after = self._after_part(run_id)
+        told = sum(1 for s in role.steps if s.about)
+        fold = (f'<details class="fold"{" open" if len(names) <= 8 else ""}><summary>The steps of this run '
+                f'<span>{esc(role.name)}{", and what comes after" if after else ""}</span></summary>'
+                + (f'<div class="sub">{marked(role.about)}</div>' if role.about else "")
+                + stage_list(stages(names, events, st, self.c.clock()), role) + after
+                + ("" if told else '<div class="sub">This role does not say what its steps do.</div>')
+                + "</details>")
+        return line + fold
+
+    def _after_part(self, run_id: str) -> str:
+        """The plan's runs that wait for this one, directly or through another, by role and in the plan's order."""
+        try:
+            found = plan.of_run(self.c, run_id)
+        except plan.PlanError:
+            return ""
+        if found is None:
+            return ""
+        req, me = found
+        waiting = {me.name}
+        later: list[plan.Planned] = []
+        for p in req.runs:  # a plan lists a run after those it follows
+            if any(a in waiting for a in p.after):
+                waiting.add(p.name)
+                later.append(p)
+        if not later:
+            return ""
+        groups: list[tuple[str, list[str]]] = []
+        for p in later:
+            if groups and groups[-1][0] == p.role:
+                groups[-1][1].append(p.name)
+            else:
+                groups.append((p.role, [p.name]))
+        rows: list[str] = []
+        for ref, runs in groups:
+            r = self.import_role(ref)
+            name = r.name if r is not None else ref
+            about = f"<p>{marked(r.about)}</p>" if r is not None and r.about else ""
+            rows.append(f'<li><b>{esc(", ".join(runs))}</b> <span class="m">{esc(name)}, '
+                        f'{len(runs)} run{"s" if len(runs) != 1 else ""}</span>{about}</li>')
+        return (f'<div class="label" style="margin-top:14px">After this run <span><a href="/request/{q(req.id)}">the '
+                f'whole plan</a></span></div><ul class="after">{"".join(rows)}</ul>')
 
     def _project_part(self, run_id: str, st: RunState, role: Role | None) -> str:
         """What the run changed in its project so far, and the preview before and after, when there is one."""
@@ -1451,7 +1530,7 @@ class Review:
         whole = (f'<details class="fold"><summary>The whole task</summary><div class="task">{marked(task)}</div></details>'
                  if headline(task) != task else "")
         body = (call + self._part_of(run_id) + whole + f'<details class="fold"><summary>Steps <span>{len(names)}</span></summary>'
-                f'{stage_list(stages(names, events, st, self.c.clock()))}</details>' + made
+                f'{stage_list(stages(names, events, st, self.c.clock()), role)}</details>' + made
                 + self._corrections(run_id)
                 + f'<details class="fold"><summary>Details <span>turns, tokens and events</span></summary>'
                 f'<div class="tiles"><div><div class="n">{esc(state)}</div><p>run</p></div>'
@@ -1894,8 +1973,16 @@ class Review:
             f'<td class="m">{esc(r)}</td></tr>' for r, evs in reversed(list(by_run.items())))
         runs_html = f'<div><div class="label">Runs</div><div class="box"><table>{run_rows}</table></div></div>'
         note = "" if role else '<div class="sub">The role module cannot be imported here, so stops are not listed.</div>'
+        steps = ""
+        if role is not None:
+            rows = "".join(f'<tr><td class="m">{n}</td><td><b class="m" style="color:var(--ink)">{esc(s.name)}</b></td>'
+                           f'<td class="m">{esc(who(s))}</td><td>{marked(s.about)}</td></tr>'
+                           for n, s in enumerate(role.steps, 1))
+            steps = ((f'<div class="sub">{marked(role.about)}</div>' if role.about else "")
+                     + f'<div><div class="label">Steps <span>in order</span></div><div class="box"><table><tr><th></th>'
+                     f'<th>step</th><th>who</th><th>what it does</th></tr>{rows}</table></div></div>')
         main = (f'<div class="crumbs"><a href="/roles">Roles</a>/<b>{esc(name)}</b></div>'
-                f'<div class="body">{note}{stops}{weekly}{runs_html}</div>')
+                f'<div class="body">{note}{steps}{stops}{weekly}{runs_html}</div>')
         return page(f"Role {name}", self.sidebar(None), main, self.seq())
 
     def log_page(self, kind: str | None, run_id: str | None) -> str:

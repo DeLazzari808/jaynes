@@ -29,6 +29,11 @@ NOTES.step("write", output=Note)
 DIRECTION = role("direction", agent="planner", about="Plans a request that needs more than one role.")
 DIRECTION.step("plan", output=Plan, project="read", stop=stop(0.2))  # a sample: the plan never waits for it
 
+TOLD = role("told", agent="planner", about="Paints a look and asks the person whether it stays.")
+PAINTED = TOLD.step("paint", output=Note, project="write", may_change=["**"], about="An agent paints the look.")
+TOLD.step("pick", needs=[PAINTED], stop=stop(0.2, waits=True),
+          about="You choose whether the look stays. Only its colours are kept; the screen is a sample.")
+
 LOOK.about = "Paints a dark look."
 SCREEN.about = "Builds a screen in the project's look."
 

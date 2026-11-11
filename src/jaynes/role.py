@@ -331,6 +331,7 @@ class Step(Generic[T]):
     shows: Callable[[Any, Witnesses], list[Shown]] | None = None  # how the stop shows the output to the person
     hidden: bool = False  # written from the request alone, before the work; no agent ever receives it
     tools: tuple[Tool, ...] = ()  # the role's functions its agent may call, run by Jaynes and recorded
+    about: str = ""  # for the person, in a sentence: what the step does and, at a stop, what they decide there
 
     @property
     def executor(self) -> str:
@@ -400,7 +401,7 @@ class Role:
              max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
              inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
              max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None,
-             hidden: bool = False, tools: Sequence[Callable[..., Any] | Tool] = ()) -> Step[T]:
+             hidden: bool = False, tools: Sequence[Callable[..., Any] | Tool] = (), about: str = "") -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -473,7 +474,7 @@ class Role:
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
                           max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
                           back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows), hidden,
-                          offered)
+                          offered, " ".join(about.split()))
         self.steps.append(s)
         return s
 

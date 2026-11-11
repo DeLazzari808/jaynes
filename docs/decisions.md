@@ -2,6 +2,25 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-11: Each step tells the person what it does, and a stop shows where it is
+
+**Decided.** A step has an `about`: one sentence for the person, saying what
+the step does and, at a stop, what they decide there and what it changes. A
+stop shows it under its question as "Step 4 of 6", then every step of the run
+with who does it (an agent, Jaynes, you) and what it does, and the runs of the
+plan that wait for this one, by role. The run's page and the role's page show
+the same steps.
+
+- Why: at a real choice of looks, Alan did not know that only the colours and
+  fonts were kept, nor that each screen is designed later in its own run. He
+  disliked the sample screens and could not tell whether that mattered. The
+  page showed the steps' names only, folded away.
+- `about` is not given to the agent and is in no fingerprint: it can be written
+  or changed without opening a new window of answers.
+- A role without it still works; its steps show their names, and the stop says
+  the role does not tell what its steps do.
+- Open: `jaynes check` does not yet ask for an `about` on a stop.
+
 ## 2026-11-10: A role gives its agents tools, which Jaynes runs and records
 
 **Decided.** A step can offer tools of its role: functions the agent calls while

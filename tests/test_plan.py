@@ -219,6 +219,38 @@ def test_the_page_shows_the_plan_its_next_run_and_each_runs_place(
         server.shutdown()
 
 
+def test_a_stop_says_what_each_step_does_and_which_runs_of_the_plan_wait_for_it(
+        tmp_path: Path, repo: Path, pending: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
+    data = {"request": "A look, then two screens in it",
+            "runs": runs({"name": "look", "role": "tests.planned:TOLD", "task": "Paint a dark look"},
+                         {"name": "home", "role": "tests.planned:SCREEN", "task": "Build home", "after": ["look"]},
+                         {"name": "settings", "role": "tests.planned:SCREEN", "task": "Build settings",
+                          "after": ["home"]})}
+    out = start(tmp_path, capsys, data, repo)
+    look = pending[0][1]
+    cli.main(pending.pop(0))
+    capsys.readouterr()
+    base, server = serving(tmp_path / "home")
+    try:
+        stop = get(f"{base}/stop/{look}/pick")
+        assert ("<b>Step 2 of 2.</b> You choose whether the look stays. Only its colours are kept; the screen is a "
+                "sample.") in stop
+        steps = stop[stop.index("The steps of this run"):]
+        assert "Paints a look and asks the person whether it stays." in steps
+        assert re.search(r"<b>paint<span class=\"who\">an agent</span></b>.*An agent paints the look\.", steps, re.S)
+        assert '<b>pick<span class="who">you</span></b>' in steps  # a stop that waits always asks
+        after = steps[steps.index("After this run"):]
+        assert f'href="/request/{out["request"]}"' in after
+        assert "<b>home, settings</b>" in after and "screen, 2 runs" in after and "Builds a screen in the" in after
+
+        assert "An agent paints the look." in get(f"{base}/run/{look}")
+        role = get(f"{base}/role/told")
+        assert "Paints a look and asks the person whether it stays." in role
+        assert re.search(r"pick</b></td><td class=\"m\">you</td><td>You choose", role)
+    finally:
+        server.shutdown()
+
+
 def test_waiting_on_a_request_returns_once_it_delivered(
         tmp_path: Path, repo: Path, pending: list[list[str]], capsys: pytest.CaptureFixture[str]) -> None:
     out = start(tmp_path, capsys, TWO, repo)

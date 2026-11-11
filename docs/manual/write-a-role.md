@@ -82,6 +82,17 @@ A key Jaynes does not know, a reference that does not import, or a question that
 
 `stop=stop(budget=0.2)` makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. `stop(budget=0.05, sampled=False)` always asks. Most stops show the output and the run goes on; `stop(0.2, waits=True)` holds the run until you answer, for a choice that is yours to make, such as a look among three. It always asks, and only you answer it. [Runs and stops](runs.md#a-stop-asks-less-as-it-proves-right) has how a stop earns that.
 
+## Tell the person what each step does
+
+`about` on a step is one sentence for the person: what the step does and, at a stop, what they decide there and what it changes. A stop shows it under its question, with every step of the run and the runs of the plan that wait for this one; the role's page lists the steps with who does each.
+
+```python
+PICK = ROLE.step("pick", output=Looks, needs=[LOOKS], stop=stop(0.2, waits=True),
+                 about="You choose one look. Only its colours and fonts are kept, not the sample screen's layout.")
+```
+
+Without it, the person sees only the step's name. It is not shown to the agent and changes no fingerprint, so you can write it or change it at any time.
+
 ## Steps that act on the world
 
 A step Jaynes runs that acts on the world declares it, with `effect`. A step with `effect="irreversible"`, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with `ctx.idempotency_key` for the service it calls, and a run that stopped while it was running is blocked instead of running it again.

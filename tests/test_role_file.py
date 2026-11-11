@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from jaynes import cli
 from jaynes.role import Witnesses, role, stop
+from jaynes.review import who
 from jaynes.role_file import RoleFileError, load
 from jaynes.store import Store
 from jaynes.verify import verify
@@ -62,6 +63,7 @@ check = ["notes_checks:not_empty"]
 stop = { budget = 0.2 }
 question = "Ship {out.text!r}?"
 instructions = "Write the note."
+about = "An agent writes the note; you read it   and ship it."
 
 [[step]]
 name = "plan"
@@ -97,7 +99,17 @@ def test_a_role_file_gives_the_same_steps_as_python(tmp_path: Path) -> None:
     assert accept.output is None and accept.stop == stop(0.05, sampled=False)
     assert draft.output is not None and draft.question is not None
     assert draft.question(draft.output(text="hi"), Witnesses({})) == "Ship 'hi'?"
+    assert draft.about == "An agent writes the note; you read it and ship it." and plan.about == ""
     assert verify(r) == []
+
+
+def test_what_a_step_tells_the_person_changes_no_fingerprint(tmp_path: Path) -> None:
+    told, plain = load(write(tmp_path)), load(write(tmp_path, ROLE.replace('about = "An agent', '# "An agent')))
+    assert told.steps[0].about and not plain.steps[0].about
+    assert told.fingerprint() == plain.fingerprint()
+    assert told.steps[0].stop_fingerprint("m") == plain.steps[0].stop_fingerprint("m")
+    draft, plan, accept = told.steps  # and the page says who does each
+    assert [who(draft), who(plan), who(accept)] == ["an agent, then you, until it earns your trust", "an agent", "you"]
 
 
 def test_editing_a_question_template_opens_a_new_window_of_labels(tmp_path: Path) -> None:
