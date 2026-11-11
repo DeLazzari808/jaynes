@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from jaynes import cli, project
 from jaynes.conductor import Conductor
-from jaynes.review import ReviewServer, diff_html, make_server
+from jaynes.review import ReviewServer, Stage, diff_html, make_server, stage_track
 from jaynes.role import role
 from jaynes.store import Store
 from tests.fakes import Scripted, write
@@ -921,3 +921,16 @@ def test_a_merged_run_says_so_at_its_stop_and_undo_on_its_page_reverts_it(tmp_pa
         assert "reverted on main: not now" in page and "Undo the merge" not in page
     finally:
         server.shutdown()
+
+
+def test_a_long_run_shows_its_steps_in_one_line_with_the_steps_done_counted() -> None:
+    r = role("long", agent="quick")
+    names = [f"s{n}" for n in range(1, 13)]
+    for name in names:
+        r.step(name, output=Note, about=f"does {name}")
+    items = [Stage(n, "checked" if i < 6 else "waiting" if i == 6 else "todo", "") for i, n in enumerate(names)]
+    line = stage_track(items, r, "s7")
+    assert re.findall(r"<li class=\"(\w+)\"[^>]*><i></i>([^<]+)</li>", line) == [
+        ("done", "6 done"), ("here", "s7"), ("todo", "s8"), ("todo", "s9"), ("todo", "s10"), ("todo", "s11"),
+        ("todo", "1 more")]
+    assert 'title="does s7"' in line and 'title="s1, s2, s3, s4, s5, s6"' in line

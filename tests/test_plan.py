@@ -233,15 +233,18 @@ def test_a_stop_says_what_each_step_does_and_which_runs_of_the_plan_wait_for_it(
     base, server = serving(tmp_path / "home")
     try:
         stop = get(f"{base}/stop/{look}/pick")
-        assert ("<b>Step 2 of 2.</b> You choose whether the look stays. Only its colours are kept; the screen is a "
-                "sample.") in stop
-        steps = stop[stop.index("The steps of this run"):]
-        assert "Paints a look and asks the person whether it stays." in steps
-        assert re.search(r"<b>paint<span class=\"who\">an agent</span></b>.*An agent paints the look\.", steps, re.S)
+        assert '<p class="ask">You choose whether the look stays. Only its colours are kept; the screen is a sample.' in stop
+        way = stop[stop.index('<details class="way">'):]
+        line = way[:way.index("</summary>")]  # the steps in one line, each saying what it does when pointed at
+        assert '<li class="done" title="An agent paints the look."><i></i>paint</li>' in line
+        assert '<li class="here" title="You choose whether' in line and "then 2 screen runs" in line
+        steps = way[way.index("</summary>"):]
+        assert re.search(r'<b>paint<span class="who">agent</span></b>.*An agent paints the look\.', steps, re.S)
         assert '<b>pick<span class="who">you</span></b>' in steps  # a stop that waits always asks
-        after = steps[steps.index("After this run"):]
+        after = steps[steps.index("Then"):]
         assert f'href="/request/{out["request"]}"' in after
-        assert "<b>home, settings</b>" in after and "screen, 2 runs" in after and "Builds a screen in the" in after
+        assert "<b>home, settings</b>" in after and "Builds a screen in the" in after
+        assert "Paints a look and asks" not in stop  # what the role is for is on its own page
 
         assert "An agent paints the look." in get(f"{base}/run/{look}")
         role = get(f"{base}/role/told")

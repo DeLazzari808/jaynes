@@ -84,11 +84,11 @@ A key Jaynes does not know, a reference that does not import, or a question that
 
 ## Tell the person what each step does
 
-`about` on a step is one sentence for the person: what the step does and, at a stop, what they decide there and what it changes. A stop shows it under its question, with every step of the run and the runs of the plan that wait for this one; the role's page lists the steps with who does each.
+`about` on a step is one sentence for the person: what the step does and, at a stop, what they decide there and what it changes. A stop shows it under its question, and the run's steps in one line that opens into what each does; the role's page lists the steps with who does each. Keep it short: who does the step is shown beside it.
 
 ```python
 PICK = ROLE.step("pick", output=Looks, needs=[LOOKS], stop=stop(0.2, waits=True),
-                 about="You choose one look. Only its colours and fonts are kept, not the sample screen's layout.")
+                 about="Only the colours and fonts are kept; the screen is just a sample.")
 ```
 
 Without it, the person sees only the step's name. It is not shown to the agent and changes no fingerprint, so you can write it or change it at any time.

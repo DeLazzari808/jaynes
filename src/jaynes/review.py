@@ -300,16 +300,33 @@ aside .strip i { width: auto; flex: 0 1 14px; min-width: 3px; }
 .stages small { font-family: var(--mono); font-size: 11px; color: var(--dim); display: block; }
 .stages .todo b { color: var(--faint); font-weight: 400; }
 .stages .waiting b, .stages .waiting small { color: var(--amber); }
-.stages.told li { padding: 7px 0; }
+.stages.told li { padding: 6px 0; }
 .stages.told b { white-space: normal; }
-.stages .who { font-family: var(--display); font-weight: 400; color: var(--faint); margin-left: 8px; font-size: 11px; }
-.stages .about { margin: 2px 0 1px; font-size: 13px; line-height: 1.45; color: var(--ink); max-width: 70ch; }
-.stages .todo .about { color: var(--dim); }
+.stages .who { font-family: var(--mono); font-weight: 400; color: var(--faint); margin-left: 10px; font-size: 11px; }
+.stages .about { margin: 1px 0 0; font-size: 13px; line-height: 1.45; color: var(--dim); max-width: 64ch; }
+details.way { margin-top: 16px; }
+details.way > summary { list-style: none; cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+details.way > summary::-webkit-details-marker { display: none; }
+details.way > summary .open { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+details.way > summary:hover .open { color: var(--blue); }
+details.way[open] > summary .open::after { content: " ▴"; }
+details.way > .stages { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+.track { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0;
+  font-family: var(--mono); font-size: 11.5px; }
+.track li { display: flex; align-items: center; gap: 6px; color: var(--faint); white-space: nowrap; }
+.track li + li::before { content: ""; width: 16px; height: 1px; background: var(--line-2); margin: 0 6px 0 0; }
+.track i { width: 7px; height: 7px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--line-2); display: block; }
+.track .done { color: var(--dim); }
+.track .done i { background: var(--green); box-shadow: none; }
+.track .here { color: var(--amber); }
+.track .here i { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-soft); }
+.then { font-family: var(--mono); font-size: 11.5px; color: var(--faint); }
+.way .label { margin-top: 16px; }
 .after { list-style: none; margin: 6px 0 0; padding: 0; }
-.after li { padding: 5px 0; font-size: 13px; line-height: 1.45; }
+.after li { padding: 4px 0; font-size: 13px; line-height: 1.45; }
 .after b { font-family: var(--mono); font-size: 12px; font-weight: 500; }
-.after .m { margin-left: 8px; color: var(--faint); }
-.after p { margin: 2px 0 0; color: var(--dim); max-width: 70ch; }
+.after .m { margin-left: 10px; color: var(--faint); }
+.after p { margin: 1px 0 0; color: var(--dim); max-width: 64ch; }
 .stages .blocked b, .stages .blocked small { color: var(--red); }
 .foot { margin-top: auto; padding: 14px 18px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 11px; color: var(--dim); display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
 .foot b { color: var(--ink); font-weight: 500; text-align: right; }
@@ -679,10 +696,36 @@ def _size(picture: Path) -> tuple[int, int] | None:
     return (width, height) if width and height else None
 
 
+LIVE = ("waiting", "blocked", "running")  # a stage whose state the person needs to read, beside what it does
+
+
+def stage_track(items: list[Stage], role: Role, here: str, ahead: int = 4) -> str:
+    """The run's steps in one line: the steps done folded into a count once there are many, this one, and the next
+    few. Each says what it does when pointed at."""
+    by = {s.name: s for s in role.steps}
+    at = next((n for n, s in enumerate(items) if s.name == here), 0)
+    before, after = items[:at], items[at + 1:]
+    marks: list[str] = []
+
+    def mark(s: Stage, cls: str) -> str:
+        step = by.get(s.name)
+        return f'<li class="{cls}" title="{esc(step.about if step else "")}"><i></i>{esc(s.name)}</li>'
+
+    if len(before) > 3:
+        marks.append(f'<li class="done" title="{esc(", ".join(s.name for s in before))}"><i></i>{len(before)} done</li>')
+    else:
+        marks += [mark(s, "todo" if s.state == "todo" else "done") for s in before]
+    marks.append(mark(items[at], "here"))
+    marks += [mark(s, "todo" if s.state == "todo" else "done") for s in after[:ahead]]
+    if len(after) > ahead:
+        marks.append(f'<li class="todo"><i></i>{len(after) - ahead} more</li>')
+    return f'<ol class="track">{"".join(marks)}</ol>'
+
+
 def who(step: Step[Any]) -> str:
     """Who does a step and whether it asks the person, in a few words."""
-    by = "" if step.output is None else "Jaynes" if step.run_by is not None else "an agent"
-    asks = "" if step.stop is None else "you" if not step.stop.sampled else "you, until it earns your trust"
+    by = "" if step.output is None else "Jaynes" if step.run_by is not None else "agent"
+    asks = "" if step.stop is None else "you" if not step.stop.sampled else "sometimes you"
     return ", then ".join(x for x in (by, asks) if x)
 
 
@@ -698,7 +741,8 @@ def stage_list(items: list[Stage], role: Role | None = None) -> str:
         rows.append(
             f'<li class="{s.state}"><span class="dot"></span><div><div class="r"><b>{esc(s.name)}{mark}</b>'
             f'<em>{"" if s.seconds is None else "under 1s" if s.seconds < 1 else age(s.seconds)}</em></div>'
-            + said + (f"<small>{esc(s.detail)}</small>" if s.detail else "") + "</div></li>")
+            + said + (f"<small>{esc(s.detail)}</small>" if s.detail and not (said and s.state not in LIVE) else "")
+            + "</div></li>")
     told = any(s.about for s in by.values())
     return f'<ul class="stages{" told" if told else ""}">{"".join(rows)}</ul>'
 
@@ -1151,16 +1195,15 @@ class Review:
         shown = cast(list[dict[str, Any]] | None, s.open_stop[1].get("shown")) if s.open_stop else None
         items = self._items(target, s)
         if items:
-            sub += ('<div class="sub">Click them in order of importance to choose; Accept keeps them all, in the order '
-                    'shown.</div>')
+            sub += '<div class="sub">Click to choose, most important first. Accept keeps them all.</div>'
         if shown is None and target is not None and target.shows is not None:
             shown = self.c.shown(target, s, st)  # a stop opened before its step said how to show it
         head, rest = question_parts(question)
         ask = f'<p class="ask">{marked(rest)}</p>' if rest else ""
         if len(rest) > LONG_REST:  # a summary written into the question: folded, the page opens on what matters
             ask = f'<details class="fold"><summary>The whole question</summary>{ask}</details>'
-        parts.append(f"<div><h1>{marked(head)}</h1>{ask}{sub}</div>")
-        parts.append(self._steps_part(run_id, events, st, role, step))
+        does, way = self._steps_part(run_id, events, st, role, step)
+        parts.append(f"<div><h1>{marked(head)}</h1>{ask}{does}{sub}{way}</div>")
         parts.append(self._floor_part(s))  # code that runs later, outside any box, is always in front
         # in front, what the person judges; behind Details, the output, its checks, turns and statistics
         details: list[str] = [self._project_part(run_id, st, role), self._pictures_part(run_id, st, target)]
@@ -1207,59 +1250,57 @@ class Review:
                                    evidence=str(s.open_stop[1].get("evidence") or "") if s.open_stop else ""))
         return page(f"Stop: {step}", self.sidebar((run_id, step)), main, self.seq())
 
-    def _steps_part(self, run_id: str, events: list[Event], st: RunState, role: Role | None, here: str) -> str:
-        """Where a stop is in its run, and the run in its plan: what this step does and what the person decides,
-        then every step with what it does, and the runs that wait for this one. Open when the role is short."""
-        if role is None:
-            return ""
-        names = [s.name for s in role.steps]
-        at = next((s for s in role.steps if s.name == here), None)
-        if at is None:
-            return ""
-        place = f"Step {names.index(here) + 1} of {len(names)}"
-        line = (f'<div class="sub"><b>{place}.</b> {marked(at.about)}</div>' if at.about else "")
-        after = self._after_part(run_id)
-        told = sum(1 for s in role.steps if s.about)
-        fold = (f'<details class="fold"{" open" if len(names) <= 8 else ""}><summary>The steps of this run '
-                f'<span>{esc(role.name)}{", and what comes after" if after else ""}</span></summary>'
-                + (f'<div class="sub">{marked(role.about)}</div>' if role.about else "")
-                + stage_list(stages(names, events, st, self.c.clock()), role) + after
-                + ("" if told else '<div class="sub">This role does not say what its steps do.</div>')
-                + "</details>")
-        return line + fold
+    def _steps_part(self, run_id: str, events: list[Event], st: RunState, role: Role | None,
+                    here: str) -> tuple[str, str]:
+        """What this step decides, in a line under the question; then where the stop is, in one line of steps and
+        the runs of the plan that wait for this one, which open into what each step does."""
+        at = next((s for s in role.steps if s.name == here), None) if role is not None else None
+        if role is None or at is None:
+            return "", ""
+        line = f'<p class="ask">{marked(at.about)}</p>' if at.about else ""
+        items = stages([s.name for s in role.steps], events, st, self.c.clock())
+        later = self._later(run_id)
+        then = ""
+        if later is not None:
+            then = '<span class="then">then ' + ", ".join(
+                f'{len(runs)} {esc(name)} run{"s" if len(runs) != 1 else ""}' for name, runs, _ in later[1]) + "</span>"
+        rows = "".join(f'<li><b>{esc(", ".join(runs))}</b><span class="m">{esc(name)}</span>'
+                       + (f"<p>{marked(about)}</p>" if about else "") + "</li>" for name, runs, about in later[1]
+                       ) if later is not None else ""
+        after = (f'<div class="label">Then <span><a href="/request/{q(later[0].id)}">the whole plan</a></span></div>'
+                 f'<ul class="after">{rows}</ul>' if later is not None else "")
+        told = any(s.about for s in role.steps)
+        track = (f'<details class="way"><summary>{stage_track(items, role, here)}{then}'
+                 f'<span class="open">{"what each step does" if told else "steps"}</span></summary>'
+                 f'{stage_list(items, role)}{after}</details>')
+        return line, track
 
-    def _after_part(self, run_id: str) -> str:
-        """The plan's runs that wait for this one, directly or through another, by role and in the plan's order."""
+    def _later(self, run_id: str) -> tuple[plan.Request, list[tuple[str, list[str], str]]] | None:
+        """The plan's runs that wait for this one, directly or through another, grouped by role in the plan's order:
+        the role's name, the runs, and what the role does."""
         try:
             found = plan.of_run(self.c, run_id)
         except plan.PlanError:
-            return ""
+            return None
         if found is None:
-            return ""
+            return None
         req, me = found
         waiting = {me.name}
-        later: list[plan.Planned] = []
+        groups: list[tuple[str, list[str]]] = []
         for p in req.runs:  # a plan lists a run after those it follows
             if any(a in waiting for a in p.after):
                 waiting.add(p.name)
-                later.append(p)
-        if not later:
-            return ""
-        groups: list[tuple[str, list[str]]] = []
-        for p in later:
-            if groups and groups[-1][0] == p.role:
-                groups[-1][1].append(p.name)
-            else:
-                groups.append((p.role, [p.name]))
-        rows: list[str] = []
+                if groups and groups[-1][0] == p.role:
+                    groups[-1][1].append(p.name)
+                else:
+                    groups.append((p.role, [p.name]))
+        if not groups:
+            return None
+        out: list[tuple[str, list[str], str]] = []
         for ref, runs in groups:
             r = self.import_role(ref)
-            name = r.name if r is not None else ref
-            about = f"<p>{marked(r.about)}</p>" if r is not None and r.about else ""
-            rows.append(f'<li><b>{esc(", ".join(runs))}</b> <span class="m">{esc(name)}, '
-                        f'{len(runs)} run{"s" if len(runs) != 1 else ""}</span>{about}</li>')
-        return (f'<div class="label" style="margin-top:14px">After this run <span><a href="/request/{q(req.id)}">the '
-                f'whole plan</a></span></div><ul class="after">{"".join(rows)}</ul>')
+            out.append((r.name if r is not None else ref, runs, r.about if r is not None else ""))
+        return req, out
 
     def _project_part(self, run_id: str, st: RunState, role: Role | None) -> str:
         """What the run changed in its project so far, and the preview before and after, when there is one."""

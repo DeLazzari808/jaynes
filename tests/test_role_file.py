@@ -109,7 +109,7 @@ def test_what_a_step_tells_the_person_changes_no_fingerprint(tmp_path: Path) -> 
     assert told.fingerprint() == plain.fingerprint()
     assert told.steps[0].stop_fingerprint("m") == plain.steps[0].stop_fingerprint("m")
     draft, plan, accept = told.steps  # and the page says who does each
-    assert [who(draft), who(plan), who(accept)] == ["an agent, then you, until it earns your trust", "an agent", "you"]
+    assert [who(draft), who(plan), who(accept)] == ["agent, then sometimes you", "agent", "you"]
 
 
 def test_editing_a_question_template_opens_a_new_window_of_labels(tmp_path: Path) -> None:

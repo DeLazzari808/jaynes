@@ -84,9 +84,9 @@ instructions = &quot;Write one sentence about the topic in inputs/topic.json wit
 <h2 id="stops">Stops</h2>
 <p><code>stop=stop(budget=0.2)</code> makes a step stop for you. The budget is the share of answers you would change that the stop may have once it asks less: with 0.2 it asks one time in ten after 20 clean deliveries in a row. <code>stop(budget=0.05, sampled=False)</code> always asks. Most stops show the output and the run goes on; <code>stop(0.2, waits=True)</code> holds the run until you answer, for a choice that is yours to make, such as a look among three. It always asks, and only you answer it. <a href="runs.html#a-stop-asks-less-as-it-proves-right">Runs and stops</a> has how a stop earns that.</p>
 <h2 id="tell-the-person-what-each-step-does">Tell the person what each step does</h2>
-<p><code>about</code> on a step is one sentence for the person: what the step does and, at a stop, what they decide there and what it changes. A stop shows it under its question, with every step of the run and the runs of the plan that wait for this one; the role's page lists the steps with who does each.</p>
+<p><code>about</code> on a step is one sentence for the person: what the step does and, at a stop, what they decide there and what it changes. A stop shows it under its question, and the run's steps in one line that opens into what each does; the role's page lists the steps with who does each. Keep it short: who does the step is shown beside it.</p>
 <pre><code class="language-python">PICK = ROLE.step(&quot;pick&quot;, output=Looks, needs=[LOOKS], stop=stop(0.2, waits=True),
-                 about=&quot;You choose one look. Only its colours and fonts are kept, not the sample screen's layout.&quot;)
+                 about=&quot;Only the colours and fonts are kept; the screen is just a sample.&quot;)
 </code></pre>
 <p>Without it, the person sees only the step's name. It is not shown to the agent and changes no fingerprint, so you can write it or change it at any time.</p>
 <h2 id="steps-that-act-on-the-world">Steps that act on the world</h2>
