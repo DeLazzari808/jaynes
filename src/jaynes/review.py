@@ -824,20 +824,23 @@ class Review:
         return [s.name for s in role.steps] if role is not None else None
 
     def role_of(self, run_id: str) -> Role | None:
-        """The role a run was started with, if its module can be imported here. Edits need a restart."""
+        """The role a run was started with, if its module can be imported here."""
         started = next(iter(self.c.store.events("RunStarted", run_id=run_id)), None)
         return self.import_role(str(started.payload.get("ref", "")) if started else "")
 
     def import_role(self, ref: str) -> Role | None:
-        if ref not in self.shared.roles:
-            try:
-                found = catalog.load(ref) if ref else None
-            except Exception:
-                return None  # not cached, so a fixed import works without a restart
-            if not isinstance(found, Role):
-                return None
-            self.shared.roles[ref] = found
-        return self.shared.roles[ref]
+        """The role ``ref`` names, read again when its linked files changed on disk, as a run reads it; while an edit
+        does not import, the last one that did."""
+        if not ref:
+            return None
+        try:
+            found = catalog.load(ref)
+        except Exception:
+            return self.shared.roles.get(ref)
+        if not isinstance(found, Role):
+            return None
+        self.shared.roles[ref] = found
+        return found
 
     def names(self, role: Role | None, events: list[Event]) -> list[str]:
         """The run's steps in role order, or in the order they appear when the role cannot be imported."""

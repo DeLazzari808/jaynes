@@ -335,3 +335,27 @@ def test_a_linked_role_changed_on_disk_is_read_again_by_a_process_that_loaded_it
     for p in (folder / "_helper.py", role_file):  # a second later, as an edit is
         os.utime(p, (p.stat().st_atime, p.stat().st_mtime + 2))
     assert catalog.load(f"{role_file}:ROLE").about == "second!"  # type: ignore[attr-defined]
+
+
+def test_the_page_shows_a_linked_role_as_it_is_on_disk_and_the_last_that_imported_while_an_edit_breaks_it(
+        tmp_path: Path) -> None:
+    import os
+    from jaynes.review import Review, Shared
+    folder = tmp_path / "shown"
+    folder.mkdir()
+    role_file = folder / "mine.py"
+
+    def write(text: str, later: int) -> None:
+        role_file.write_text(text)
+        os.utime(role_file, (role_file.stat().st_atime, role_file.stat().st_mtime + later))  # as an edit, later
+
+    write("from jaynes.role import role\nROLE = role('mine', about='first')\n", 0)
+    page = Review(tmp_path / "home", Shared("t", "k", 0))
+    first = page.import_role(f"{role_file}:ROLE")
+    assert first is not None and first.about == "first"
+    write("from jaynes.role import role\nROLE = role('mine', about='second')\n", 2)
+    second = page.import_role(f"{role_file}:ROLE")
+    assert second is not None and second.about == "second"
+    write("from jaynes.role import role\nROLE = role('mine', about=\n", 4)  # half written
+    kept = page.import_role(f"{role_file}:ROLE")
+    assert kept is not None and kept.about == "second"
