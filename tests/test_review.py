@@ -934,3 +934,6 @@ def test_a_long_run_shows_its_steps_in_one_line_with_the_steps_done_counted() ->
         ("done", "6 done"), ("here", "s7"), ("todo", "s8"), ("todo", "s9"), ("todo", "s10"), ("todo", "s11"),
         ("todo", "1 more")]
     assert 'title="does s7"' in line and 'title="s1, s2, s3, s4, s5, s6"' in line
+    items[2] = Stage("s3", "todo", "")  # a step added to the role after it ran past it
+    assert re.findall(r"<li class=\"(\w+)\"[^>]*><i></i>([^<]+)</li>", stage_track(items, r, "s7"))[:3] == [
+        ("done", "5 done"), ("todo", "s3"), ("here", "s7")]

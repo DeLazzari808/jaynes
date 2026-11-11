@@ -711,8 +711,10 @@ def stage_track(items: list[Stage], role: Role, here: str, ahead: int = 4) -> st
         step = by.get(s.name)
         return f'<li class="{cls}" title="{esc(step.about if step else "")}"><i></i>{esc(s.name)}</li>'
 
-    if len(before) > 3:
-        marks.append(f'<li class="done" title="{esc(", ".join(s.name for s in before))}"><i></i>{len(before)} done</li>')
+    done = [s for s in before if s.state != "todo"]
+    if len(done) > 3:  # the steps done fold into a count; one not run yet, as a step added later, stays in sight
+        marks.append(f'<li class="done" title="{esc(", ".join(s.name for s in done))}"><i></i>{len(done)} done</li>')
+        marks += [mark(s, "todo") for s in before if s.state == "todo"]
     else:
         marks += [mark(s, "todo" if s.state == "todo" else "done") for s in before]
     marks.append(mark(items[at], "here"))
