@@ -23,6 +23,9 @@ recorded and checked like any other step; the person answers at the stops.
   agent step it needs. When that step reviews another, the return now goes to
   the work it reviews, since the person's note is about the work, and the
   review runs again after it.
+- What the person said at one step reaches every later step's prompt, as "what the person said earlier in
+  this run". Found when a strategist added to a running identity wrote a light theme: Alan had asked for dark
+  mode at the designer's step, and only that step was told.
 - Open: who is on the team is a label on the step; Jaynes does not yet keep a
   record per specialist across runs.
 

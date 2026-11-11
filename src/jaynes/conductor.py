@@ -997,7 +997,7 @@ class Conductor:
                 web: dict[str, Any] = {"web": True} if step.web else {}
                 if step.max_messages and "max_messages" in inspect.signature(runtime.turn).parameters:
                     web["max_messages"] = step.max_messages  # a runtime that counts no messages has no such limit
-                prompt = self.prompt(role, step, task, s, files, st.started, on_top)
+                prompt = self.prompt(role, step, task, s, files, st.started, on_top, self._history(run_id).notes)
                 if step.tools:
                     with role_tools.serve(step.tools, ToolContext(run_id, step.name, task, used,
                                                                   self._history(run_id))) as (served, offered):
@@ -1244,8 +1244,11 @@ class Conductor:
 
     def prompt(self, role: Role, step: Step[Any], task: str, s: StepState,
                files: Mapping[str, Mapping[str, str]] | None = None,
-               started: Mapping[str, Any] | None = None, on_top: bool | None = None) -> str:
-        """``on_top`` says whether the step's previous change to the project is applied in its copy, when it has one."""
+               started: Mapping[str, Any] | None = None, on_top: bool | None = None,
+               said: Sequence[Note] = ()) -> str:
+        """``on_top`` says whether the step's previous change to the project is applied in its copy, when it has one.
+        ``said`` is what the person said in the run; what they said at other steps reaches this one too, since a
+        person who asked for something once should not have to ask each step again."""
         lines: list[str] = []
         if method := role.method_text():
             lines += [method.rstrip(), ""]
@@ -1261,6 +1264,12 @@ class Conductor:
         if step.instructions:
             lines += [step.instructions.rstrip(), ""]
         lines += [f"Task: {task}", ""]
+        elsewhere = [n for n in said if n.by == "person" and n.note.strip() and n.step != step.name]
+        if elsewhere and not step.hidden:  # a hidden step reads the request alone
+            lines += ["What the person said earlier in this run, at other steps; it holds for this step too where it "
+                      "applies:"]
+            lines += [f"- at {n.step}: {n.note.strip()}" for n in elsewhere[-12:]]
+            lines.append("")
         if _plans(step):
             lines += self._roles(_root(started or {}))
         if step.needs or s.previous:

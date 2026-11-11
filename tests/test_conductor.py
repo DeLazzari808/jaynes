@@ -666,6 +666,23 @@ def test_a_return_passes_over_a_review_to_the_work_it_reviews_and_the_review_run
     assert c.run(r, "t", run_id="r1").status == "waiting" and agent.counts == {"make": 2, "review": 2}
 
 
+def test_what_the_person_said_at_one_step_reaches_the_later_steps(tmp_path: Path) -> None:
+    r = role("said", agent="fake")
+    make = r.step("make", output=Note, stop=stop(0.2, waits=True))
+    r.step("apply", output=Note, needs=[make])
+    agent = Scripted({("make", 1): write({"text": "light"}), ("make", 2): write({"text": "dark"})},
+                     default=lambda step: {"text": step})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    c.run(r, "t", run_id="r1")
+    c.answer(r, "r1", "make", "return", note="I want dark mode", by="person")
+    c.run(r, "t", run_id="r1")
+    c.answer(r, "r1", "make", "accept", by="person")
+    c.run(r, "t", run_id="r1")
+    assert agent.counts == {"make": 2, "apply": 1}
+    assert "- at make: I want dark mode" in agent.prompts[-1]  # the later step knows without being told again
+    assert "What the person said earlier" not in agent.prompts[1]  # its own note comes as its return
+
+
 def test_a_return_at_a_stop_jaynes_made_goes_to_the_agent_step_before_it(tmp_path: Path) -> None:
     from jaynes.role import StepContext
     r = role("offer", agent="fake")
