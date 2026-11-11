@@ -32,7 +32,7 @@ A stop the role marks as a floor asks on every run and only you answer it, but t
 | Context, with a note | The step runs again with what the agent could not have known | Not counted |
 | Choose | The items you picked, in your order, take the place of the output | Right, once the delivery holds |
 
-A return at a step Jaynes runs itself, such as one that only lays out the agent's work for you to choose, goes to the agent's step before it, since only an agent reads your note.
+A return at a step Jaynes runs itself, such as one that only lays out the agent's work for you to choose, goes to the agent's step before it, since only an agent reads your note. When that step reviews another one, such as a director's critique of a designer's work, the return goes to the work it reviews, and the review runs again after it.
 
 In Claude Code's dialog you Accept or Return with a note. The page has all five. At a floor, the A key accepts only when you press it twice within two seconds, so a stray key does not let it through.
 

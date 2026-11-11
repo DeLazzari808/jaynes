@@ -336,14 +336,18 @@ def coin(run_id: str, step: str) -> float:
 def return_to(role: Role, step: str) -> str | None:
     """Where a return from a stop with no output, or from a step Jaynes runs, goes: the latest of its needs an agent
     runs, since only an agent reads the note, else the nearest earlier step an agent runs, else the nearest earlier
-    step with an output."""
+    step with an output. A step that reviews another, sending it back, is passed over for the step it reviews: the
+    note is about the work, and the review runs again after it."""
     names = [x.name for x in role.steps]
     here = role.steps[names.index(step)]
     earlier = [x for x in role.steps[:names.index(step)] if x.output is not None]
     agents = [x for x in earlier if x.run_by is None]
     needs = [x for x in agents if x in here.needs]
     found = needs or agents or earlier
-    return found[-1].name if found else None
+    if not found:
+        return None
+    target = found[-1]
+    return (target.back.to if target.back is not None and target.back.to.run_by is None else target).name
 
 
 def new_run_id() -> str:

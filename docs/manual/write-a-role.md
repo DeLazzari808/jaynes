@@ -93,6 +93,8 @@ PICK = ROLE.step("pick", output=Looks, needs=[LOOKS], stop=stop(0.2, waits=True)
 
 Without it, the person sees only the step's name. It is not shown to the agent and changes no fingerprint, so you can write it or change it at any time.
 
+`by` names who of your team does an agent's step, such as `by="design director"`; the page shows it in place of "agent". A role can be a conversation between several specialists, each step by one of them: one makes, the next reviews and sends the work back with what it found (`back=Back(to=MAKE, when=...)`), and you answer at the stops. Say who each one is in its instructions; `by` is only what the page shows.
+
 ## Steps that act on the world
 
 A step Jaynes runs that acts on the world declares it, with `effect`. A step with `effect="irreversible"`, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with `ctx.idempotency_key` for the service it calls, and a run that stopped while it was running is blocked instead of running it again.

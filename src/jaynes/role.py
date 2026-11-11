@@ -332,6 +332,7 @@ class Step(Generic[T]):
     hidden: bool = False  # written from the request alone, before the work; no agent ever receives it
     tools: tuple[Tool, ...] = ()  # the role's functions its agent may call, run by Jaynes and recorded
     about: str = ""  # for the person, in a sentence: what the step does and, at a stop, what they decide there
+    by: str = ""  # who of the team does it, as the person knows them, such as "design director"; shown, never sent
 
     @property
     def executor(self) -> str:
@@ -401,7 +402,8 @@ class Role:
              max_messages: int | None = None, asks: Callable[[T, str], bool] | None = None,
              inputs: Sequence[str] = (), choose: Choice | None = None, back: Back | None = None,
              max_files: int = 20, shows: Callable[[T, Witnesses], list[Shown]] | None = None,
-             hidden: bool = False, tools: Sequence[Callable[..., Any] | Tool] = (), about: str = "") -> Step[T]:
+             hidden: bool = False, tools: Sequence[Callable[..., Any] | Tool] = (), about: str = "",
+             by: str = "") -> Step[T]:
         if any(s.name == name for s in self.steps):
             raise ValueError(f"step {name!r} defined twice")
         for n in needs:
@@ -457,6 +459,8 @@ class Role:
             raise ValueError(f"step {name!r} offers tools but no agent runs it")
         if dup := sorted({t.name for t in offered if [x.name for x in offered].count(t.name) > 1}):
             raise ValueError(f"step {name!r} offers two tools called {', '.join(dup)}")
+        if by and (output is None or run_by is not None):
+            raise ValueError(f"step {name!r} names who of the team does it, but no agent runs it")
         if effect is not None and effect not in EFFECTS:
             raise ValueError(f"step {name!r} declares effect {effect!r}; it must be one of {', '.join(EFFECTS)}")
         if effect is not None and run_by is None:
@@ -474,7 +478,7 @@ class Role:
                           project, tuple(may_change), web, effect or "pure", cast(Callable[[Any], bool] | None, ends),
                           max_messages, cast(Callable[[Any, str], bool] | None, asks), tuple(inputs), choose,
                           back, max_files, cast(Callable[[Any, Witnesses], list[Shown]] | None, shows), hidden,
-                          offered, " ".join(about.split()))
+                          offered, " ".join(about.split()), " ".join(by.split()))
         self.steps.append(s)
         return s
 

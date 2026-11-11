@@ -64,6 +64,7 @@ stop = { budget = 0.2 }
 question = "Ship {out.text!r}?"
 instructions = "Write the note."
 about = "An agent writes the note; you read it   and ship it."
+by = "copy  editor"
 
 [[step]]
 name = "plan"
@@ -100,16 +101,23 @@ def test_a_role_file_gives_the_same_steps_as_python(tmp_path: Path) -> None:
     assert draft.output is not None and draft.question is not None
     assert draft.question(draft.output(text="hi"), Witnesses({})) == "Ship 'hi'?"
     assert draft.about == "An agent writes the note; you read it and ship it." and plan.about == ""
+    assert draft.by == "copy editor" and plan.by == ""
     assert verify(r) == []
 
 
 def test_what_a_step_tells_the_person_changes_no_fingerprint(tmp_path: Path) -> None:
-    told, plain = load(write(tmp_path)), load(write(tmp_path, ROLE.replace('about = "An agent', '# "An agent')))
+    told = load(write(tmp_path))
+    plain = load(write(tmp_path, ROLE.replace('about = "An agent', '# "An agent').replace('by = "copy', '# "copy')))
     assert told.steps[0].about and not plain.steps[0].about
     assert told.fingerprint() == plain.fingerprint()
     assert told.steps[0].stop_fingerprint("m") == plain.steps[0].stop_fingerprint("m")
     draft, plan, accept = told.steps  # and the page says who does each
-    assert [who(draft), who(plan), who(accept)] == ["agent, then sometimes you", "agent", "you"]
+    assert [who(draft), who(plan), who(accept)] == ["copy editor, then sometimes you", "agent", "you"]
+    class Count(BaseModel):
+        n: int
+
+    with pytest.raises(ValueError, match="no agent runs it"):  # who of the team: only for an agent's step
+        role("r").step("count", output=Count, run_by=lambda ctx: Count(n=1), by="clerk")
 
 
 def test_editing_a_question_template_opens_a_new_window_of_labels(tmp_path: Path) -> None:

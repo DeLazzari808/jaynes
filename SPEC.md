@@ -475,7 +475,7 @@ its stop closed changes nothing.
 |---|---|---|
 | accept | continues with the output as is | correct |
 | change | the person's edited output replaces the agent's and is rechecked | error |
-| return | the step reruns with the person's note in the prompt, on top of its previous output; or, with an earlier step named, that step does, and the error counts on its stop; at a step Jaynes runs, with no step named, the agent's step before it does, since Jaynes reads no note | error |
+| return | the step reruns with the person's note in the prompt, on top of its previous output; or, with an earlier step named, that step does, and the error counts on its stop; at a step Jaynes runs, with no step named, the agent's step before it does, since Jaynes reads no note, or the step that one reviews when it sends a step back | error |
 | context | the step reruns with the note; the agent was not at fault | not counted |
 | choose | the chosen items of the output, in the person's order, replace it and are rechecked | correct |
 

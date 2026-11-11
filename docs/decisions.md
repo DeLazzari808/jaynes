@@ -2,6 +2,30 @@
 
 What was decided, what it costs, and what is still open. Newest first.
 
+## 2026-11-11: Specialists talk inside a role, step by step; a return goes to the work, past its review
+
+**Decided.** A role can be a conversation between several specialists of a
+team: each step is done by one of them, named with `by` (the page shows it in
+place of "agent"), the next step receives what it made, and a step that reviews
+sends it back with what it found, a bounded number of times. Every exchange is
+recorded and checked like any other step; the person answers at the stops.
+
+- Why: Alan asked how a product's look is born in a company with several
+  professionals, and how that becomes standard. A strategist writes the brand
+  contract, a designer explores, a director rejects the weak work before the
+  owner sees it, the owner chooses, a design system engineer makes the tokens.
+  The director has to send the designer's work back, which Jaynes does between
+  steps of one run, not between runs of a plan.
+- What is standard lives with the team, in code: the roles that hold the
+  conversation, and the plan step that refuses a plan which leaves a specialist
+  out. Jaynes gives the mechanism; the team's package gives who and when.
+- A return with no step named, at a step Jaynes runs, used to go to the latest
+  agent step it needs. When that step reviews another, the return now goes to
+  the work it reviews, since the person's note is about the work, and the
+  review runs again after it.
+- Open: who is on the team is a label on the step; Jaynes does not yet keep a
+  record per specialist across runs.
+
 ## 2026-11-11: Each step tells the person what it does, and a stop shows where it is
 
 **Decided.** A step has an `about`: one sentence for the person, saying what

@@ -724,7 +724,7 @@ def stage_track(items: list[Stage], role: Role, here: str, ahead: int = 4) -> st
 
 def who(step: Step[Any]) -> str:
     """Who does a step and whether it asks the person, in a few words."""
-    by = "" if step.output is None else "Jaynes" if step.run_by is not None else "agent"
+    by = "" if step.output is None else "Jaynes" if step.run_by is not None else step.by or "agent"
     asks = "" if step.stop is None else "you" if not step.stop.sampled else "sometimes you"
     return ", then ".join(x for x in (by, asks) if x)
 

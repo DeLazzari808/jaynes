@@ -648,6 +648,24 @@ def test_a_stop_that_waits_holds_the_run_until_the_person_answers_and_keeps_ever
     assert c.run(r, "t", run_id="r1").status == "finished" and agent.counts == {"pick": 1, "build": 1}
 
 
+def test_a_return_passes_over_a_review_to_the_work_it_reviews_and_the_review_runs_again(tmp_path: Path) -> None:
+    from jaynes.role import Back, StepContext
+    r = role("crit", agent="fake")
+    make = r.step("make", output=Note)
+    review = r.step("review", output=Note, needs=[make], back=Back(to=make, when=lambda out, needs: []))
+
+    def offered(ctx: StepContext) -> Note:
+        return ctx.needs[make].value
+    r.step("pick", output=Note, needs=[make, review], run_by=offered, stop=stop(0.2, waits=True))
+    assert return_to(r, "pick") == "make"
+    agent = Scripted({("make", 1): write({"text": "plain"}), ("make", 2): write({"text": "bold"})},
+                     default=lambda step: {"text": step})
+    c = Conductor(tmp_path, runtimes={"fake": lambda: agent})
+    c.run(r, "t", run_id="r1")
+    c.answer(r, "r1", "pick", "return", note="bolder", by="person")  # no step named
+    assert c.run(r, "t", run_id="r1").status == "waiting" and agent.counts == {"make": 2, "review": 2}
+
+
 def test_a_return_at_a_stop_jaynes_made_goes_to_the_agent_step_before_it(tmp_path: Path) -> None:
     from jaynes.role import StepContext
     r = role("offer", agent="fake")

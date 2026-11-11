@@ -89,6 +89,7 @@ instructions = &quot;Write one sentence about the topic in inputs/topic.json wit
                  about=&quot;Only the colours and fonts are kept; the screen is just a sample.&quot;)
 </code></pre>
 <p>Without it, the person sees only the step's name. It is not shown to the agent and changes no fingerprint, so you can write it or change it at any time.</p>
+<p><code>by</code> names who of your team does an agent's step, such as <code>by=&quot;design director&quot;</code>; the page shows it in place of &quot;agent&quot;. A role can be a conversation between several specialists, each step by one of them: one makes, the next reviews and sends the work back with what it found (<code>back=Back(to=MAKE, when=...)</code>), and you answer at the stops. Say who each one is in its instructions; <code>by</code> is only what the page shows.</p>
 <h2 id="steps-that-act-on-the-world">Steps that act on the world</h2>
 <p>A step Jaynes runs that acts on the world declares it, with <code>effect</code>. A step with <code>effect=&quot;irreversible&quot;</code>, such as booking, paying or sending, may only follow steps with floor stops, so you approve its whole payload. It runs once, with <code>ctx.idempotency_key</code> for the service it calls, and a run that stopped while it was running is blocked instead of running it again.</p>
 <h2 id="tools-the-agent-can-call">Tools the agent can call</h2>
